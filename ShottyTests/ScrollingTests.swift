@@ -98,6 +98,81 @@ final class ScrollingTests: XCTestCase {
         }
     }
 
+    /// Captured frames carry faint per-frame raster noise, so no overlap is bit-exact and the
+    /// coarse samples alone tie with false seams on sparse text. Each displacement here was
+    /// rejected as ambiguous or unstable before dense contender evidence was added.
+    func testSparseTextWithRenderNoiseResolvesTheTrueSeam() throws {
+        for axis in ScrollAxis.allCases {
+            for displacement in [20, 33, 80, 93, 140] {
+                let first = try noisy(textFrame(axis: axis, offset: 40, leading: 0, trailing: 0, sparseInk: false), seed: 1)
+                let next = try noisy(textFrame(axis: axis, offset: 40 + displacement, leading: 0, trailing: 0, sparseInk: false), seed: 2)
+                var session = try ScrollStitchSession(firstFrame: first, startedAt: 0)
+                guard case .extended(let match, _) = session.accept(next, at: 1) else {
+                    return XCTFail("\(axis) displacement \(displacement) must resolve")
+                }
+                XCTAssertEqual(match.axis, axis)
+                XCTAssertEqual(match.displacement, displacement)
+            }
+        }
+    }
+
+    func testNoisyRepeatedContentStaysAmbiguous() throws {
+        for axis in ScrollAxis.allCases {
+            let first = try noisy(frame(axis: axis, offset: 0, period: 8), seed: 1)
+            let next = try noisy(frame(axis: axis, offset: 3, period: 8), seed: 2)
+            XCTAssertEqual(ScrollAligner().align(previous: first, current: next, axis: axis), .rejected(.ambiguousContent))
+        }
+    }
+
+    /// Native-scale list rows repeat everything but a narrow ID column. Mean errors of seams one
+    /// or more rows apart differ by less than the ambiguity margin, and each wrong seam stays within
+    /// the downstream outlier tolerances, so only full-breadth outlier evidence may pick the seam.
+    func testNoisyRowsWithNarrowUniqueIDsResolveOnlyTheTrueSeam() throws {
+        for axis in ScrollAxis.allCases {
+            let first = try noisy(listFrame(axis: axis, offset: 1_000, ids: .unique), seed: 1)
+            let next = try noisy(listFrame(axis: axis, offset: 1_127, ids: .unique), seed: 2)
+            var session = try ScrollStitchSession(firstFrame: first, axis: axis, startedAt: 0)
+            guard case .extended(let match, _) = session.accept(next, at: 1) else {
+                return XCTFail("\(axis) unique IDs must resolve the seam")
+            }
+            XCTAssertEqual(match.displacement, 127, "A seam a whole row period away must not win")
+        }
+    }
+
+    /// Near-tied rivals recur every row period, so a tall viewport has well over a hundred.
+    /// That count alone must not stop the true seam from winning, or repetition from pausing.
+    func testTallListsDecideNarrowIDSeamsDespiteManyRivals() throws {
+        for axis in ScrollAxis.allCases {
+            for (ids, displacement) in [(ListIDs.unique, 457), (.repeated, 457)] {
+                let first = try noisy(listFrame(axis: axis, offset: 1_000, ids: ids, extent: 2_600, period: 44), seed: 1)
+                let next = try noisy(listFrame(axis: axis, offset: 1_000 + displacement, ids: ids,
+                                               extent: 2_600, period: 44), seed: 2)
+                let result = ScrollAligner().align(previous: first, current: next, axis: axis)
+                if ids == .unique {
+                    guard case .matched(let match) = result else {
+                        return XCTFail("\(axis) tall list at \(displacement): \(result)")
+                    }
+                    XCTAssertEqual(match.displacement, displacement)
+                } else {
+                    XCTAssertEqual(result, .rejected(.ambiguousContent), "\(axis) tall repeated list")
+                }
+            }
+        }
+    }
+
+    func testNarrowIDColumnsWithoutSeparatingEvidenceStayAmbiguous() throws {
+        // Identical IDs are genuine repetition; re-rendered IDs leave no seam that explains the frame.
+        for axis in ScrollAxis.allCases {
+            for (previousIDs, currentIDs) in [(ListIDs.repeated, ListIDs.repeated), (.unique, .altered)] {
+                let first = try noisy(listFrame(axis: axis, offset: 1_000, ids: previousIDs), seed: 1)
+                let next = try noisy(listFrame(axis: axis, offset: 1_127, ids: currentIDs), seed: 2)
+                var session = try ScrollStitchSession(firstFrame: first, axis: axis, startedAt: 0)
+                XCTAssertEqual(session.accept(next, at: 1), .paused(.ambiguousContent), "\(axis) \(currentIDs)")
+                XCTAssertEqual(session.outputAxisPixels, 900)
+            }
+        }
+    }
+
     func testAppearingChromePausesWithoutChangingTheAcceptedResult() throws {
         let first = try frame(axis: .vertical, offset: 100)
         let accepted = try frame(axis: .vertical, offset: 120)
@@ -330,6 +405,44 @@ final class ScrollingTests: XCTestCase {
             return color(row: period.map { row % $0 } ?? row, cross: cross)
         }
         return try ScrollFrame(width: width, height: height, pixels: pixels)
+    }
+
+    private enum ListIDs { case unique, repeated, altered }
+
+    /// A 1520-pixel-wide viewport of list rows `period` pixels apart. Every row has the same sparse
+    /// text except a 36-pixel ID column at x = 40, which varies per row unless `ids` is `.repeated`.
+    private func listFrame(axis: ScrollAxis, offset: Int, ids: ListIDs,
+                           extent: Int = 900, period: Int = 40) throws -> ScrollFrame {
+        let breadth = 1_520
+        let width = axis == .vertical ? breadth : extent
+        let height = axis == .vertical ? extent : breadth
+        let pixels = (0..<(width * height)).map { index -> UInt32 in
+            let along = axis == .vertical ? index / width : index % width
+            let cross = axis == .vertical ? index % width : index / width
+            let row = (offset + along) / period, inRow = (offset + along) % period
+            guard (10..<22).contains(inRow), cross % 9 < 6 else { return 0xFFFFFFFF }
+            let glyph: Int
+            switch cross {
+            case 40..<76: glyph = switch ids { case .unique: row; case .repeated: 0; case .altered: row + 100_000 }
+            case 96..<1_480: glyph = -1
+            default: return 0xFFFFFFFF
+            }
+            return color(row: glyph, cross: cross / 9 * 31 + inRow) & 0x300 == 0 ? 0x202020FF : 0xFFFFFFFF
+        }
+        return try ScrollFrame(width: width, height: height, pixels: pixels)
+    }
+
+    /// Moves about one pixel in four by one or two levels in one color channel, like capture noise.
+    private func noisy(_ frame: ScrollFrame, seed: Int) throws -> ScrollFrame {
+        let pixels = frame.pixels.enumerated().map { index, pixel -> UInt32 in
+            let hash = color(row: index, cross: seed)
+            guard hash & 0x300 == 0 else { return pixel }
+            let shift = UInt32(8 * (1 + (hash >> 12) % 3))
+            let channel = (pixel >> shift) & 255
+            let moved = channel >= 2 ? channel - 1 - (hash >> 16) % 2 : channel + 1
+            return pixel & ~(255 << shift) | moved << shift
+        }
+        return try ScrollFrame(width: frame.width, height: frame.height, pixels: pixels)
     }
 
     private func color(row: Int, cross: Int) -> UInt32 {

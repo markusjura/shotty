@@ -30,9 +30,13 @@ final class FixtureWindow: NSObject, NSWindowDelegate {
     }
 
     func stop() {
+        pauseAnimation()
+        window.orderOut(nil)
+    }
+
+    func pauseAnimation() {
         timer?.invalidate()
         timer = nil
-        window.orderOut(nil)
     }
 
     func windowWillClose(_ notification: Notification) { stop() }

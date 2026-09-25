@@ -28,6 +28,9 @@ struct ScrollStitchSession: Sendable {
     private(set) var previous: ScrollFrame
     private(set) var axis: ScrollAxis?
     private(set) var outputAxisPixels: Int?
+    /// Output line holding the accepted viewport's first line. Before an accepted step, adding
+    /// the match displacement gives the new frame's line offset within the existing output.
+    var viewportOffset: Int { position - minimumPosition }
     private var minimumStationaryBands = ScrollStationaryBands()
     private var position = 0
     private var minimumPosition = 0

@@ -1,4 +1,5 @@
-import CoreImage
+import CoreGraphics
+import CoreVideo
 import CoreMedia
 import Foundation
 import ScreenCaptureKit
@@ -10,7 +11,7 @@ actor LiveCaptureSource {
     private var generation: UUID?
 
     /// The region is in logical points from this display's top-left, not global coordinates.
-    func start(displayID: CGDirectDisplayID, displayLocalRegion: CGRect, excluding processID: pid_t) async throws -> AsyncThrowingStream<CGImage, Error> {
+    func start(displayID: CGDirectDisplayID, displayLocalRegion: CGRect, excluding processID: pid_t) async throws -> AsyncThrowingStream<CapturedScrollFrame, Error> {
         let request = UUID()
         generation = request
         await stopActiveStream()
@@ -27,18 +28,42 @@ actor LiveCaptureSource {
         let bounds = CGRect(origin: .zero, size: display.frame.size)
         let clipped = displayLocalRegion.standardized.intersection(bounds)
         guard !clipped.isNull, !clipped.isEmpty else { throw CaptureFailure.targetUnavailable }
+        return try await begin(filter: filter, region: clipped, request: request)
+    }
+
+    /// Foundation fixture acquisition. The production region path still captures display pixels.
+    func start(windowID: CGWindowID) async throws -> AsyncThrowingStream<CapturedScrollFrame, Error> {
+        let request = UUID()
+        generation = request
+        await stopActiveStream()
+        try checkGeneration(request)
+        guard CGPreflightScreenCaptureAccess() else { throw CaptureFailure.permissionRequired }
+        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        try checkGeneration(request)
+        guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
+            throw CaptureFailure.targetUnavailable
+        }
+        let filter = SCContentFilter(desktopIndependentWindow: window)
+        return try await begin(filter: filter, region: CGRect(origin: .zero, size: filter.contentRect.size), request: request, cropsRegion: false)
+    }
+
+    private func begin(filter: SCContentFilter, region: CGRect, request: UUID, cropsRegion: Bool = true) async throws -> AsyncThrowingStream<CapturedScrollFrame, Error> {
         let scale = CGFloat(filter.pointPixelScale)
         let configuration = SCStreamConfiguration()
-        configuration.sourceRect = clipped
-        configuration.width = Int(ceil(clipped.width * scale))
-        configuration.height = Int(ceil(clipped.height * scale))
-        _ = try RasterBudget().byteCount(width: configuration.width, height: configuration.height)
+        if cropsRegion { configuration.sourceRect = region }
+        configuration.width = Int(ceil(region.width * scale))
+        configuration.height = Int(ceil(region.height * scale))
+        _ = try CapturePixelConversion.rasterBudget.byteCount(width: configuration.width, height: configuration.height)
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: 30)
         configuration.queueDepth = 3
         configuration.showsCursor = false
         configuration.capturesAudio = false
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
-        let (frames, continuation) = AsyncThrowingStream<CGImage, Error>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        // An unset space uses display-encoded bytes, but the stream's attachments
+        // can describe sRGB. Request an explicit wide-gamut SDR conversion instead.
+        configuration.colorSpaceName = CGColorSpace.displayP3
+        configuration.ignoreShadowsSingleWindow = true
+        let (frames, continuation) = AsyncThrowingStream<CapturedScrollFrame, Error>.makeStream(bufferingPolicy: .bufferingNewest(1))
         let output = FrameOutput(continuation: continuation)
         let stream = SCStream(filter: filter, configuration: configuration, delegate: output)
         try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: output.queue)
@@ -82,29 +107,101 @@ actor LiveCaptureSource {
     }
 }
 
-/// All properties are immutable. CIContext is thread-safe; the continuation synchronizes yields.
+/// Conversion runs on one serial queue; the delivery gate synchronizes stop and yields.
 private final class FrameOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
-    let queue = DispatchQueue(label: "local.markus.Shotty.frames", qos: .userInitiated)
-    private let context = CIContext(options: [.cacheIntermediates: false])
-    private let continuation: AsyncThrowingStream<CGImage, Error>.Continuation
+    let queue: DispatchQueue
+    private let continuation: AsyncThrowingStream<CapturedScrollFrame, Error>.Continuation
+    private let settled: SettledFrameDelivery
 
-    init(continuation: AsyncThrowingStream<CGImage, Error>.Continuation) { self.continuation = continuation }
+    init(continuation: AsyncThrowingStream<CapturedScrollFrame, Error>.Continuation) {
+        let queue = DispatchQueue(label: "local.markus.Shotty.frames", qos: .userInitiated)
+        self.queue = queue
+        self.continuation = continuation
+        settled = SettledFrameDelivery(queue: queue) { continuation.yield($0) }
+    }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .screen, sampleBuffer.isValid,
+        guard !settled.isFinished, type == .screen, sampleBuffer.isValid,
               let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
               let status = attachments.first?[.status] as? Int, status == SCFrameStatus.complete.rawValue,
               let buffer = sampleBuffer.imageBuffer else { return }
-        let image = CIImage(cvPixelBuffer: buffer)
-        // Explicitly retain the buffer's profile instead of using CIContext's default output space.
-        guard let colorSpace = image.colorSpace,
-              let raster = context.createCGImage(image, from: image.extent, format: .BGRA8, colorSpace: colorSpace) else {
-            continuation.finish(throwing: CaptureFailure.noImage)
-            return
+        let capturedAt = sampleBuffer.presentationTimeStamp.seconds
+        guard capturedAt.isFinite, capturedAt >= 0 else { return }
+        do {
+            let raster = try CapturePixelConversion.image(from: buffer)
+            settled.submit(raster, capturedAt: capturedAt)
+        } catch {
+            settled.finish()
+            continuation.finish(throwing: error)
         }
-        continuation.yield(raster)
     }
 
-    func stream(_ stream: SCStream, didStopWithError error: Error) { continuation.finish(throwing: error) }
-    func finish() { continuation.finish() }
+    func stream(_ stream: SCStream, didStopWithError error: Error) {
+        settled.finish()
+        continuation.finish(throwing: error)
+    }
+    func finish() {
+        settled.finish()
+        continuation.finish()
+    }
+}
+
+/// Copies only BGRA pixel bytes, with no rendering, transfer-function conversion or
+/// borrowed CVPixelBuffer storage. The returned image remains valid after unlock/reuse.
+enum CapturePixelConversion {
+    static let rasterBudget = RasterBudget(maximumBytes: 64 * 1_024 * 1_024)
+
+    static func image(from buffer: CVPixelBuffer, budget: RasterBudget = rasterBudget) throws -> CGImage {
+        guard CVPixelBufferGetPixelFormatType(buffer) == kCVPixelFormatType_32BGRA,
+              !CVPixelBufferIsPlanar(buffer) else { throw Failure.unsupportedPixelFormat }
+        let width = CVPixelBufferGetWidth(buffer)
+        let height = CVPixelBufferGetHeight(buffer)
+        let count = try budget.byteCount(width: width, height: height)
+        let rowBytes = width * 4
+        let sourceStride = CVPixelBufferGetBytesPerRow(buffer)
+        guard sourceStride >= rowBytes else { throw Failure.unsupportedPixelFormat }
+        let space = try colorSpace(of: buffer)
+        let alphaMode = CVBufferCopyAttachment(buffer, kCVImageBufferAlphaChannelModeKey, nil)
+        let straight = alphaMode.map { CFEqual($0, kCVImageBufferAlphaChannelMode_StraightAlpha) } ?? false
+        let alpha: CGImageAlphaInfo = straight ? .first : .premultipliedFirst
+        guard CVPixelBufferLockBaseAddress(buffer, .readOnly) == kCVReturnSuccess else { throw CaptureFailure.noImage }
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        guard let source = CVPixelBufferGetBaseAddress(buffer) else { throw CaptureFailure.noImage }
+        var pixels = Data(count: count)
+        pixels.withUnsafeMutableBytes { destination in
+            for row in 0..<height {
+                memcpy(destination.baseAddress! + row * rowBytes, source + row * sourceStride, rowBytes)
+            }
+        }
+        guard let provider = CGDataProvider(data: pixels as CFData),
+              let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                  bytesPerRow: rowBytes, space: space,
+                  bitmapInfo: CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Little.rawValue | alpha.rawValue),
+                  provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else {
+            throw CaptureFailure.noImage
+        }
+        return image
+    }
+
+    private static func colorSpace(of buffer: CVPixelBuffer) throws -> CGColorSpace {
+        if let value = CVBufferCopyAttachment(buffer, kCVImageBufferCGColorSpaceKey, nil) {
+            guard CFGetTypeID(value) == CGColorSpace.typeID else { throw Failure.missingColorProfile }
+            return value as! CGColorSpace
+        }
+        guard let attachments = CVBufferCopyAttachments(buffer, .shouldPropagate),
+              let space = CVImageBufferCreateColorSpaceFromAttachments(attachments)?.takeRetainedValue() else {
+            throw Failure.missingColorProfile
+        }
+        return space
+    }
+
+    enum Failure: LocalizedError {
+        case unsupportedPixelFormat, missingColorProfile
+        var errorDescription: String? {
+            switch self {
+            case .unsupportedPixelFormat: "The stream did not supply supported BGRA pixels."
+            case .missingColorProfile: "The stream did not supply a usable color profile. Capture paused to preserve color."
+            }
+        }
+    }
 }

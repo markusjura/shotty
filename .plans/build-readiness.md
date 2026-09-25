@@ -6,7 +6,9 @@ Repository rename verified: the checkout is `/Users/mj/workspace/shotty` and ori
 
 ## What is decided
 
-Build the full requested replacement in one implementation effort, including native testing and fleet installation. Work through the foundation experiments first, then complete every feature. Do not stop after a capture-only MVP or treat preview limitations as omissions from the app. Do not wait for Markus to make ordinary implementation choices, tune numeric defaults, or test behavior the agent can exercise itself.
+Build the full requested replacement in one implementation effort, including native testing on studio. Markus narrowed the scope on 25 September 2026: all implementation and verification in this PR stays on studio; m1 synchronization, installation, and fleet testing belong in a separate PR after implementation is complete. Work through the foundation experiments first, then complete every feature. Do not stop after a capture-only MVP or treat preview limitations as omissions from the app. Do not wait for Markus to make ordinary implementation choices, tune numeric defaults, or test behavior the agent can exercise itself.
+
+Markus explicitly reinforced low resource consumption and performance during implementation. Keep the design simple: bound concurrent image work and buffers, release streams/tasks/timers on every terminal path, keep idle CPU near zero, and profile repeated sessions for leaks. Measurements must justify additional optimization machinery; a growing cache or successful single run does not establish bounded memory.
 
 The requested capture modes, editor tools, thumbnail behavior, settings, native blue accent, System/Light/Dark, and default menu-bar-only lifecycle are fixed. The prototype's single-row editor and flat Settings hierarchy are approved. Translate these into native SwiftUI/AppKit components; do not reproduce browser control styling.
 
@@ -49,7 +51,7 @@ These are experiments, not preferences to ask Markus to guess. Record measured r
 1. Frozen window pixels. Prove that the image selected under the frozen window overlay is exactly the isolated image exported, including occluded regions and shadow. Evaluate per-window snapshot acquisition before showing the freeze surface and bound its latency/memory. Multiple captures need not be temporally atomic, but no frozen preview may export a later live frame. Desktop cropping is not a substitute for isolated-window capture. If supported APIs cannot meet both semantics, present the measured conflict and concrete alternatives before changing this requirement.
 2. Universal scrolling. Use captured pixels, not per-app adapters. Establish reliable alignment, stationary-band handling, reverse-scroll recovery, repeated-row ambiguity, and physical-versus-injected scroll input. Observe mouse scrolling without requesting Input Monitoring or Accessibility in the manual-only path; verify this in a fresh permission state. If this cannot be done with supported mouse-event observation, resolve it explicitly before adding a permission.
 3. Bounded export. Validate the 30,000-pixel/120-second defaults together with width and memory limits. Size buffers with overflow checks and reject or pause before memory exhaustion. The final encoder's memory use must be measured; disk-backed tiles alone do not prove bounded final export memory.
-4. Signing and updates. Issue the free identity where the account supports it, build a signed test app, and verify install, capture permissions, and an updated build on both Macs. No certificate, provisioning, or Gatekeeper result is assumed from successful compilation alone.
+4. Signing and updates. Reuse the free identity, build a signed test app, and verify install, capture permissions, and an updated build on studio. Defer m1 to the separately requested fleet PR. No certificate, provisioning, or Gatekeeper result is assumed from successful compilation alone.
 
 ## Tests owned by the implementation agent
 

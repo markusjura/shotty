@@ -1,16 +1,22 @@
 # Signing verification: free Apple Development certificate for Shotty
 
-## Native target verification, 25 September 2026
+## Current status, 25 September 2026
 
-The milestone-0 Shotty target now builds with the existing identity, bundle identifier `local.markus.Shotty`, macOS 26 deployment target, and Hardened Runtime. The signed Release app passes `codesign --verify --deep --strict`, has no embedded provisioning profile, and has no entitlements after disabling Xcode's injected development entitlements for Release. An initial install and a rebuilt update both launched at `/Applications/Shotty.app` on studio through Computer Use; their designated requirements match. Screen Recording has not yet been granted, so permission continuity remains untested. Actual launch and permission checks on m1 are still pending. See [native verification](native-verification.md) for the current evidence and remaining gates. No paid membership, Developer ID identity, notarization, key export, or security bypass was used.
+The free Apple Development identity signs the Shotty target on studio. The bundle identifier is `local.markus.Shotty`, the deployment target is macOS 26, and Hardened Runtime is on. The signed Release app passes `codesign --verify --deep --strict`. It has no embedded provisioning profile, and entitlement inspection is empty because Release disables Xcode's injected development entitlements. App Sandbox is off.
 
-## Observed setup result, 25 September 2026
+The app is installed at `/Applications/Shotty.app` on studio and has launched through Computer Use after several signed Release replacements. The first install and the first rebuilt update had identical designated requirements. Markus granted Screen Recording and Accessibility, and both remained available after multiple signed Release replacements. Evidence and remaining gates are in [native verification](native-verification.md).
 
-Markus signed into Xcode on studio. The free Personal Team is available. Manual Manage Certificates initially showed Apple Development disabled; selecting the Personal Team for a disposable target triggered automatic creation. `security find-identity -v -p codesigning` now reports one valid Apple Development identity. The issuer is Apple Worldwide Developer Relations Certification Authority, G3. The certificate is valid from 25 September 2026 at 14:00:20 UTC until 25 September 2027 at 14:00:19 UTC. The private key remains in the login keychain; nothing was exported or committed.
+No paid membership, Developer ID identity, notarization, key export, or security bypass was used. m1 launch, its own permission grants, and update continuity there are deferred to a separate fleet PR at Markus's request. A signed harness was copied to m1 before that scope change and its signature checked, but it was never launched there.
 
-A disposable project at `/tmp/ShottySigningProbe` built successfully with Xcode 27 for macOS arm64, Release configuration, Apple Development signing, Hardened Runtime enabled, App Sandbox disabled, and bundle identifier `local.markus.ShottySigningProbe`. Output is `/tmp/ShottySigningProbe-build/Build/Products/Release/ShottySigningProbe.app`; build log is `/tmp/shotty-signing-build.log`. This probe is outside the repository and is not the Shotty application. Explicit signature/entitlement/profile inspection, actual launch on each Mac, and update/TCC-continuity tests have not yet run. The user requested a pause before app implementation to rename the GitHub repository/local folder and restart the desktop app.
+## Identity setup, 25 September 2026
 
-The research below predates this successful identity creation and build. Its initial no-identity statements describe the earlier state, not a current blocker. Developer ID and notarization remain unavailable on the free route.
+Markus signed into Xcode on studio. The free Personal Team is available. Manual Manage Certificates initially showed Apple Development disabled; selecting the Personal Team for a disposable target triggered automatic creation. `security find-identity -v -p codesigning` reports one valid Apple Development identity. The issuer is Apple Worldwide Developer Relations Certification Authority, G3. The certificate is valid from 25 September 2026 at 14:00:20 UTC until 25 September 2027 at 14:00:19 UTC. The private key remains in the login keychain; nothing was exported or committed.
+
+Before the Shotty target existed, a disposable probe project at `/tmp/ShottySigningProbe` (bundle identifier `local.markus.ShottySigningProbe`) built with the same settings. It is outside the repository and is superseded by the Shotty target results above.
+
+## Background research
+
+The research below was done before the identity existed. Its starting state of zero identities is historical, not a current blocker. Developer ID and notarization remain unavailable on the free route.
 
 Scope: sign Shotty, a private macOS app, with a free Apple Account (Xcode Personal Team) and run it on `mj-studio` and `mj-m1`. Researched 2026-09-25 from Apple primary sources. Nothing was created or changed in Xcode, keychains, or the Apple account. Starting state: `security find-identity -v -p codesigning` on `mj-studio` reports 0 valid identities.
 
@@ -37,8 +43,8 @@ A free Apple Account can get an Apple Development certificate for a macOS app th
 
 ## Corrections to earlier claims
 
-- Personal Teams can sign macOS apps with Apple Development. The capability reference, certificate types table, and DTS all say so. The earlier open question "whether Personal Teams sign macOS app targets" is resolved as yes by documentation. Xcode 27 behavior still needs one confirmation build.
-- Do not describe Personal Team Mac builds as expiring every 7 days. The 7-day figure applies to Personal Team App IDs, devices, and provisioning profiles, and Apple states it without naming a platform. On macOS, a profile is only needed for restricted entitlements (TN3125). If Shotty has no `embedded.provisionprofile`, the 7-day profile expiry has nothing to act on. That is an inference from TN3125 and must be checked in the built app.
+- Personal Teams can sign macOS apps with Apple Development. The capability reference, certificate types table, and DTS all say so. The earlier open question "whether Personal Teams sign macOS app targets" is resolved as yes by documentation and by the Shotty Release build on studio.
+- Do not describe Personal Team Mac builds as expiring every 7 days. The 7-day figure applies to Personal Team App IDs, devices, and provisioning profiles, and Apple states it without naming a platform. On macOS, a profile is only needed for restricted entitlements (TN3125). If Shotty has no `embedded.provisionprofile`, the 7-day profile expiry has nothing to act on. The built Shotty app confirms it has no profile.
 - The Personal Team certificate lifetime is not documented. Do not state a number.
 
 ## Steps
@@ -58,12 +64,18 @@ Markus signs in, because that creates credentials:
    - Copy the app from `mj-studio` (`ditto`/`rsync` over SSH). One identity and one DR cover both Macs.
    - Sign in on `mj-m1` and build there. Each Mac then gets its own development certificate. Whether both certificates share the same CN, and so satisfy one DR, is untested.
 
-## Unresolved empirical tests
+## Empirical tests
 
-1. Xcode 27 with a Personal Team builds and signs the macOS Shotty target without an `embedded.provisionprofile`.
-2. The Personal Team Apple Development certificate's `notAfter` date. Does Shotty still launch after that date, with no rebuild? Record whether the signature has a secure timestamp (`codesign -dv` shows `Timestamp=` for secure timestamps). Without one, expiry behavior is unknown (inference). Keep one untouched build to test this.
-3. The copied app launches on `mj-m1` with no Gatekeeper prompt. Check `xattr -l Shotty.app` for `com.apple.quarantine` after the copy, but judge the result by the actual launch. Record `spctl -a -vv Shotty.app` output for reference. Apple Development code is expected to be "rejected" by spctl assessment, even though an unquarantined copy may still launch.
-4. The Screen Recording grant survives a rebuild on each Mac (same DR). It also survives a Personal Team certificate renewal: compare `codesign -d -r-` before and after.
-5. Long-running check: Shotty still launches after 7 days and after 30 days without a rebuild on both Macs. This directly tests the thread 705932 failure mode.
+Resolved on studio:
 
-If test 2, 3, or 5 fails, the fallbacks are rebuilding periodically (free) or the Apple Developer Program with Developer ID and notarization (99 USD/year), which is the only Apple-documented path that passes Gatekeeper.
+- Xcode 27 with the Personal Team signs the macOS Shotty target without an `embedded.provisionprofile`.
+- The Screen Recording and Accessibility grants survive signed Release rebuilds on studio.
+
+Still open:
+
+1. Does Shotty still launch after the certificate's `notAfter` date (25 September 2027) with no rebuild? Record whether the signature has a secure timestamp (`codesign -dv` shows `Timestamp=` for secure timestamps). Without one, expiry behavior is unknown (inference). Keep one untouched build to test this.
+2. Do the permission grants survive a Personal Team certificate renewal? Compare `codesign -d -r-` before and after.
+3. Long-running check: Shotty still launches after 7 days and after 30 days without a rebuild. This directly tests the thread 705932 failure mode.
+4. Fleet PR: the copied app launches on `mj-m1` with no Gatekeeper prompt, gets its own grants, and keeps them across an update. Check `xattr -l Shotty.app` for `com.apple.quarantine` after the copy, but judge the result by the actual launch. Record `spctl -a -vv Shotty.app` for reference; Apple Development code is expected to be rejected by spctl assessment even though an unquarantined copy may still launch.
+
+If test 1, 3, or 4 fails, the fallbacks are rebuilding periodically (free) or the Apple Developer Program with Developer ID and notarization (99 USD/year), which is the only Apple-documented path that passes Gatekeeper.

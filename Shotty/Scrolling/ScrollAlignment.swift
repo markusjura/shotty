@@ -119,16 +119,19 @@ struct ScrollAligner: Sendable {
             candidates.append(Candidate(displacement: displacement, error: error, exact: exact))
         }
         candidates.sort { $0.exact == $1.exact ? $0.error < $1.error : $0.exact }
-        guard let best = candidates.first, best.error <= 0.012 else {
+        guard var best = candidates.first, best.error <= 0.012 else {
             return .rejected(.insufficientOverlap)
         }
-        // A unique exact overlap resolves coarse-sampling ambiguity on sparse text.
-        // Otherwise distinct plausible seams, including repeated rows, are rejected.
-        if let alternative = candidates.first(where: {
-            best.exact ? $0.displacement != best.displacement : abs($0.displacement - best.displacement) > 1
-        }),
-           best.exact ? alternative.exact : alternative.error - best.error < 0.008 {
-            return .rejected(.ambiguousContent)
+        // A unique exact overlap resolves coarse-sampling ambiguity on sparse text. Render noise
+        // defeats exactness, so near-tied approximate seams are re-ranked with denser samples.
+        // Distinct plausible seams, including repeated rows, are rejected.
+        if best.exact {
+            if candidates.dropFirst().contains(where: \.exact) { return .rejected(.ambiguousContent) }
+        } else {
+            guard let resolved = resolveNearTies(candidates, previous, current, axis: axis, bands: candidateBands) else {
+                return .rejected(.ambiguousContent)
+            }
+            best = resolved
         }
         let bands = refineStationaryBands(candidateBands, previous: previous, current: current,
                                           axis: axis, displacement: best.displacement)
@@ -146,6 +149,64 @@ struct ScrollAligner: Sendable {
         }
         return .matched(ScrollMatch(axis: axis, displacement: best.displacement, bands: bands, replacementBands: candidateBands,
                                     confidence: max(0, 1 - verified.mean / 0.012)))
+    }
+
+    /// Picks among approximate seams: the coarse best, its ±1 neighbors, and rivals whose coarse
+    /// errors lie within the ambiguity margin. 24 × 16 samples can miss sparse glyphs, so these are
+    /// re-ranked with 192 × 64 samples under the same margin.
+    ///
+    /// Rivals that remain close are judged by strong outliers across the full breadth. Mean errors
+    /// dilute a narrow distinguishing region, such as unique row IDs beside repeated text, and a
+    /// wrong period-multiple seam there can stay within the 2.5% outlier tolerances of the final
+    /// verification and the output overlap check. Render noise stays far below the outlier level,
+    /// so the leader must leave almost none, while each rival must leave at least 8× as many and
+    /// at least 100. Genuinely repeated content, or content that changed so no seam explains it,
+    /// lacks that separation and stays ambiguous.
+    ///
+    /// Lists produce a few rivals per row period, so their count grows with the viewport. Rivals
+    /// on more than an eighth of all displacements indicate nearly uniform content; the cap and
+    /// the early exit on each rival's count bound the work.
+    private func resolveNearTies(_ sorted: [Candidate], _ previous: ScrollFrame, _ current: ScrollFrame,
+                                 axis: ScrollAxis, bands: ScrollStationaryBands) -> Candidate? {
+        func rivals(_ leader: Candidate, among pool: some Sequence<Candidate>) -> [Candidate] {
+            pool.filter { abs($0.displacement - leader.displacement) > 1 && $0.error - leader.error < 0.008 }
+        }
+        let coarseRivals = rivals(sorted[0], among: sorted.dropFirst())
+        guard coarseRivals.count <= max(64, sorted.count / 8) else { return nil }
+        let neighbors = sorted.filter { abs($0.displacement - sorted[0].displacement) == 1 }
+        let reranked = ([sorted[0]] + neighbors + coarseRivals).map { candidate in
+            Candidate(displacement: candidate.displacement,
+                      error: difference(previous, current, axis: axis, bands: bands, displacement: candidate.displacement,
+                                        lineSamples: 192, crossSamples: 64).mean,
+                      exact: false)
+        }.sorted { $0.error < $1.error }
+        let leader = reranked[0]
+        let closeRivals = rivals(leader, among: reranked.dropFirst())
+        guard !closeRivals.isEmpty else { return leader }
+        let leaderOutliers = strongOutliers(previous, current, axis: axis, bands: bands,
+                                            displacement: leader.displacement, stoppingAt: .max)
+        let required = max(100, 8 * leaderOutliers)
+        return closeRivals.allSatisfy({
+            strongOutliers(previous, current, axis: axis, bands: bands,
+                           displacement: $0.displacement, stoppingAt: required) >= required
+        }) ? leader : nil
+    }
+
+    /// Pixels differing visibly after translation, on 192 overlapping lines at full breadth.
+    /// Counting stops once `limit` is reached.
+    private func strongOutliers(_ previous: ScrollFrame, _ current: ScrollFrame, axis: ScrollAxis,
+                                bands: ScrollStationaryBands, displacement: Int, stoppingAt limit: Int) -> Int {
+        let start = bands.leading + max(0, -displacement)
+        let end = previous.extent(along: axis) - bands.trailing - max(0, displacement)
+        let breadth = previous.breadth(along: axis)
+        var total = 0
+        for line in positions(count: end - start, samples: 192) where total < limit {
+            total += (0..<breadth).count {
+                colorDifference(previous.pixel(along: start + line + displacement, across: $0, axis: axis),
+                                current.pixel(along: start + line, across: $0, axis: axis)) > 0.05
+            }
+        }
+        return total
     }
 
     private func stationaryBands(_ previous: ScrollFrame, _ current: ScrollFrame, axis: ScrollAxis) -> ScrollStationaryBands {

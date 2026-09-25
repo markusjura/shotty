@@ -1,0 +1,232 @@
+<!doctype html>
+<!--
+  Synthetic browser scrolling fixture for Shotty capture and stitching tests. Developer utility only.
+  Open directly or serve the directory. Select a mode with the header buttons or a hash:
+  #page (long prose, sticky header/footer), #nested (inner scroll region), #thread (virtualized, bounded DOM),
+  #horizontal (overflow-x region). Advance 80, Reverse 40, and Reset move the active scroller instantly.
+  body[data-mode], body[data-offset], and body[data-rendered] expose state to harnesses.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shotty Scrolling Fixture</title>
+<style>
+  :root { color-scheme: light; font: 15px/1.5 -apple-system, system-ui, sans-serif; color: #1a1a1a; background: #fff; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; scroll-behavior: auto; }
+  body.fixed { height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+  body.fixed > main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  header, footer { position: sticky; z-index: 2; background: #fff; padding: 16px 24px; }
+  header { top: 0; }
+  footer { bottom: 0; }
+  header h1 { margin: 0 0 12px; font-size: 16px; }
+  header nav { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button { font: inherit; font-size: 13px; padding: 4px 10px; }
+  button[aria-pressed="true"] { background: #1a1a1a; color: #fff; }
+  .id { font: 700 12px ui-monospace, Menlo, monospace; margin-right: 12px; }
+  .swatch { display: inline-block; width: 10px; height: 10px; margin-right: 8px; }
+  section[hidden] { display: none !important; }
+  /* Keep focus rings from changing captured pixels after clicking into a scroller. */
+  #nested, #thread, #wide { outline: none; }
+
+  #page-section { padding: 0 24px; }
+  #page-section p { margin: 0 0 14px; max-width: 70ch; }
+  #page-section h2 { margin: 28px 0 12px; font-size: 20px; }
+  .spacer { height: 48px; }
+
+  #nested-section { padding: 0 24px; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #nested { flex: 1; min-height: 0; overflow-y: auto; border: 1px solid #d0d0d0; margin: 8px 0; }
+  #nested .row { height: 28px; padding: 3px 12px; white-space: nowrap; }
+
+  #thread-section { flex: 1; min-height: 0; display: flex; }
+  #thread { flex: 1; overflow-y: auto; position: relative; }
+  #thread .item { position: absolute; left: 0; right: 0; padding: 6px 24px; overflow: hidden; }
+  #thread .bubble { display: inline-block; max-width: 70%; padding: 8px 12px; border-radius: 12px; background: #f0f0f0; }
+  #thread .item.mine { text-align: right; }
+  #thread .item.mine .bubble { background: #dcebff; text-align: left; }
+  #thread .day { text-align: center; font-size: 12px; color: #666; padding-top: 12px; }
+
+  #horizontal-section { flex: 1; min-height: 0; display: flex; padding: 0 24px; }
+  #wide { flex: 1; overflow-x: auto; overflow-y: hidden; display: flex; border: 1px solid #d0d0d0; }
+  #wide .column { flex: none; padding: 12px 8px; }
+  #wide .column p { margin: 0; height: 22px; white-space: nowrap; }
+
+  #ticker { position: fixed; top: 45%; right: 40px; z-index: 3; font: 700 16px ui-monospace, Menlo, monospace; color: #d00; background: #fff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Fixture Header (sticky, white padding)</h1>
+  <nav>
+    <button id="advance">Advance 80</button>
+    <button id="reverse">Reverse 40</button>
+    <button id="reset">Reset</button>
+    <span>|</span>
+    <button data-mode="page">Page</button>
+    <button data-mode="nested">Nested</button>
+    <button data-mode="thread">Thread</button>
+    <button data-mode="horizontal">Horizontal</button>
+    <span>|</span>
+    <button id="unstable" aria-pressed="false">Unstable</button>
+  </nav>
+</header>
+<main>
+  <section id="page-section"></section>
+  <section id="nested-section">
+    <p>Static text above the nested region. Only the bordered box scrolls in this mode.</p>
+    <div id="nested"></div>
+    <p>Static text below the nested region.</p>
+  </section>
+  <section id="thread-section"><div id="thread"></div></section>
+  <section id="horizontal-section"><div id="wide"></div></section>
+</main>
+<footer>Fixture Footer (sticky)</footer>
+<div id="ticker" hidden></div>
+<script>
+"use strict";
+
+const WORDS = ["amber", "basalt", "cobalt", "delta", "ember", "fjord", "garnet", "harbor", "indigo", "juniper",
+  "kelp", "lantern", "meadow", "nickel", "orchid", "pewter", "quartz", "raven", "saffron", "tundra",
+  "umber", "violet", "willow", "xenon", "yarrow", "zephyr", "anchor", "birch", "cinder", "dune",
+  "estuary", "fennel", "glacier", "heron", "ivory", "jasper", "kestrel", "lichen", "marble", "nimbus",
+  "onyx", "prairie", "quill", "ridge", "sierra", "thistle", "upland", "vapor", "wren", "yonder"];
+
+/** Deterministic words for an item: the same index and salt always give the same text. */
+function words(index, salt, min, max) {
+  let state = (index * 0x9e3779b1 + salt * 0x85ebca6b + 1) >>> 0;
+  const next = () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(state ^ (state >>> 15), state | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return (t ^ (t >>> 14)) >>> 0;
+  };
+  const count = min + (next() % (max - min + 1));
+  return Array.from({ length: count }, () => WORDS[next() % WORDS.length]).join(" ");
+}
+const id = (prefix, index) => prefix + String(index).padStart(4, "0");
+const swatch = (index) => `<span class="swatch" style="background:hsl(${(index * 37) % 360} 60% 55%)"></span>`;
+const isBlank = (index) => index % 7 === 3;
+
+// Long prose for page mode, with headings and blank spacers.
+document.getElementById("page-section").innerHTML = Array.from({ length: 160 }, (_, i) => {
+  const index = i + 1;
+  if (index % 20 === 0) return `<h2>${id("Section ", index / 20)}</h2>`;
+  if (isBlank(index)) return `<div class="spacer"></div>`;
+  return `<p>${swatch(index)}<span class="id">${id("P", index)}</span>${words(index, 0, 18, 60)}</p>`;
+}).join("");
+
+// Plain rows for the nested scroll region.
+document.getElementById("nested").innerHTML = Array.from({ length: 220 }, (_, i) => {
+  const index = i + 1;
+  const body = isBlank(index) ? "" : `${swatch(index)}<span class="id">${id("N", index)}</span>${words(index, 1, 4, 10)}`;
+  return `<div class="row">${body}</div>`;
+}).join("");
+
+// Columns for the horizontal region.
+document.getElementById("wide").innerHTML = Array.from({ length: 48 }, (_, i) => {
+  const index = i + 1;
+  const width = isBlank(index) ? 48 : index % 5 === 1 ? 200 : 150;
+  const body = isBlank(index) ? "" : `<p>${swatch(index)}<span class="id">${id("C", index)}</span></p>` +
+    Array.from({ length: 14 }, (_, line) => `<p>${isBlank(line + index) ? "" : words(index, line + 2, 1, 2)}</p>`).join("");
+  return `<div class="column" style="width:${width}px">${body}</div>`;
+}).join("");
+
+// Virtualized thread: 3000 messages with deterministic heights. Only items near the viewport exist in the DOM.
+const thread = document.getElementById("thread");
+const threadItems = [];
+for (let index = 1, top = 0; index <= 3000; index++) {
+  const day = index % 40 === 1;
+  const lines = 1 + ((index * 7) % 3);
+  const height = (day ? 36 : 0) + 20 + lines * 22;
+  threadItems.push({ index, top, height, day, lines });
+  top += height;
+}
+const last = threadItems[threadItems.length - 1];
+const threadSpacer = document.createElement("div");
+threadSpacer.style.height = `${last.top + last.height}px`;
+thread.append(threadSpacer);
+
+function renderThread() {
+  const overscan = 300;
+  const from = thread.scrollTop - overscan;
+  const to = thread.scrollTop + thread.clientHeight + overscan;
+  const visible = threadItems.filter((item) => item.top + item.height >= from && item.top <= to);
+  thread.replaceChildren(threadSpacer, ...visible.map((item) => {
+    const node = document.createElement("div");
+    node.className = item.index % 3 === 0 ? "item mine" : "item";
+    node.style.top = `${item.top}px`;
+    node.style.height = `${item.height}px`;
+    const text = Array.from({ length: item.lines }, (_, line) => words(item.index, line + 10, 3, 7)).join("<br>");
+    node.innerHTML = (item.day ? `<div class="day">Day ${Math.floor(item.index / 40) + 1}</div>` : "") +
+      `<div class="bubble"><span class="id">${id("M", item.index)}</span>${text}</div>`;
+    return node;
+  }));
+  document.body.dataset.rendered = String(visible.length);
+}
+thread.addEventListener("scroll", renderThread);
+
+// Mode switching and scroll controls.
+const scrollers = {
+  page: { element: () => document.scrollingElement, axis: "top" },
+  nested: { element: () => document.getElementById("nested"), axis: "top" },
+  thread: { element: () => thread, axis: "top" },
+  horizontal: { element: () => document.getElementById("wide"), axis: "left" },
+};
+let mode = "page";
+
+function report() {
+  const { element, axis } = scrollers[mode];
+  const target = element();
+  document.body.dataset.offset = String(Math.round(axis === "top" ? target.scrollTop : target.scrollLeft));
+}
+
+function setMode(next) {
+  mode = next in scrollers ? next : "page";
+  document.body.dataset.mode = mode;
+  document.body.classList.toggle("fixed", mode !== "page");
+  for (const name of Object.keys(scrollers)) document.getElementById(`${name}-section`).hidden = name !== mode;
+  for (const button of document.querySelectorAll("button[data-mode]")) {
+    button.setAttribute("aria-pressed", String(button.dataset.mode === mode));
+  }
+  if (location.hash !== `#${mode}`) history.replaceState(null, "", `#${mode}`);
+  scrollBy(-Infinity);
+  if (mode === "thread") renderThread();
+}
+
+function scrollBy(delta) {
+  const { element, axis } = scrollers[mode];
+  const target = element();
+  const current = axis === "top" ? target.scrollTop : target.scrollLeft;
+  const value = Number.isFinite(delta) ? current + delta : 0;
+  target.scrollTo({ [axis]: value, behavior: "instant" });
+  report();
+}
+
+document.getElementById("advance").addEventListener("click", () => scrollBy(80));
+document.getElementById("reverse").addEventListener("click", () => scrollBy(-40));
+document.getElementById("reset").addEventListener("click", () => scrollBy(-Infinity));
+for (const button of document.querySelectorAll("button[data-mode]")) {
+  button.addEventListener("click", () => setMode(button.dataset.mode));
+}
+for (const { element } of Object.values(scrollers)) {
+  (element() === document.scrollingElement ? window : element()).addEventListener("scroll", report);
+}
+addEventListener("hashchange", () => setMode(location.hash.slice(1)));
+
+// Explicit instability: a ticking counter over the scrolled content, only while enabled.
+const ticker = document.getElementById("ticker");
+let tickTimer = 0;
+document.getElementById("unstable").addEventListener("click", (event) => {
+  const enabled = event.currentTarget.getAttribute("aria-pressed") !== "true";
+  event.currentTarget.setAttribute("aria-pressed", String(enabled));
+  clearInterval(tickTimer);
+  ticker.hidden = !enabled;
+  let tick = 0;
+  if (enabled) tickTimer = setInterval(() => { ticker.textContent = `tick ${String(++tick).padStart(4, "0")}`; }, 250);
+});
+
+setMode(location.hash.slice(1));
+</script>
+</body>
+</html>

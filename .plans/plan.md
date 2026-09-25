@@ -2,6 +2,10 @@
 
 Status: revised product and implementation plan, 25 September 2026. Milestone 0 is in progress; a signed native foundation harness and focused tests exist, but its engineering gates have not passed. Measured results and pending checks are tracked in [native verification](native-verification.md). A free Apple Development signing identity was created on studio during the readiness pass; signed-build validation is tracked in [signing-verification.md](signing-verification.md). The design preview is an interaction mockup, not a running SwiftUI app. The [build contract](build-readiness.md) records final decisions and takes precedence over earlier proposals. The detailed [interaction specification](interaction-spec.md) defines the refined UX, grounded in the [CleanShot feature audit](cleanshot-reference.md), and takes precedence over the preview.
 
+## Current implementation scope
+
+Markus narrowed this effort on 25 September 2026 to studio only. Complete implementation and native verification here; m1 synchronization, installation, performance testing, and fleet acceptance move to a separate PR after implementation. References to both machines below remain the eventual fleet requirements and do not block this implementation milestone.
+
 ## Product decision
 
 Build a small, local macOS screenshot utility for Markus. SwiftUI owns settings and most controls; AppKit owns application lifecycle, capture overlays, floating panels, keyboard routing, and the editor canvas. ScreenCaptureKit captures pixels, Vision recognizes text, and Core Graphics renders the final image. Use native windows, SF Symbols, system typography, standard menus, and platform focus behavior. Platform facts and source links are collected in [platform-research.md](platform-research.md).
