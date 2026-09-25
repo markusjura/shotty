@@ -81,6 +81,7 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard NSClassFromString("XCTestCase") == nil else { return }
+        coordinator.thumbnails.commands = commands
         coordinator.recognizeText = { [weak self] image, settings, ticket in self?.textCapture.start(image, settings: settings, ticket: ticket) }
         coordinator.startScrolling = { [weak self] region, window, process, display, settings, ticket in
             self?.scrollingCapture.start(region: region, windowID: window, processID: process, displayID: display, settings: settings, ticket: ticket)

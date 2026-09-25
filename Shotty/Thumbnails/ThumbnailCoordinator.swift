@@ -12,13 +12,33 @@ final class ThumbnailCoordinator {
         var image: NSImage
         var status: String?
     }
-    enum Action { case open, copy, save, saveAs, dismiss }
+    enum Action {
+        case open, copy, save, saveAs, dismiss
+
+        /// Copy and save share the editor's registry commands, so remapped or cleared bindings apply
+        /// to cards as well. Open and Dismiss use the card's fixed Return/Space and Delete keys.
+        var command: CommandID? {
+            switch self {
+            case .copy: .copyImage
+            case .save: .save
+            case .saveAs: .saveAs
+            case .open, .dismiss: nil
+            }
+        }
+
+        /// The action a focused card runs for `shortcut`, given the current bindings.
+        static func matching(_ shortcut: Shortcut, bindings: (CommandID) -> Shortcut?) -> Action? {
+            [Action.copy, .save, .saveAs].first { $0.command.flatMap(bindings) == shortcut }
+        }
+    }
 
     /// Newest first.
     private(set) var cards: [Card] = []
     var hidden = false
     var undoAvailable = false
     var perform: ((UUID, Action) -> Void)?
+    /// Supplies current command bindings; nil falls back to the registry defaults.
+    var commands: CommandRegistry?
     var undo: (() -> Void)?
     var makePromise: ((UUID) -> NSFilePromiseProvider?)?
     /// Reports the drag outcome; `keepCard` is true when Option was held at the drop.
@@ -49,6 +69,20 @@ final class ThumbnailCoordinator {
     private var targetDisplay: CGDirectDisplayID?
 
     init(preferences: AppPreferences) { self.preferences = preferences }
+
+    /// The binding a card should honour for `action`. Recording suspends every card shortcut.
+    func shortcut(for action: Action) -> Shortcut? {
+        guard let command = action.command, commands?.recordingCommand == nil else { return nil }
+        return commands.map { $0.shortcut(for: command) } ?? command.defaultShortcut
+    }
+
+    /// The card action bound to `shortcut`, if any.
+    func cardAction(for shortcut: Shortcut) -> Action? {
+        guard commands?.recordingCommand == nil else { return nil }
+        return Action.matching(shortcut) { command in
+            self.commands.map { $0.shortcut(for: command) } ?? command.defaultShortcut
+        }
+    }
 
     var isLocked: Bool { !interactions.isEmpty || externalLocks > 0 }
     var placement: ThumbnailPlacement { preferences.thumbnails.placement }
@@ -409,16 +443,26 @@ private final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate
     }
 
     override func keyDown(with event: NSEvent) {
-        guard let captureID else { return super.keyDown(with: event) }
-        let command = event.modifierFlags.contains(.command), shift = event.modifierFlags.contains(.shift)
-        switch (event.keyCode, command) {
-        case (36, false), (49, false), (76, false): coordinator?.perform?(captureID, .open)
-        case (51, false), (117, false): coordinator?.perform?(captureID, .dismiss)
-        case (8, true): coordinator?.perform?(captureID, .copy)
-        case (1, true): coordinator?.perform?(captureID, shift ? .saveAs : .save)
-        case (53, false): window?.makeFirstResponder(nil)
+        guard let captureID, let coordinator else { return super.keyDown(with: event) }
+        if let shortcut = Shortcut(event: event), let action = coordinator.cardAction(for: shortcut) {
+            coordinator.perform?(captureID, action)
+            return
+        }
+        let plain = event.modifierFlags.isDisjoint(with: [.command, .control, .option])
+        switch (event.keyCode, plain) {
+        case (36, true), (49, true), (76, true): coordinator.perform?(captureID, .open)
+        case (51, true), (117, true): coordinator.perform?(captureID, .dismiss)
+        case (53, true): window?.makeFirstResponder(nil)
         default: super.keyDown(with: event)
         }
+    }
+
+    /// Command-key equivalents reach a focused card before the main menu handles them.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard window?.firstResponder === self, let captureID, let coordinator, let shortcut = Shortcut(event: event),
+              let action = coordinator.cardAction(for: shortcut) else { return super.performKeyEquivalent(with: event) }
+        coordinator.perform?(captureID, action)
+        return true
     }
 
     /// Accumulates one trackpad gesture; momentum and mouse wheels never dismiss.
@@ -441,11 +485,14 @@ private final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu()
         menu.delegate = self
-        let items: [(String, String, NSEvent.ModifierFlags)] = [("Open Editor", "", []), ("Copy Image", "c", [.command]),
-            ("Save to Folder", "s", [.command]), ("Save As…", "s", [.command, .shift]), ("Dismiss", "", [])]
-        for (tag, (title, key, modifiers)) in items.enumerated() {
-            let item = NSMenuItem(title: title, action: #selector(menuAction(_:)), keyEquivalent: key)
-            item.keyEquivalentModifierMask = modifiers
+        let items: [(String, ThumbnailCoordinator.Action)] = [("Open Editor", .open), ("Copy Image", .copy),
+            ("Save to Folder", .save), ("Save As…", .saveAs), ("Dismiss", .dismiss)]
+        for (tag, (title, action)) in items.enumerated() {
+            let item = NSMenuItem(title: title, action: #selector(menuAction(_:)), keyEquivalent: "")
+            if let shortcut = coordinator?.shortcut(for: action), let key = shortcut.keyboardShortcut {
+                item.keyEquivalent = String(key.key.character)
+                item.keyEquivalentModifierMask = shortcut.modifierFlags
+            }
             item.target = self
             item.tag = tag
             menu.addItem(item)
@@ -468,5 +515,16 @@ private final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate
         if let captureID { coordinator?.dragFinished?(captureID, operation.contains(.copy), keepCard) }
         dragging = false
         press = nil
+    }
+}
+
+private extension Shortcut {
+    var modifierFlags: NSEvent.ModifierFlags {
+        var flags: NSEvent.ModifierFlags = []
+        if modifiers.contains(.control) { flags.insert(.control) }
+        if modifiers.contains(.option) { flags.insert(.option) }
+        if modifiers.contains(.shift) { flags.insert(.shift) }
+        if modifiers.contains(.command) { flags.insert(.command) }
+        return flags
     }
 }
