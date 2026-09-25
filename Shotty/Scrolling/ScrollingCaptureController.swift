@@ -2,6 +2,34 @@ import AppKit
 @preconcurrency import ApplicationServices
 import SwiftUI
 
+/// Initial settling counts only eligible frames. Returning from Shotty requires one fresh stream,
+/// because the previous stream may already have delivered and discarded its sole settled frame.
+struct ScrollAcquisitionReadiness {
+    enum InitialFrameDecision { case wait, accept, timedOut }
+
+    private var firstMovingFrameAt: TimeInterval?
+    private var needsFreshStream = false
+
+    mutating func suspendForOwnApplication() {
+        needsFreshStream = true
+        firstMovingFrameAt = nil
+    }
+
+    /// Call only after checking the target's focus and geometry. Consumes the transition once.
+    mutating func resumeValidatedTarget() -> Bool {
+        guard needsFreshStream else { return false }
+        needsFreshStream = false
+        return true
+    }
+
+    mutating func initialFrame(isSettled: Bool, at now: TimeInterval) -> InitialFrameDecision {
+        if isSettled { return .accept }
+        let first = firstMovingFrameAt ?? now
+        firstMovingFrameAt = first
+        return now - first >= 3 ? .timedOut : .wait
+    }
+}
+
 /// Product scrolling session after area selection. It composes the verified engine pieces:
 /// `LiveCaptureSource` frames, `ScrollAccumulator` alignment and disk tiles,
 /// `ScrollAutomationDriver` for explicit Auto Scroll, and `ScrollInputObserver` for manual takeover.
@@ -50,6 +78,7 @@ final class ScrollingCaptureController {
     @ObservationIgnored private var driver: ScrollAutomationDriver?
     @ObservationIgnored private var acquisition: Task<Void, Never>?
     @ObservationIgnored private var acquisitionID = UUID()
+    @ObservationIgnored private var acquisitionReadiness = ScrollAcquisitionReadiness()
     @ObservationIgnored private var watchdog: Task<Void, Never>?
     @ObservationIgnored private var timeLimit: Task<Void, Never>?
     @ObservationIgnored private var screenObserver: NSObjectProtocol?
@@ -283,6 +312,7 @@ final class ScrollingCaptureController {
     private func runAcquisition(after previous: Task<Void, Never>?) {
         let id = UUID()
         acquisitionID = id
+        acquisitionReadiness = ScrollAcquisitionReadiness()
         watchdog?.cancel()
         watchdog = Task { [weak self] in
             while !Task.isCancelled {
@@ -290,6 +320,7 @@ final class ScrollingCaptureController {
                 guard let self, acquisitionID == id, phase == .capturing, let session else { return }
                 // Frames are ignored while Shotty is frontmost; say so rather than appear frozen.
                 if NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier {
+                    acquisitionReadiness.suspendForOwnApplication()
                     showReturnHint()
                     continue
                 }
@@ -297,27 +328,21 @@ final class ScrollingCaptureController {
                     interrupt(reason.rawValue, canContinue: reason == .focusChanged)
                     return
                 }
+                if restartAfterReturningToTarget() { return }
                 clearReturnHint()
             }
         }
         acquisition = Task { [weak self, live] in
             await previous?.value
             guard let self, acquisitionID == id, let session, let accumulator, let driver else { return }
-            let unsettledDeadline = CapturedScrollFrame.monotonicNow + 3
             do {
                 let frames = try await live.start(displayID: session.displayID, displayLocalRegion: session.displayLocalRegion,
                                                   excluding: ProcessInfo.processInfo.processIdentifier)
                 for try await frame in frames {
                     try Task.checkCancellation()
                     guard acquisitionID == id, phase == .capturing else { return }
-                    if !hasAcceptedFrame && !frame.isSettled {
-                        if CapturedScrollFrame.monotonicNow > unsettledDeadline {
-                            interrupt("The region kept changing. Pause animations or select a smaller region.", canContinue: true)
-                            return
-                        }
-                        continue
-                    }
                     if NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier {
+                        acquisitionReadiness.suspendForOwnApplication()
                         driver.handle(.pauseAutomatic)
                         showReturnHint()
                         continue
@@ -325,6 +350,16 @@ final class ScrollingCaptureController {
                     if let reason = targetFailure(session) {
                         interrupt(reason.rawValue, canContinue: reason == .focusChanged)
                         return
+                    }
+                    if restartAfterReturningToTarget() { return }
+                    if !hasAcceptedFrame {
+                        switch acquisitionReadiness.initialFrame(isSettled: frame.isSettled, at: CapturedScrollFrame.monotonicNow) {
+                        case .wait: continue
+                        case .timedOut:
+                            interrupt("The region kept changing. Pause animations or select a smaller region.", canContinue: true)
+                            return
+                        case .accept: break
+                        }
                     }
                     if driver.inputState.mode == .automaticRunning ||
                         (driver.inputState.mode == .automaticPaused && driver.isAwaitingSettledFrame) {
@@ -363,6 +398,19 @@ final class ScrollingCaptureController {
                 if acquisitionID == id, phase == .capturing { interrupt(error.localizedDescription, canContinue: false) }
             }
         }
+    }
+
+    /// A new stream reacquires current target pixels; never replay a frame skipped during own-app focus.
+    private func restartAfterReturningToTarget() -> Bool {
+        guard acquisitionReadiness.resumeValidatedTarget() else { return false }
+        clearReturnHint()
+        driver?.handle(.pauseAutomatic)
+        let previous = acquisition
+        previous?.cancel()
+        // start() stops its previous stream using generation checks. An unscoped asynchronous
+        // stop here could race with the new start and shut down the replacement stream.
+        runAcquisition(after: previous)
+        return true
     }
 
     private func showReturnHint() {

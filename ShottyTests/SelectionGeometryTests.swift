@@ -2,6 +2,29 @@ import XCTest
 @testable import Shotty
 
 final class SelectionGeometryTests: XCTestCase {
+    func testScreenLayoutIgnoresEnumerationOrderButDetectsCaptureGeometryChanges() {
+        let main = SelectionScreenLayout.Display(id: 1, frame: CGRect(x: 0, y: 0, width: 2_560, height: 1_440),
+                                                 scale: 2, pixelSize: CGSize(width: 5_120, height: 2_880), rotation: 0)
+        let second = SelectionScreenLayout.Display(id: 2, frame: CGRect(x: -1_920, y: 0, width: 1_920, height: 1_080),
+                                                   scale: 1, pixelSize: CGSize(width: 1_920, height: 1_080), rotation: 0)
+        let layout = SelectionScreenLayout(displays: [main, second])
+        XCTAssertEqual(layout, SelectionScreenLayout(displays: [second, main]))
+        XCTAssertNotEqual(layout, SelectionScreenLayout(displays: [main]))
+        var moved = main
+        moved.frame.origin.y += 1
+        var scaled = main
+        scaled.scale = 1
+        var resized = main
+        resized.pixelSize.width = 3_840
+        var rotated = main
+        rotated.rotation = 180
+        var replaced = main
+        replaced.id = 3
+        for changed in [moved, scaled, resized, rotated, replaced] {
+            XCTAssertNotEqual(layout, SelectionScreenLayout(displays: [changed, second]))
+        }
+    }
+
     func testReverseAndCenteredSquareSelection() {
         XCTAssertEqual(SelectionGeometry.rectangle(from: CGPoint(x: -40, y: 80), to: CGPoint(x: -60, y: 120),
             square: false, centered: false), CGRect(x: -60, y: 80, width: 20, height: 40))

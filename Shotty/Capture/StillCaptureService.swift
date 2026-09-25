@@ -28,7 +28,8 @@ actor StillCaptureService {
         let configuration = SCScreenshotConfiguration()
         configuration.showsCursor = showsCursor
         configuration.ignoreShadows = !shadow
-        configuration.includeChildWindows = true
+        // The selected window only: a child window captured with children returns its parent group.
+        configuration.includeChildWindows = false
         configuration.dynamicRange = .sdr
         // Account conservatively for shadow padding before asking the framework to allocate.
         let scale = CGFloat(filter.pointPixelScale)

@@ -2,6 +2,31 @@ import AppKit
 import Observation
 import ScreenCaptureKit
 import SwiftUI
+import os
+
+/// Screen-parameter notifications also cover changes that do not invalidate capture geometry.
+struct SelectionScreenLayout: Equatable {
+    struct Display: Equatable {
+        var id: CGDirectDisplayID
+        var frame: CGRect
+        var scale: CGFloat
+        var pixelSize: CGSize
+        var rotation: Double
+    }
+
+    let displays: [Display]
+
+    init(displays: [Display]) { self.displays = displays.sorted { $0.id < $1.id } }
+
+    @MainActor static var current: SelectionScreenLayout {
+        SelectionScreenLayout(displays: NSScreen.screens.compactMap { screen in
+            guard let id = screen.displayID else { return nil }
+            return Display(id: id, frame: screen.frame, scale: screen.backingScaleFactor,
+                           pixelSize: CGSize(width: CGDisplayPixelsWide(id), height: CGDisplayPixelsHigh(id)),
+                           rotation: CGDisplayRotation(id))
+        })
+    }
+}
 
 struct SelectionConfiguration {
     var freeze = true
@@ -52,6 +77,7 @@ final class CaptureSelector {
     private var completion: ((Result<CaptureSelection, Error>) -> Void)?
     private let capture = StillCaptureService()
     private let renderer = SelectionRenderer()
+    private let logger = Logger(subsystem: "local.markus.Shotty", category: "CaptureSelection")
 
     struct WindowTarget {
         let id: CGWindowID
@@ -73,10 +99,20 @@ final class CaptureSelector {
         hasPointerInteraction = false
         isPreparing = true
         errorMessage = nil
-        // Any display change invalidates snapshots and panel geometry, including during preparation.
+        let screenLayout = SelectionScreenLayout.current
+        // Invalidate actual topology/geometry changes, not an unrelated screen-parameter notification.
         screenObservation = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
             object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.finish(.failure(FrozenCaptureFailure.targetChanged)) }
+                MainActor.assumeIsolated {
+                    guard let self, self.requestID == request else { return }
+                    let current = SelectionScreenLayout.current
+                    guard current != screenLayout else {
+                        self.logger.info("Ignored screen-parameter notification with unchanged capture geometry")
+                        return
+                    }
+                    self.logger.error("Capture cancelled for screen geometry: before=\(String(describing: screenLayout), privacy: .public) after=\(String(describing: current), privacy: .public)")
+                    self.finish(.failure(FrozenCaptureFailure.targetChanged))
+                }
             }
         operation = Task { [self] in
             let progress = showPreparation(after: .milliseconds(100), for: request)

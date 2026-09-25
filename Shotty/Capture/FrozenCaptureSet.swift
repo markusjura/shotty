@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import ScreenCaptureKit
+import os
 
 struct FrozenCaptureLimits: Sendable {
     var maximumResidentBytes = 256 * 1_024 * 1_024
@@ -163,6 +164,7 @@ struct FrozenCaptureBatch: Sendable {
 /// eventual export must both load the same descriptor, never capture another frame.
 /// Call close at session end. Deinitialization also removes the private directory.
 actor FrozenCaptureSet {
+    private static let logger = Logger(subsystem: "local.markus.Shotty", category: "FrozenCapture")
     nonisolated let windows: [FrozenWindowSnapshot]
     nonisolated let displays: [FrozenDisplaySnapshot]
     nonisolated let measurements: FrozenCaptureMeasurements
@@ -236,16 +238,28 @@ actor FrozenCaptureSet {
                 jobs.append(CaptureJob(filter: filter, shadow: false, target: .display(display.displayID, display.frame)))
             }
             let requests = jobs
-            let estimates = try requests.map {
-                try limits.validateSDRCapture(pointSize: $0.filter.contentRect.size, scale: Double($0.filter.pointPixelScale), shadow: $0.shadow)
+            let estimates = try requests.map { job in
+                do {
+                    return try limits.validateSDRCapture(pointSize: job.filter.contentRect.size,
+                                                         scale: Double(job.filter.pointPixelScale), shadow: job.shadow)
+                } catch {
+                    logger.error("Frozen estimate rejected \(job.diagnosticLabel, privacy: .public)")
+                    throw error
+                }
             }
             var nextIndex = 0
             var maximumConcurrentCaptures = 0
             var peakReservedResidentBytes = 0
             while nextIndex < requests.count {
                 try Task.checkCancellation()
-                let batch = try FrozenCaptureBatch(estimates: estimates[nextIndex...], retainedProfileBytes: profileBytes,
+                let batch: FrozenCaptureBatch
+                do {
+                    batch = try FrozenCaptureBatch(estimates: estimates[nextIndex...], retainedProfileBytes: profileBytes,
                                                    storedDiskBytes: diskBytes, limits: limits)
+                } catch {
+                    logger.error("Frozen batch rejected \(requests[nextIndex].diagnosticLabel, privacy: .public) estimate=\(estimates[nextIndex]) retainedProfiles=\(profileBytes) storedDisk=\(diskBytes)")
+                    throw error
+                }
                 maximumConcurrentCaptures = max(maximumConcurrentCaptures, batch.reservations.count)
                 peakReservedResidentBytes = max(peakReservedResidentBytes, profileBytes + batch.residentBytes)
                 let rasters = try await batch.run { reservation in
@@ -253,7 +267,8 @@ actor FrozenCaptureSet {
                     var availableLimits = limits
                     availableLimits.maximumResidentBytes = reservation.residentBytes
                     return try await capture(filter: job.filter, shadow: job.shadow, showsCursor: showsCursor, directory: directory,
-                                             remainingDiskBytes: reservation.rasterBytes, limits: availableLimits)
+                                             remainingDiskBytes: reservation.rasterBytes, limits: availableLimits,
+                                             isWindow: job.isWindow, label: job.diagnosticLabel)
                 }
                 for (reservation, raster) in zip(batch.reservations, rasters) {
                     let job = requests[reservation.index]
@@ -279,13 +294,29 @@ actor FrozenCaptureSet {
                 if let fixtureWindowIDs { return fixtureWindowIDs.contains(window.windowID) }
                 return window.owningApplication.map { $0.processID != excludingProcessID } ?? false
             }.map(\.windowID))
-            guard latestEligibleIDs == Set(selectedWindows.map(\.windowID)),
-                  displayIDs != nil || Set(latest.displays.map(\.displayID)) == Set(selectedDisplays.map(\.displayID)),
-                  selectedWindows.allSatisfy({ initial in
-                latest.windows.contains { $0.windowID == initial.windowID && $0.isOnScreen && $0.frame == initial.frame }
-            }), selectedDisplays.allSatisfy({ initial in
-                latest.displays.contains { $0.displayID == initial.displayID && $0.frame == initial.frame && $0.width == initial.width && $0.height == initial.height }
-            }) else { throw FrozenCaptureFailure.targetChanged }
+            let initialWindowIDs = Set(selectedWindows.map(\.windowID))
+            let initialDisplayIDs = Set(selectedDisplays.map(\.displayID))
+            let latestDisplayIDs = Set(latest.displays.map(\.displayID))
+            let changedWindows = selectedWindows.filter { initial in
+                !latest.windows.contains { $0.windowID == initial.windowID && $0.isOnScreen && $0.frame == initial.frame }
+            }
+            let changedDisplays = selectedDisplays.filter { initial in
+                !latest.displays.contains { $0.displayID == initial.displayID && $0.frame == initial.frame && $0.width == initial.width && $0.height == initial.height }
+            }
+            guard latestEligibleIDs == initialWindowIDs,
+                  displayIDs != nil || latestDisplayIDs == initialDisplayIDs,
+                  changedWindows.isEmpty, changedDisplays.isEmpty else {
+                let windows = changedWindows.map { initial in
+                    let current = latest.windows.first { $0.windowID == initial.windowID }
+                    return "\(initial.windowID):\(initial.frame)->\(String(describing: current?.frame)),onScreen=\(String(describing: current?.isOnScreen))"
+                }
+                let displays = changedDisplays.map { initial in
+                    let current = latest.displays.first { $0.displayID == initial.displayID }
+                    return "\(initial.displayID):\(initial.frame),\(initial.width)x\(initial.height)->\(String(describing: current?.frame)),\(String(describing: current?.width))x\(String(describing: current?.height))"
+                }
+                logger.error("Frozen validation rejected: addedWindows=\(latestEligibleIDs.subtracting(initialWindowIDs).sorted(), privacy: .public) removedWindows=\(initialWindowIDs.subtracting(latestEligibleIDs).sorted(), privacy: .public) changedWindows=\(windows, privacy: .public) displayIDsBefore=\(initialDisplayIDs.sorted(), privacy: .public) displayIDsAfter=\(latestDisplayIDs.sorted(), privacy: .public) changedDisplays=\(displays, privacy: .public)")
+                throw FrozenCaptureFailure.targetChanged
+            }
             try Task.checkCancellation()
             return FrozenCaptureSet(directory: directory, windows: windows, displays: displays,
                                     measurements: FrozenCaptureMeasurements(windowCount: selectedWindows.count,
@@ -316,6 +347,13 @@ actor FrozenCaptureSet {
         isClosed = true
     }
 
+    /// True when an unshadowed window raster is its frame at the filter's scale, allowing for rounding.
+    private static func matchesWindowFrame(_ image: CGImage, filter: SCContentFilter) -> Bool {
+        let scale = CGFloat(filter.pointPixelScale)
+        return abs(CGFloat(image.width) - filter.contentRect.width * scale) <= 1
+            && abs(CGFloat(image.height) - filter.contentRect.height * scale) <= 1
+    }
+
     /// ScreenCaptureKit does not annotate SCContentFilter as Sendable. Each job owns
     /// a distinct filter, configured before launch and never mutated or shared with
     /// another capture. Parent-side reads happen before launch or after the batch joins.
@@ -327,10 +365,23 @@ actor FrozenCaptureSet {
         let filter: SCContentFilter
         let shadow: Bool
         let target: Target
+
+        var isWindow: Bool { if case .window = target { true } else { false } }
+
+        /// Identifiers and geometry only; never titles or application names.
+        var diagnosticLabel: String {
+            let size = filter.contentRect.size
+            let kind = switch target {
+            case .window(let id, _): "window \(id)"
+            case .display(let id, _): "display \(id)"
+            }
+            return "\(kind) \(Int(size.width))x\(Int(size.height))pt scale=\(filter.pointPixelScale) shadow=\(shadow)"
+        }
     }
 
     private static func capture(filter: SCContentFilter, shadow: Bool, showsCursor: Bool, directory: URL,
-                                remainingDiskBytes: Int, limits: FrozenCaptureLimits) async throws -> FrozenRasterDescriptor {
+                                remainingDiskBytes: Int, limits: FrozenCaptureLimits,
+                                isWindow: Bool, label: String) async throws -> FrozenRasterDescriptor {
         try Task.checkCancellation()
         let estimatedBytes = try limits.validateSDRCapture(pointSize: filter.contentRect.size,
                                                            scale: Double(filter.pointPixelScale), shadow: shadow)
@@ -338,14 +389,29 @@ actor FrozenCaptureSet {
         let configuration = SCScreenshotConfiguration()
         configuration.showsCursor = showsCursor
         configuration.ignoreShadows = !shadow
-        configuration.includeChildWindows = true
+        // Window capture is the selected window only. Capturing a child window with children
+        // included returns its parent group, which no longer matches the window's frame.
+        configuration.includeChildWindows = false
         configuration.dynamicRange = .sdr
         // Zero dimensions retain ScreenCaptureKit's native-size output, including shadows.
         let output = try await SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: configuration)
         try Task.checkCancellation()
         guard let image = output.sdrImage else { throw CaptureFailure.noImage }
-        return try autoreleasepool {
-            try FrozenRasterFile.store(image, directory: directory, remainingDiskBytes: remainingDiskBytes, limits: limits)
+        // The selection overlay draws unshadowed rasters exactly onto the window frame.
+        if isWindow, !shadow, !matchesWindowFrame(image, filter: filter) {
+            logger.error("Frozen window raster does not match its frame \(label, privacy: .public) actual=\(image.width)x\(image.height)")
+            throw FrozenCaptureFailure.targetChanged
+        }
+        do {
+            return try autoreleasepool {
+                try FrozenRasterFile.store(image, directory: directory, remainingDiskBytes: remainingDiskBytes, limits: limits)
+            }
+        } catch let error as FrozenCaptureFailure {
+            // Compares the pre-capture estimate with what ScreenCaptureKit returned, for example
+            // when child windows or shadows extend the image beyond the window's own frame.
+            let provider = image.dataProvider?.data.map(CFDataGetLength) ?? -1
+            logger.error("Frozen raster rejected \(label, privacy: .public) estimate=\(estimatedBytes) actual=\(image.width)x\(image.height) row=\(image.bytesPerRow) bytes=\(image.bytesPerRow * image.height) provider=\(provider) reservation=\(limits.maximumResidentBytes) disk=\(remainingDiskBytes) error=\(String(describing: error), privacy: .public)")
+            throw error
         }
     }
 }

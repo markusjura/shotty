@@ -1,15 +1,16 @@
 import AppKit
+import Observation
 
 /// Runs Capture Text after selection: recognition off the main actor, then the independent
 /// copy, review, and save outputs frozen in the capture's settings. Empty results and errors
 /// leave the clipboard unchanged; a cancelled or superseded recognition never publishes.
-@MainActor
+@MainActor @Observable
 final class TextCaptureController {
-    private weak var coordinator: AppCoordinator?
-    private let panel = TextResultPanel()
-    private let review = TextReviewWindow()
-    private var task: Task<Void, Never>?
-    private var generation = 0
+    @ObservationIgnored private weak var coordinator: AppCoordinator?
+    @ObservationIgnored private let panel = TextResultPanel()
+    @ObservationIgnored private let review = TextReviewWindow()
+    @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private var generation = 0
 
     /// True while recognition and its automatic outputs run; the review window does not block new captures.
     private(set) var isActive = false
