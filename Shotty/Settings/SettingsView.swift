@@ -28,7 +28,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     }
 }
 
-/// Flat native Settings: a sidebar plus one columns-style form per pane. Every control writes
+/// Flat native Settings: a sidebar plus one grouped form per pane. Every control writes
 /// straight to the typed stores, which persist immediately and reject invalid values.
 struct SettingsView: View {
     let preferences: AppPreferences
@@ -36,31 +36,25 @@ struct SettingsView: View {
     @State private var pane: SettingsPane? = .general
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: .constant(.all)) {
             List(SettingsPane.allCases, selection: $pane) { pane in
                 Label(pane.title, systemImage: pane.symbol)
             }
             .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 240)
+            .toolbar(removing: .sidebarToggle)
         } detail: {
             let selected = pane ?? .general
-            // The columns form does not scroll or top-align by itself; long panes such as
-            // Capture scroll, and short ones start at the top instead of floating mid-window.
-            ScrollView {
-                Group {
-                    switch selected {
-                    case .general: GeneralSettingsPane(preferences: preferences)
-                    case .capture: CaptureSettingsPane(preferences: preferences)
-                    case .thumbnails: ThumbnailSettingsPane(preferences: preferences)
-                    case .editor: EditorSettingsPane(preferences: preferences)
-                    case .shortcuts: ShortcutSettingsPane(commands: commands)
-                    case .permissions: PermissionSettingsPane(preferences: preferences)
-                    }
+            Group {
+                switch selected {
+                case .general: GeneralSettingsPane(preferences: preferences)
+                case .capture: CaptureSettingsPane(preferences: preferences)
+                case .thumbnails: ThumbnailSettingsPane(preferences: preferences)
+                case .editor: EditorSettingsPane(preferences: preferences)
+                case .shortcuts: ShortcutSettingsPane(commands: commands)
+                case .permissions: PermissionSettingsPane(preferences: preferences)
                 }
-                .formStyle(.columns)
-                .padding(.horizontal, 28)
-                .padding(.vertical, 24)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
+            .formStyle(.grouped)
             .id(selected)
             .navigationTitle(selected.title)
         }

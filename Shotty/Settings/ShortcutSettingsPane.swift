@@ -16,6 +16,7 @@ struct ShortcutSettingsPane: View {
                             .font(.callout).foregroundStyle(.secondary)
                         Button("Open Keyboard Settings") { SystemSettingsLink.open(SystemSettingsLink.keyboardShortcuts) }
                     }
+                    .accessibilityElement(children: .contain)
                 }
             }
             ForEach(CommandGroup.allCases, id: \.self) { group in
@@ -49,6 +50,7 @@ struct ShortcutSettingsPane: View {
                     Text(advisory).font(.callout).foregroundStyle(.secondary)
                 }
             }
+            .accessibilityElement(children: .contain)
         }
     }
 

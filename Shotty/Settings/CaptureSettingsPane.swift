@@ -51,20 +51,19 @@ struct CaptureSettingsPane: View {
                         Label(message, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.secondary)
                     }
                 }
+                .accessibilityElement(children: .contain)
             }
-            LabeledContent("File name") {
-                VStack(alignment: .leading, spacing: 4) {
-                    TextField("File name", text: $preferences.capture.filenameTemplate, prompt: Text(ExportService.defaultFilenameTemplate))
-                        .labelsHidden()
-                    Text("Example: \(ExportService.filenameStem(template: preferences.capture.filenameTemplate, date: .now, kind: .area)).\(preferences.capture.format == .png ? "png" : "jpg")")
-                        .font(.callout).foregroundStyle(.secondary)
-                    Text("{date}, {time}, and {type} are replaced. Existing files get -2, -3, and so on.")
-                        .font(.callout).foregroundStyle(.secondary)
-                    if preferences.capture.filenameTemplate != ExportService.defaultFilenameTemplate {
-                        Button("Restore Default Name") { preferences.capture.filenameTemplate = ExportService.defaultFilenameTemplate }
-                    }
+            VStack(alignment: .leading, spacing: 8) {
+                TextField("File name", text: $preferences.capture.filenameTemplate, prompt: Text(ExportService.defaultFilenameTemplate))
+                Text("Example: \(ExportService.filenameStem(template: preferences.capture.filenameTemplate, date: .now, kind: .area)).\(preferences.capture.format == .png ? "png" : "jpg")")
+                    .font(.callout).foregroundStyle(.secondary)
+                Text("{date}, {time}, and {type} are replaced. Existing files get -2, -3, and so on.")
+                    .font(.callout).foregroundStyle(.secondary)
+                if preferences.capture.filenameTemplate != ExportService.defaultFilenameTemplate {
+                    Button("Restore Default Name") { preferences.capture.filenameTemplate = ExportService.defaultFilenameTemplate }
                 }
             }
+            .accessibilityElement(children: .contain)
         }
     }
 
@@ -84,6 +83,7 @@ struct CaptureSettingsPane: View {
                         Text(preferences.capture.jpegQuality, format: .percent.precision(.fractionLength(0)))
                             .monospacedDigit()
                     }
+                    .accessibilityElement(children: .contain)
                 }
                 ColorPicker("Transparent areas", selection: RGBAColor.binding({ preferences.capture.jpegBackground },
                                                                               { preferences.capture.jpegBackground = $0 }),
@@ -163,6 +163,7 @@ struct CaptureSettingsPane: View {
                         .font(.callout).foregroundStyle(.secondary)
                 }
             }
+            .accessibilityElement(children: .contain)
         }
     }
 
@@ -183,10 +184,10 @@ struct CaptureSettingsPane: View {
                 Text("Horizontal").tag(ScrollAxisPreference.horizontal)
             }
             Stepper(value: $preferences.scrolling.maximumAxisPixels, in: ScrollingPreferences.axisPixelRange, step: 1_000) {
-                LabeledContent("Maximum length", value: "\(preferences.scrolling.maximumAxisPixels.formatted()) pixels")
+                Text("Maximum length: \(preferences.scrolling.maximumAxisPixels.formatted()) pixels")
             }
             Stepper(value: $preferences.scrolling.maximumDurationSeconds, in: ScrollingPreferences.durationRange, step: 10) {
-                LabeledContent("Maximum duration", value: "\(preferences.scrolling.maximumDurationSeconds) seconds")
+                Text("Maximum duration: \(preferences.scrolling.maximumDurationSeconds) seconds")
             }
             Text("Auto Scroll starts only from its button. Scrolling by hand first keeps that capture manual.")
                 .font(.callout).foregroundStyle(.secondary)

@@ -9,7 +9,7 @@ struct EditorSettingsPane: View {
             Section("Copy and save") {
                 Toggle("Close editor after copying", isOn: $preferences.editor.closesAfterCopy)
                 Toggle("Close editor after saving", isOn: $preferences.editor.closesAfterSave)
-                Text("Hold Option while clicking Copy or Save to do the opposite once.").font(.callout).foregroundStyle(.secondary)
+                Text("Option-click Copy to invert its close behavior once. Option-click Save to choose a file name and location.").font(.callout).foregroundStyle(.secondary)
             }
             toolSection(.arrow) {
                 color("Color", \.arrow.color)

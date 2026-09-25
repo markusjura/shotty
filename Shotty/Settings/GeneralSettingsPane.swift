@@ -26,7 +26,10 @@ struct GeneralSettingsPane: View {
                 Toggle("Open at login", isOn: Binding(get: { loginStatus == .enabled || loginStatus == .requiresApproval }, set: setLogin))
                 if loginStatus == .requiresApproval {
                     LabeledContent("Login item") {
-                        Button("Approve in System Settings…") { SMAppService.openSystemSettingsLoginItems() }
+                        HStack {
+                            Button("Approve in System Settings…") { SMAppService.openSystemSettingsLoginItems() }
+                        }
+                        .accessibilityElement(children: .contain)
                     }
                 }
                 if let loginError {
