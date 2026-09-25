@@ -1,0 +1,1357 @@
+<div id="shotty-design" class="sd">
+<style>
+  #shotty-design [hidden] { display: none !important; }
+  #shotty-design { background: light-dark(#fafafa, #171717); padding: 16px; min-height: 100vh; --sd-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif; font-family: var(--sd-font); }
+  #shotty-design .sd-app {
+    --sd-bg: light-dark(#f2f2f4, #1f1f21);
+    --sd-chrome: light-dark(#e9e9ec, #2a2a2d);
+    --sd-surface: light-dark(#ffffff, #262629);
+    --sd-surface2: light-dark(#f7f7f9, #303033);
+    --sd-text: light-dark(#1d1d1f, #f2f2f4);
+    --sd-text2: light-dark(#6e6e73, #a1a1a6);
+    --sd-line: light-dark(rgba(0,0,0,.13), rgba(255,255,255,.13));
+    --sd-ctl: light-dark(#ffffff, #3b3b3f);
+    --sd-hover: light-dark(rgba(0,0,0,.06), rgba(255,255,255,.08));
+    --sd-sel: var(--sd-accent);
+    --sd-sel-fg: #ffffff;
+    --sd-accent: light-dark(#007aff, #0a84ff);
+    --sd-accent-fg: #ffffff;
+    --sd-canvas: light-dark(#d9d9de, #121214);
+    --sd-danger: light-dark(#d93025, #ff6b60);
+    --sd-ok: light-dark(#1f8f3a, #4cd964);
+    --sd-shadow: light-dark(0 12px 32px rgba(0,0,0,.18), 0 12px 32px rgba(0,0,0,.6));
+    --sd-radius: 10px;
+    --sd-btn: 28px;
+    --sd-gap: 4px;
+    --sd-anno: #ff3b30;
+    color: var(--sd-text);
+    font-family: var(--sd-font);
+    font-size: 13px;
+    line-height: 1.35;
+  }
+  #shotty-design .sd-app[data-appearance="light"] { color-scheme: light; }
+  #shotty-design .sd-app[data-appearance="dark"] { color-scheme: dark; }
+  #shotty-design .sd-app[data-density="comfortable"] { --sd-btn: 34px; --sd-gap: 6px; }
+  #shotty-design .sd-app * { box-sizing: border-box; }
+  #shotty-design .sd-app button, #shotty-design .sd-app input, #shotty-design .sd-app select { font: inherit; color: inherit; }
+  #shotty-design .sd-app button { cursor: default; }
+  #shotty-design .sd-app button:focus-visible, #shotty-design .sd-app input:focus-visible, #shotty-design .sd-app select:focus-visible { outline: 2px solid var(--sd-accent); outline-offset: 1px; }
+
+  #shotty-design .sd-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 12px; }
+  #shotty-design .sd-brand { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  #shotty-design .sd-brand strong { font-weight: 500; }
+  #shotty-design .sd-demo { font-size: 12px; color: var(--muted-foreground); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; }
+  #shotty-design .sd-panel { margin-top: 4px; }
+  #shotty-design .sd-sim { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 10px; font-weight: 400; color: var(--sd-text2); border: 1px solid var(--sd-line); vertical-align: middle; }
+  #shotty-design .sd-caption { font-size: 12px; color: var(--muted-foreground); margin-top: 8px; }
+
+  /* Window chrome */
+  #shotty-design .sd-window { background: var(--sd-bg); border: 1px solid var(--sd-line); border-radius: var(--sd-radius); box-shadow: var(--sd-shadow); overflow: hidden; }
+  #shotty-design .sd-titlebar { display: grid; grid-template-columns: 64px 1fr 64px; align-items: center; height: 38px; background: var(--sd-chrome); border-bottom: 1px solid var(--sd-line); padding: 0 10px; }
+  #shotty-design .sd-lights { display: flex; gap: 7px; }
+  #shotty-design .sd-lights span { width: 12px; height: 12px; border-radius: 50%; background: light-dark(#d5d5d8, #4a4a4e); }
+  #shotty-design .sd-lights span:nth-child(1) { background: #ff5f57; } #shotty-design .sd-lights span:nth-child(2) { background: #febc2e; } #shotty-design .sd-lights span:nth-child(3) { background: #28c840; }
+  #shotty-design .sd-title { text-align: center; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #shotty-design .sd-title small { font-weight: 400; color: var(--sd-text2); margin-left: 6px; }
+  @media (max-width: 480px) { #shotty-design .sd-title small { display: none; } }
+
+  /* Editor */
+  #shotty-design .sd-swatch { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--sd-line); padding: 0; box-shadow: inset 0 0 0 1px rgba(255,255,255,.35); }
+  #shotty-design .sd-swatch[aria-pressed="true"] { outline: 2px solid var(--sd-text); outline-offset: 2px; }
+  #shotty-design kbd.sd-key { display: inline-block; min-width: 18px; padding: 0 4px; border: 1px solid var(--sd-line); border-bottom-width: 2px; border-radius: 4px; background: var(--sd-ctl); font-family: var(--sd-font); font-size: 11px; line-height: 16px; text-align: center; color: var(--sd-text); }
+
+  /* Desktop */
+  #shotty-design .sd-desktop { position: relative; aspect-ratio: 16 / 10; min-height: 260px; border-radius: 12px; overflow: hidden; border: 1px solid var(--sd-line); background: radial-gradient(120% 90% at 20% 10%, light-dark(#e7e9ee, #3a3d46) 0%, light-dark(#b9bec9, #1b1d24) 60%, light-dark(#8e94a3, #0c0d11) 100%); box-shadow: var(--sd-shadow); }
+  #shotty-design .sd-menubar { position: absolute; top: 0; left: 0; right: 0; height: 26px; display: flex; align-items: center; gap: 12px; padding: 0 10px; font-size: 12px; background: light-dark(rgba(255,255,255,.6), rgba(30,30,32,.7)); backdrop-filter: blur(20px); border-bottom: 1px solid var(--sd-line); }
+  #shotty-design .sd-menubar .sd-apple { font-weight: 500; }
+  #shotty-design .sd-menubar .sd-mb-left { display: flex; gap: 12px; overflow: hidden; white-space: nowrap; }
+  #shotty-design .sd-menubar .sd-mb-right { margin-left: auto; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  #shotty-design .sd-mb-icon { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 22px; border-radius: 5px; border: 0; background: transparent; color: var(--sd-text); }
+  #shotty-design .sd-mb-icon[aria-expanded="true"] { background: var(--sd-hover); }
+  @media (max-width: 560px) { #shotty-design .sd-menubar .sd-mb-left span:nth-child(n+4), #shotty-design .sd-mb-right .sd-mb-extra { display: none; } }
+  #shotty-design .sd-menu { position: absolute; top: 28px; right: 8px; z-index: 5; min-width: 220px; padding: 5px; border-radius: 8px; background: light-dark(rgba(246,246,248,.96), rgba(44,44,47,.96)); border: 1px solid var(--sd-line); box-shadow: var(--sd-shadow); }
+  #shotty-design .sd-menu button { display: flex; width: 100%; align-items: center; gap: 8px; padding: 4px 8px; border: 0; border-radius: 5px; background: transparent; text-align: left; font-size: 13px; }
+  #shotty-design .sd-menu button:hover, #shotty-design .sd-menu button:focus-visible { background: var(--sd-accent); color: var(--sd-accent-fg); outline: none; }
+  #shotty-design .sd-menu button .sd-ks { margin-left: auto; color: inherit; opacity: .7; font-variant-numeric: tabular-nums; }
+  #shotty-design .sd-menu hr { border: 0; border-top: 1px solid var(--sd-line); margin: 4px 6px; }
+  #shotty-design #sd-thumb-menu { z-index: 8; right: auto; min-width: 190px; background: var(--sd-surface); }
+  #shotty-design .sd-thumbs { position: absolute; z-index: 4; display: flex; flex-direction: column; gap: 8px; width: 22%; min-width: 96px; max-width: 200px; }
+  #shotty-design .sd-desktop:has(.sd-overlay:not([hidden])) .sd-thumbs { visibility: hidden; }
+  #shotty-design .sd-thumbs[data-pos="bottom-left"] { left: 12px; bottom: 12px; flex-direction: column-reverse; }
+  #shotty-design .sd-thumbs[data-pos="bottom-right"] { right: 12px; bottom: 12px; flex-direction: column-reverse; }
+  #shotty-design .sd-thumbs[data-pos="top-left"] { left: 12px; top: 34px; }
+  #shotty-design .sd-thumbs[data-pos="left-center"] { left: 12px; top: 50%; transform: translateY(-50%); flex-direction: column-reverse; }
+  #shotty-design .sd-thumbs[data-pos="right-center"] { right: 12px; top: 50%; transform: translateY(-50%); flex-direction: column-reverse; }
+  #shotty-design .sd-thumbs[data-pos="top-right"] { right: 12px; top: 34px; }
+  #shotty-design .sd-app[data-dock="true"] .sd-thumbs[data-pos^="bottom"] { bottom: 58px; }
+  #shotty-design .sd-thumb { position: relative; border-radius: 8px; overflow: hidden; background: #fff; border: 1px solid light-dark(rgba(0,0,0,.25), rgba(255,255,255,.3)); box-shadow: 0 8px 24px rgba(0,0,0,.35); transform-origin: bottom left; animation: sd-pop .25s ease-out; }
+  @media (prefers-reduced-motion: reduce) { #shotty-design .sd-thumb { animation: none; } }
+  @keyframes sd-pop { from { transform: scale(.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  #shotty-design .sd-thumb-open { display: block; width: 100%; padding: 0; border: 0; background: transparent; }
+  #shotty-design .sd-thumb-open svg { display: block; width: 100%; height: auto; }
+  #shotty-design .sd-thumb-actions { position: absolute; top: 4px; left: 4px; right: 4px; display: flex; justify-content: space-between; }
+  #shotty-design .sd-thumb-actions button { width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; border: 1px solid rgba(255,255,255,.35); background: rgba(20,20,22,.82); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+  #shotty-design .sd-thumb-actions button:hover { background: rgba(20,20,22,.95); }
+  #shotty-design .sd-thumb-badge { position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 6px; font-size: 11px; color: #fff; background: rgba(20,20,22,.7); }
+  #shotty-design .sd-dock { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); display: none; gap: 6px; padding: 5px 8px; border-radius: 12px; background: light-dark(rgba(255,255,255,.45), rgba(40,40,44,.6)); border: 1px solid var(--sd-line); backdrop-filter: blur(20px); }
+  #shotty-design .sd-app[data-dock="true"] .sd-dock { display: flex; }
+  #shotty-design .sd-dock span { width: 30px; height: 30px; border-radius: 8px; background: light-dark(#d9dbe2, #55585f); }
+  #shotty-design .sd-dock span.sd-dock-shotty { background: var(--sd-sel); color: var(--sd-sel-fg); display: inline-flex; align-items: center; justify-content: center; }
+  @media (max-width: 480px) { #shotty-design .sd-dock span { width: 22px; height: 22px; } }
+  #shotty-design .sd-hud { position: absolute; z-index: 6; left: 50%; top: 45%; transform: translate(-50%, -50%); width: min(92%, 380px); padding: 12px 14px; border-radius: 12px; background: light-dark(rgba(246,246,248,.96), rgba(38,38,41,.96)); border: 1px solid var(--sd-line); box-shadow: var(--sd-shadow); }
+  #shotty-design .sd-hud h4 { margin: 0 0 4px; font-size: 13px; font-weight: 500; }
+  #shotty-design .sd-hud p { margin: 0; font-size: 12px; color: var(--sd-text2); }
+  #shotty-design .sd-hud-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  #shotty-design .sd-hud .sd-pages { display: flex; gap: 4px; margin-top: 10px; }
+  #shotty-design .sd-hud .sd-pages span { flex: 1; height: 6px; border-radius: 3px; background: var(--sd-line); }
+  #shotty-design .sd-hud .sd-pages span.on { background: var(--sd-accent); }
+  #shotty-design .sd-hud-scroll { left: 50%; right: auto; top: auto; bottom: 18px; transform: translateX(-50%); width: min(84%, 420px); padding: 10px 12px; }
+  #shotty-design .sd-app[data-scrolling="true"] .sd-overlay { background: transparent; }
+  #shotty-design .sd-app[data-scrolling="true"] .sd-overlay .sd-sel-rect { left: 8%; width: 64%; top: 12%; height: 57%; }
+  #shotty-design .sd-app[data-scrolling="true"] .sd-overlay .sd-sel-size { left: 8%; top: calc(69% + 8px); }
+  #shotty-design .sd-scroll-controls { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
+  #shotty-design .sd-scroll-status { margin-top: 7px; text-align: center; font-size: 12px; color: var(--sd-text2); }
+  #shotty-design .sd-scroll-preview { position: absolute; z-index: 5; left: 76%; width: 14%; top: 17%; }
+  #shotty-design .sd-app[data-scrolling="true"] .sd-thumbs { visibility: hidden; }
+  #shotty-design .sd-selection-handle { display: none; position: absolute; width: 6px; height: 6px; background: #fff; border: 1px solid #222; transform: translate(-50%, -50%); }
+  #shotty-design .sd-app[data-scrolling="true"] .sd-selection-handle { display: block; }
+  #shotty-design .sd-stitch { position: relative; height: 150px; border-radius: 6px; border: 1px solid var(--sd-line); background: var(--sd-surface2); overflow: hidden; }
+  #shotty-design .sd-stitch-clip { display: flex; flex-direction: column; transition: transform .25s; }
+  #shotty-design .sd-stitch-clip svg { display: block; width: 100%; height: auto; border-bottom: 1px solid var(--sd-accent); }
+  #shotty-design .sd-stitch-lbl { position: absolute; left: 4px; bottom: 4px; padding: 1px 5px; border-radius: 4px; font-size: 11px; background: rgba(20,20,22,.8); color: #fff; }
+  #shotty-design .sd-btn[aria-pressed="true"] { background: var(--sd-accent); color: var(--sd-accent-fg); border-color: transparent; }
+  #shotty-design .sd-ocr-text { margin-top: 8px; padding: 8px; border-radius: 6px; background: var(--sd-surface2); border: 1px solid var(--sd-line); font-size: 12px; white-space: pre-wrap; max-height: 96px; overflow: hidden; }
+  #shotty-design .sd-overlay { position: absolute; inset: 26px 0 0; z-index: 3; background: rgba(0,0,0,.35); }
+  #shotty-design .sd-overlay .sd-sel-rect { position: absolute; left: 22%; top: 18%; width: 46%; height: 48%; border: 1px solid #fff; box-shadow: 0 0 0 9999px rgba(0,0,0,.35); }
+  #shotty-design .sd-overlay .sd-sel-size { position: absolute; left: 22%; top: calc(66% + 6px); padding: 2px 6px; font-size: 11px; border-radius: 4px; background: rgba(20,20,22,.85); color: #fff; font-variant-numeric: tabular-nums; }
+  #shotty-design .sd-fake-win { position: absolute; left: 8%; top: 14%; width: 62%; border-radius: 8px; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,.35); opacity: .95; }
+  #shotty-design .sd-fake-win svg { display: block; width: 100%; height: auto; }
+
+  /* Settings */
+  #shotty-design .sd-settings { background: var(--sd-bg); max-width: 820px; margin-inline: auto; }
+  #shotty-design .sd-settings .sd-titlebar { background: var(--sd-bg); border-bottom: 0; height: 46px; }
+  #shotty-design .sd-settings-body { display: grid; grid-template-columns: 176px 1fr; min-height: 420px; }
+  #shotty-design .sd-sidebar { display: flex; flex-direction: column; gap: 3px; padding: 12px 10px; background: var(--sd-chrome); border-right: 1px solid var(--sd-line); }
+  #shotty-design .sd-sidebar button { display: flex; align-items: center; gap: 9px; min-height: 32px; padding: 5px 9px; border: 0; border-radius: 6px; background: transparent; text-align: left; }
+  #shotty-design .sd-sidebar button[aria-selected="true"] { background: var(--sd-accent); color: var(--sd-accent-fg); }
+  #shotty-design .sd-sidebar button:hover:not([aria-selected="true"]) { background: var(--sd-hover); }
+  @media (max-width: 600px) { #shotty-design .sd-settings-body { grid-template-columns: 1fr; } #shotty-design .sd-sidebar { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--sd-line); } }
+  #shotty-design .sd-pane { padding: 18px 28px 28px; min-width: 0; }
+  #shotty-design .sd-settings-body > * { min-width: 0; }
+  #shotty-design .sd-radio-seg { flex-wrap: wrap; max-width: 100%; }
+  #shotty-design .sd-radio-seg label { flex: 1 1 auto; justify-content: center; }
+  #shotty-design .sd-ctl-wrap { max-width: 100%; }
+  #shotty-design .sd-path { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 420px) {
+    #shotty-design .sd-pane { padding: 12px 10px 14px; }
+    #shotty-design .sd-row { padding: 8px 10px; }
+    #shotty-design .sd-row .sd-lbl { flex-basis: 100%; }
+    #shotty-design .sd-radio-seg { width: 100%; }
+    #shotty-design .sd-sidebar button span, #shotty-design .sd-sidebar button { font-size: 12px; }
+  }
+  #shotty-design .sd-pane h3 { margin: 0 0 22px; font-size: 17px; font-weight: 500; }
+  #shotty-design .sd-section { margin: 0 0 20px; padding: 0; border: 0; border-radius: 0; background: transparent; }
+  #shotty-design .sd-section + .sd-section { border-top: 1px solid var(--sd-line); padding-top: 18px; }
+  #shotty-design .sd-section h4 { margin: 0 0 10px; font-size: 13px; font-weight: 500; }
+  #shotty-design .sd-row { display: flex; align-items: center; gap: 16px; padding: 7px 0; min-height: 34px; flex-wrap: wrap; }
+  #shotty-design .sd-row .sd-lbl { flex: 1 1 160px; min-width: 0; }
+  #shotty-design .sd-row .sd-lbl small { display: block; color: var(--sd-text2); font-size: 12px; }
+  #shotty-design .sd-row .sd-ctl-wrap { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  #shotty-design .sd-switch { appearance: auto; width: 14px; height: 14px; margin: 0; accent-color: var(--sd-accent); flex: none; }
+  #shotty-design .sd-row:has(> .sd-switch) { flex-direction: row-reverse; justify-content: flex-end; gap: 8px; }
+  #shotty-design .sd-row:has(> .sd-switch) .sd-lbl { flex: 1; }
+  #shotty-design .sd-switch:disabled { opacity: .45; }
+  #shotty-design .sd-check { width: 15px; height: 15px; margin: 0; accent-color: var(--sd-accent); }
+  #shotty-design .sd-select { appearance: auto; height: 26px; max-width: 100%; font-size: 13px; }
+  #shotty-design .sd-btn { height: 26px; padding: 0 10px; border: 1px solid var(--sd-line); border-radius: 6px; background: var(--sd-ctl); font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+  #shotty-design .sd-btn:hover { background: var(--sd-hover); }
+  #shotty-design .sd-path { display: inline-flex; align-items: center; gap: 6px; padding: 0; background: transparent; border: 0; font-size: 13px; }
+  #shotty-design .sd-corners { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(3, 1fr); gap: 4px; width: 92px; aspect-ratio: 16/10; padding: 4px; border-radius: 6px; border: 1px solid var(--sd-line); background: var(--sd-surface2); }
+  #shotty-design .sd-corners button { border: 1px dashed var(--sd-line); border-radius: 3px; background: transparent; padding: 0; }
+  #shotty-design .sd-corners button[aria-pressed="true"] { background: var(--sd-sel); border-color: var(--sd-sel); }
+  #shotty-design .sd-shortcut { display: inline-flex; align-items: center; gap: 6px; min-width: 96px; height: 26px; padding: 0 8px; border: 1px solid var(--sd-line); border-radius: 6px; background: var(--sd-ctl); justify-content: center; font-size: 12px; }
+  #shotty-design .sd-shortcut[data-recording="true"] { border-color: var(--sd-accent); box-shadow: 0 0 0 3px light-dark(rgba(10,108,255,.2), rgba(61,139,255,.3)); color: var(--sd-text2); }
+  #shotty-design .sd-shortcut[data-recording="true"] .sd-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sd-danger); animation: sd-blink 1s infinite; }
+  @keyframes sd-blink { 50% { opacity: .2; } }
+  @media (prefers-reduced-motion: reduce) { #shotty-design .sd-shortcut .sd-dot { animation: none; } }
+  #shotty-design .sd-conflict { font-size: 12px; color: var(--sd-danger); display: flex; align-items: center; gap: 4px; }
+  #shotty-design .sd-rec-hint { font-size: 12px; color: var(--sd-text2); }
+  #shotty-design .sd-perm { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+  #shotty-design .sd-perm.ok { color: var(--sd-ok); } #shotty-design .sd-perm.no { color: var(--sd-danger); }
+  #shotty-design .sd-radio-seg { display: inline-flex; gap: 14px; border: 0; background: transparent; }
+  #shotty-design .sd-radio-seg label { display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 0; font-size: 13px; }
+  #shotty-design .sd-radio-seg input { appearance: auto; margin: 0; accent-color: var(--sd-accent); }
+  #shotty-design .sd-note { font-size: 12px; color: var(--sd-text2); margin: 0 0 12px; }
+  #shotty-design .sd-toast { margin-top: 10px; min-height: 20px; font-size: 12px; color: var(--muted-foreground); }
+  #shotty-design .sd-toast span { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--muted); color: var(--foreground); }
+  /* Editor (canvas) */
+  #shotty-design .sd-ed { position: relative; background: var(--sd-bg); border: 1px solid var(--sd-line); border-radius: var(--sd-radius); box-shadow: var(--sd-shadow); overflow: hidden; }
+  #shotty-design .sd-ed-top { display: flex; align-items: center; gap: 10px; height: 50px; padding: 0 12px; background: var(--sd-chrome); border-bottom: 1px solid var(--sd-line); }
+  #shotty-design .sd-ed-top .sd-lights { flex: none; margin-right: 2px; }
+  #shotty-design .sd-toolset { display: flex; align-items: center; gap: 1px; padding: 2px; border-radius: 8px; background: light-dark(rgba(0,0,0,.05), rgba(255,255,255,.06)); flex: none; }
+  #shotty-design .sd-tb { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 30px; height: 30px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent; color: var(--sd-text); flex: none; }
+  #shotty-design .sd-tb:hover { background: var(--sd-hover); }
+  #shotty-design .sd-tb[aria-pressed="true"], #shotty-design .sd-tb[aria-expanded="true"] { background: var(--sd-sel); color: var(--sd-sel-fg); }
+  #shotty-design .sd-tb:disabled { opacity: .35; }
+  #shotty-design .sd-tb .sd-num { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid currentColor; font-size: 10px; font-weight: 500; line-height: 1; }
+  #shotty-design .sd-ctx { display: flex; align-items: center; gap: 6px; min-width: 0; flex: none; }
+  #shotty-design .sd-ctx .sd-hint { font-size: 12px; color: var(--sd-text2); white-space: nowrap; }
+  #shotty-design .sd-chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; border: 1px solid var(--sd-line); border-radius: 7px; background: var(--sd-ctl); color: var(--sd-text); font-size: 12px; white-space: nowrap; }
+  #shotty-design .sd-chip:hover { background: var(--sd-hover); }
+  #shotty-design .sd-chip[aria-expanded="true"] { border-color: var(--sd-text2); }
+  #shotty-design .sd-chip .sd-dot { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(0,0,0,.2); box-shadow: inset 0 0 0 1px rgba(255,255,255,.35); }
+  #shotty-design .sd-chip .sd-wline { width: 18px; border-radius: 2px; background: currentColor; }
+  #shotty-design .sd-spacer { flex: 1 1 0; min-width: 8px; }
+  #shotty-design .sd-ed-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+  #shotty-design .sd-act { height: 30px; padding: 0 12px; border: 1px solid var(--sd-line); border-radius: 7px; background: var(--sd-ctl); color: var(--sd-text); font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  #shotty-design .sd-act:hover { background: var(--sd-hover); }
+  #shotty-design .sd-act.sd-primary { background: var(--sd-sel); color: var(--sd-sel-fg); border-color: transparent; }
+  #shotty-design .sd-act.sd-primary:hover { opacity: .9; }
+  #shotty-design .sd-ed[data-compact-tools="true"] .sd-toolset, #shotty-design .sd-ed:not([data-compact-tools="true"]) #sd-tools-btn { display: none; }
+  #shotty-design .sd-ed[data-compact-style="true"] .sd-ctx, #shotty-design .sd-ed:not([data-compact-style="true"]) #sd-style-btn { display: none; }
+  #shotty-design .sd-ed[data-narrow="true"] .sd-act span, #shotty-design .sd-ed[data-narrow="true"] #sd-copy span { display: none; }
+  #shotty-design .sd-ed[data-narrow="true"] .sd-act, #shotty-design .sd-ed[data-narrow="true"] #sd-copy { padding: 0 8px; }
+  #shotty-design .sd-ed[data-narrow="true"] .sd-ed-top { padding: 0 8px; gap: 4px; }
+  #shotty-design .sd-ed[data-narrow="true"] .sd-lights { gap: 5px; }
+  #shotty-design .sd-ed[data-narrow="true"] .sd-lights span { width: 10px; height: 10px; }
+  #shotty-design .sd-spacer { min-width: 0; }
+  #shotty-design .sd-stage { position: relative; height: clamp(240px, 58vw, 520px); overflow: auto; background: var(--sd-canvas); outline: none; touch-action: none; }
+  #shotty-design .sd-stage-inner { min-width: 100%; min-height: 100%; display: flex; align-items: center; justify-content: center; padding: 16px; }
+  #shotty-design .sd-stage-inner > div { position: relative; flex: none; box-shadow: 0 8px 28px rgba(0,0,0,.4); }
+  #shotty-design canvas.sd-cv { display: block; }
+  #shotty-design .sd-text-edit { position: absolute; margin: 0; padding: 0 2px; border: 1px dashed var(--sd-accent); border-radius: 2px; background: light-dark(rgba(255,255,255,.85), rgba(30,30,32,.85)); font-family: var(--sd-font); font-weight: 500; outline: none; min-width: 40px; resize: none; overflow: hidden; white-space: pre; line-height: 1.25; }
+  #shotty-design .sd-ed-bottom { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px; background: var(--sd-chrome); border-top: 1px solid var(--sd-line); font-size: 12px; color: var(--sd-text2); }
+  #shotty-design .sd-zoomctl { display: flex; align-items: center; gap: 1px; }
+  #shotty-design .sd-zoomctl .sd-tb { height: 26px; min-width: 26px; }
+  #shotty-design .sd-zoomctl .sd-zval { min-width: 46px; font-variant-numeric: tabular-nums; color: var(--sd-text); }
+  #shotty-design .sd-ed-title { flex: 1; text-align: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #shotty-design .sd-ed[data-narrow="true"] .sd-ed-title { display: none; }
+  #shotty-design .sd-pop { position: absolute; z-index: 20; top: 52px; min-width: 160px; padding: 8px; border-radius: 9px; background: light-dark(rgba(248,248,250,.98), rgba(44,44,47,.98)); border: 1px solid var(--sd-line); box-shadow: var(--sd-shadow); color: var(--sd-text); }
+  #shotty-design .sd-pop h5 { margin: 0 0 6px; font-size: 11px; font-weight: 500; color: var(--sd-text2); text-transform: uppercase; letter-spacing: .04em; }
+  #shotty-design .sd-pop h5 + .sd-pop-grid, #shotty-design .sd-pop .sd-pop-sec + h5 { margin-top: 8px; }
+  #shotty-design .sd-pop-grid { display: flex; flex-wrap: wrap; gap: 6px; max-width: 176px; }
+  #shotty-design .sd-pop .sd-swatch { width: 22px; height: 22px; }
+  #shotty-design .sd-pop .sd-tb { width: 100%; justify-content: flex-start; padding: 0 8px; }
+  #shotty-design .sd-pop .sd-tb kbd { margin-left: auto; }
+  #shotty-design .sd-pop-row { display: flex; align-items: center; gap: 8px; }
+  #shotty-design .sd-wopt { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 28px; border: 1px solid transparent; border-radius: 6px; background: transparent; }
+  #shotty-design .sd-wopt:hover { background: var(--sd-hover); }
+  #shotty-design .sd-wopt[aria-pressed="true"] { background: var(--sd-sel); color: var(--sd-sel-fg); }
+  #shotty-design .sd-wopt i { display: block; width: 22px; background: currentColor; border-radius: 2px; }
+  #shotty-design .sd-rstyle { display: flex; gap: 6px; }
+  #shotty-design .sd-rstyle button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--sd-text); font-size: 11px; }
+  #shotty-design .sd-rstyle button:hover { background: var(--sd-hover); }
+  #shotty-design .sd-rstyle button[aria-pressed="true"] { border-color: var(--sd-accent); background: light-dark(rgba(10,108,255,.08), rgba(61,139,255,.15)); }
+  #shotty-design .sd-rstyle canvas { display: block; width: 56px; height: 36px; border-radius: 4px; border: 1px solid var(--sd-line); }
+  #shotty-design .sd-range { width: 100%; accent-color: var(--sd-accent); margin: 0; }
+  #shotty-design .sd-range-lbl { display: flex; justify-content: space-between; font-size: 11px; color: var(--sd-text2); margin: 6px 0 2px; }
+  #shotty-design .sd-range-lbl output { color: var(--sd-text); font-variant-numeric: tabular-nums; }
+  #shotty-design .sd-limits { margin-top: 14px; font-size: 13px; }
+  #shotty-design .sd-limits summary { cursor: default; font-weight: 500; }
+  #shotty-design .sd-limits ul { margin: 6px 0 0; padding-left: 18px; }
+  #shotty-design .sd-limits li { margin: 3px 0; }
+  #shotty-design .sd-preview-note { display: none; margin-bottom: 8px; font-size: 12px; color: var(--muted-foreground); }
+  #shotty-design .sd-ed[data-narrow="true"] + .sd-preview-note, #shotty-design .sd-preview-note[data-show="true"] { display: block; }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="sd-shot" viewBox="0 0 1280 800">
+    <rect width="1280" height="800" fill="#f5f5f7"/>
+    <rect width="1280" height="44" fill="#e6e6ea"/>
+    <circle cx="20" cy="22" r="6" fill="#ff5f57"/><circle cx="40" cy="22" r="6" fill="#febc2e"/><circle cx="60" cy="22" r="6" fill="#28c840"/>
+    <text x="640" y="28" text-anchor="middle" font-size="15" font-weight="500" fill="#3a3a3c" font-family="-apple-system, Helvetica, Arial, sans-serif">Ledger — Invoices</text>
+    <rect y="44" width="240" height="756" fill="#ececf0"/>
+    <rect x="20" y="70" width="200" height="28" rx="6" fill="#dcdce2"/>
+    <g fill="#8e8e93" font-size="15" font-family="-apple-system, Helvetica, Arial, sans-serif">
+      <text x="34" y="89" fill="#1d1d1f">Invoices</text>
+      <text x="34" y="129">Customers</text><text x="34" y="169">Payments</text><text x="34" y="209">Reports</text><text x="34" y="249">Settings</text>
+    </g>
+    <text x="280" y="112" font-size="30" font-weight="600" fill="#1d1d1f" font-family="-apple-system, Helvetica, Arial, sans-serif">Invoices</text>
+    <rect x="1070" y="82" width="150" height="38" rx="8" fill="#3478f6"/>
+    <text x="1145" y="107" text-anchor="middle" font-size="15" font-weight="500" fill="#fff" font-family="-apple-system, Helvetica, Arial, sans-serif">New invoice</text>
+    <g font-family="-apple-system, Helvetica, Arial, sans-serif">
+      <rect x="280" y="150" width="290" height="110" rx="10" fill="#fff" stroke="#e1e1e6"/>
+      <text x="300" y="182" font-size="13" fill="#8e8e93">Outstanding</text><text x="300" y="228" font-size="30" font-weight="600" fill="#1d1d1f">$12,480</text>
+      <rect x="600" y="150" width="290" height="110" rx="10" fill="#fff" stroke="#e1e1e6"/>
+      <text x="620" y="182" font-size="13" fill="#8e8e93">Paid this month</text><text x="620" y="228" font-size="30" font-weight="600" fill="#1d1d1f">$38,120</text>
+      <rect x="920" y="150" width="300" height="110" rx="10" fill="#fff" stroke="#e1e1e6"/>
+      <text x="940" y="182" font-size="13" fill="#8e8e93">Overdue</text><text x="940" y="228" font-size="30" font-weight="600" fill="#1d1d1f">3 invoices</text>
+    </g>
+    <rect x="280" y="290" width="940" height="480" rx="10" fill="#fff" stroke="#e1e1e6"/>
+    <g font-size="13" fill="#8e8e93" font-family="-apple-system, Helvetica, Arial, sans-serif">
+      <text x="300" y="322">Customer</text><text x="560" y="322">Email</text><text x="900" y="322">Amount</text><text x="1080" y="322">Status</text>
+    </g>
+    <line x1="280" y1="338" x2="1220" y2="338" stroke="#ececf0"/>
+    <g font-size="14" fill="#1d1d1f" font-family="-apple-system, Helvetica, Arial, sans-serif">
+      <text x="300" y="376">Nordwind GmbH</text><text x="560" y="376" fill="#6e6e73">billing@nordwind.example</text><text x="900" y="376">$4,200</text><rect x="1080" y="360" width="64" height="22" rx="11" fill="#e8f6ec"/><text x="1112" y="376" text-anchor="middle" font-size="12" fill="#1f8f3a">Paid</text>
+      <text x="300" y="436">Acme Studio</text><text x="560" y="436" fill="#6e6e73">ap@acme.example</text><text x="900" y="436">$1,850</text><rect x="1080" y="420" width="76" height="22" rx="11" fill="#fdecec"/><text x="1118" y="436" text-anchor="middle" font-size="12" fill="#d93025">Overdue</text>
+      <text x="300" y="496">Helios Labs</text><text x="560" y="496" fill="#6e6e73">finance@helios.example</text><text x="900" y="496">$980</text><rect x="1080" y="480" width="64" height="22" rx="11" fill="#fff4e0"/><text x="1112" y="496" text-anchor="middle" font-size="12" fill="#b25e00">Sent</text>
+      <text x="300" y="556">Bright Co.</text><text x="560" y="556" fill="#6e6e73">pay@bright.example</text><text x="900" y="556">$2,300</text><rect x="1080" y="540" width="64" height="22" rx="11" fill="#e8f6ec"/><text x="1112" y="556" text-anchor="middle" font-size="12" fill="#1f8f3a">Paid</text>
+      <text x="300" y="616">Kessel Works</text><text x="560" y="616" fill="#6e6e73">ap@kessel.example</text><text x="900" y="616">$5,600</text><rect x="1080" y="600" width="76" height="22" rx="11" fill="#fdecec"/><text x="1118" y="616" text-anchor="middle" font-size="12" fill="#d93025">Overdue</text>
+      <text x="300" y="676">Tidewater</text><text x="560" y="676" fill="#6e6e73">books@tidewater.example</text><text x="900" y="676">$720</text><rect x="1080" y="660" width="64" height="22" rx="11" fill="#fff4e0"/><text x="1112" y="676" text-anchor="middle" font-size="12" fill="#b25e00">Sent</text>
+      <text x="300" y="736">Orbit Media</text><text x="560" y="736" fill="#6e6e73">ar@orbit.example</text><text x="900" y="736">$3,140</text><rect x="1080" y="720" width="64" height="22" rx="11" fill="#e8f6ec"/><text x="1112" y="736" text-anchor="middle" font-size="12" fill="#1f8f3a">Paid</text>
+    </g>
+    <g stroke="#f0f0f3"><line x1="280" y1="398" x2="1220" y2="398"/><line x1="280" y1="458" x2="1220" y2="458"/><line x1="280" y1="518" x2="1220" y2="518"/><line x1="280" y1="578" x2="1220" y2="578"/><line x1="280" y1="638" x2="1220" y2="638"/><line x1="280" y1="698" x2="1220" y2="698"/></g>
+  </symbol>
+</svg>
+
+<div class="sd-top">
+  <div class="sd-brand">
+    <i data-lucide="camera" aria-hidden="true"></i>
+    <strong>Shotty</strong>
+    <span class="sd-demo">Prototype</span>
+  </div>
+  <div class="nav nav-pills" role="tablist" aria-label="Shotty views">
+    <button class="nav-link" id="sd-tab-editor" role="tab" aria-controls="sd-panel-editor" aria-selected="false" type="button">Editor</button>
+    <button class="nav-link" id="sd-tab-desktop" role="tab" aria-controls="sd-panel-desktop" aria-selected="false" type="button">Desktop</button>
+    <button class="nav-link active" id="sd-tab-settings" role="tab" aria-controls="sd-panel-settings" aria-selected="true" type="button">Settings</button>
+  </div>
+</div>
+
+<div class="sd-app" id="sd-app" data-appearance="system" data-density="compact" data-dock="false">
+
+  <!-- EDITOR -->
+  <div id="sd-panel-editor" class="sd-panel" role="tabpanel" aria-labelledby="sd-tab-editor" hidden>
+    <p class="sd-preview-note" id="sd-preview-note">Compact preview: the native editor window has a 720 pt minimum width, so this shows the overflow behavior below that.</p>
+    <div class="sd-ed" id="sd-editor" aria-label="Shotty editor window" data-compact-tools="false" data-compact-style="false" data-narrow="false">
+      <div class="sd-ed-top" role="toolbar" aria-label="Editor toolbar">
+        <div class="sd-lights" aria-hidden="true"><span></span><span></span><span></span></div>
+        <button class="sd-tb" type="button" id="sd-tools-btn" aria-label="Tools" aria-haspopup="true" aria-expanded="false" data-pop="tools"><i data-lucide="square" aria-hidden="true"></i><i data-lucide="chevron-down" aria-hidden="true"></i></button>
+        <div class="sd-toolset" id="sd-tools" role="group" aria-label="Tools">
+          <button class="sd-tb" type="button" data-tool="select" aria-label="Select, V" data-tooltip="Select · V" aria-pressed="false"><i data-lucide="mouse-pointer-2" aria-hidden="true"></i></button>
+          <button class="sd-tb" type="button" data-tool="arrow" aria-label="Arrow, A" data-tooltip="Arrow · A" aria-pressed="false"><i data-lucide="move-up-right" aria-hidden="true"></i></button>
+          <button class="sd-tb" type="button" data-tool="rectangle" aria-label="Rectangle, R" data-tooltip="Rectangle · R" aria-pressed="false"><i data-lucide="square" aria-hidden="true"></i></button>
+          <button class="sd-tb" type="button" data-tool="ellipse" aria-label="Ellipse, E" data-tooltip="Ellipse · E" aria-pressed="false"><i data-lucide="circle" aria-hidden="true"></i></button>
+          <button class="sd-tb" type="button" data-tool="line" aria-label="Line, L" data-tooltip="Line · L" aria-pressed="false"><i data-lucide="slash" aria-hidden="true"></i></button>
+          <button class="sd-tb" type="button" data-tool="text" aria-label="Text, T" data-tooltip="Text · T" aria-pressed="false"><i data-lucide="type" aria-hidden="true"></i></button>
+          <button class="sd-tb" type="button" data-tool="redact" aria-label="Redact, P" data-tooltip="Redact · P" aria-pressed="false"><i data-lucide="grid-2x2" aria-hidden="true"></i></button>
+          <button class="sd-tb" type="button" data-tool="spotlight" aria-label="Spotlight, H" data-tooltip="Spotlight · H" aria-pressed="false"><i data-lucide="focus" aria-hidden="true"></i></button>
+          <button class="sd-tb" type="button" data-tool="counter" aria-label="Counter, C" data-tooltip="Counter · C" aria-pressed="false"><span class="sd-num" aria-hidden="true">1</span></button>
+          <button class="sd-tb" type="button" data-tool="crop" aria-label="Crop, K" data-tooltip="Crop · K" aria-pressed="false"><i data-lucide="crop" aria-hidden="true"></i></button>
+        </div>
+        <button class="sd-chip" type="button" id="sd-style-btn" aria-label="Style" aria-haspopup="true" aria-expanded="false" data-pop="style"><i data-lucide="sliders-horizontal" aria-hidden="true"></i></button>
+        <div class="sd-ctx" id="sd-ctx" aria-label="Tool options"></div>
+        <div class="sd-spacer"></div>
+        <div class="sd-ed-actions">
+          <button class="sd-act" type="button" id="sd-save" data-tooltip="Save · ⌘S"><i data-lucide="download" aria-hidden="true"></i><span>Save</span></button>
+          <button class="sd-act sd-primary" type="button" id="sd-done" data-tooltip="Done · ⌘↩"><i data-lucide="check" aria-hidden="true"></i><span>Done</span></button>
+        </div>
+      </div>
+      <div class="sd-stage" id="sd-stage">
+        <div class="sd-stage-inner" id="sd-stage-inner"><div id="sd-cv-wrap"><canvas class="sd-cv" id="sd-cv" role="img" aria-label="Editable capture: sample invoices window with annotations"></canvas></div></div>
+      </div>
+      <div class="sd-ed-bottom">
+        <div class="sd-zoomctl" role="group" aria-label="Zoom">
+          <button class="sd-tb" type="button" id="sd-zoom-out" aria-label="Zoom out, ⌘-" data-tooltip="Zoom out · ⌘-"><i data-lucide="minus" aria-hidden="true"></i></button>
+          <button class="sd-tb sd-zval" type="button" id="sd-zoom-fit" aria-label="Zoom to fit, ⌘0" data-tooltip="Fit · ⌘0 · 100% · ⌘1">100%</button>
+          <button class="sd-tb" type="button" id="sd-zoom-in" aria-label="Zoom in, ⌘+" data-tooltip="Zoom in · ⌘+"><i data-lucide="plus" aria-hidden="true"></i></button>
+        </div>
+        <div class="sd-zoomctl" role="group" aria-label="History">
+          <button class="sd-tb" type="button" id="sd-undo" aria-label="Undo, ⌘Z" data-tooltip="Undo · ⌘Z"><i data-lucide="undo-2" aria-hidden="true"></i></button>
+          <button class="sd-tb" type="button" id="sd-redo" aria-label="Redo, ⇧⌘Z" data-tooltip="Redo · ⇧⌘Z"><i data-lucide="redo-2" aria-hidden="true"></i></button>
+        </div>
+        <span class="sd-ed-title" id="sd-editor-title" aria-live="polite">Area capture · 1280 × 800 @2x · PNG</span>
+        <button class="sd-chip" type="button" id="sd-copy" data-tooltip="Copy image · ⇧⌘C"><i data-lucide="copy" aria-hidden="true"></i><span>Copy</span></button>
+      </div>
+    </div>
+    <div class="sd-toast" id="sd-toast-editor" aria-live="polite"></div>
+  </div>
+
+  <!-- DESKTOP -->
+  <div id="sd-panel-desktop" class="sd-panel" role="tabpanel" aria-labelledby="sd-tab-desktop" hidden>
+    <div class="sd-desktop" id="sd-desktop" aria-label="Desktop with Shotty menu bar item and thumbnail stack">
+      <div class="sd-fake-win" aria-hidden="true"><svg viewBox="0 0 1280 800"><use href="#sd-shot"/></svg></div>
+      <div class="sd-menubar">
+        <div class="sd-mb-left"><span class="sd-apple"></span><span>Finder</span><span>File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span><span>Help</span></div>
+        <div class="sd-mb-right">
+          <button class="sd-mb-icon" type="button" id="sd-mb-shotty" aria-label="Shotty menu" aria-haspopup="true" aria-expanded="false"><i data-lucide="camera" aria-hidden="true"></i></button>
+          <span class="sd-mb-extra">100%</span><span>12:19</span>
+        </div>
+      </div>
+      <div class="sd-menu" id="sd-menu" role="menu" aria-label="Shotty" hidden>
+        <button type="button" role="menuitem" data-capture="area"><i data-lucide="scan" aria-hidden="true"></i>Capture Area<span class="sd-ks" data-ks="area"></span></button>
+        <button type="button" role="menuitem" data-capture="window"><i data-lucide="app-window" aria-hidden="true"></i>Capture Window<span class="sd-ks" data-ks="window"></span></button>
+        <button type="button" role="menuitem" data-capture="fullscreen"><i data-lucide="monitor" aria-hidden="true"></i>Capture Fullscreen<span class="sd-ks" data-ks="fullscreen"></span></button>
+        <button type="button" role="menuitem" data-capture="scrolling"><i data-lucide="scroll-text" aria-hidden="true"></i>Scrolling Capture<span class="sd-ks" data-ks="scrolling"></span></button>
+        <button type="button" role="menuitem" data-capture="ocr"><i data-lucide="scan-text" aria-hidden="true"></i>Capture Text<span class="sd-ks" data-ks="ocr"></span></button>
+        <hr>
+        <button type="button" role="menuitem" data-open="settings"><i data-lucide="settings-2" aria-hidden="true"></i>Settings…<span class="sd-ks">⌘,</span></button>
+        <button type="button" role="menuitem" data-open="quit">Quit Shotty<span class="sd-ks">⌘Q</span></button>
+      </div>
+      <div class="sd-menu" id="sd-thumb-menu" role="menu" aria-label="Capture actions" hidden>
+        <button type="button" role="menuitem" data-command="open">Open Editor</button>
+        <hr>
+        <button type="button" role="menuitem" data-command="copy">Copy Image</button>
+        <button type="button" role="menuitem" data-command="save">Save to Folder</button>
+        <button type="button" role="menuitem" data-command="save-as">Save As…</button>
+        <hr>
+        <button type="button" role="menuitem" data-command="close">Dismiss</button>
+      </div>
+      <div class="sd-overlay" id="sd-overlay" hidden aria-hidden="true">
+        <div class="sd-sel-rect"><span class="sd-selection-handle" style="left:0;top:0"></span><span class="sd-selection-handle" style="left:50%;top:0"></span><span class="sd-selection-handle" style="left:100%;top:0"></span><span class="sd-selection-handle" style="left:0;top:50%"></span><span class="sd-selection-handle" style="left:100%;top:50%"></span><span class="sd-selection-handle" style="left:0;top:100%"></span><span class="sd-selection-handle" style="left:50%;top:100%"></span><span class="sd-selection-handle" style="left:100%;top:100%"></span></div>
+        <div class="sd-sel-size">1280 × 800</div>
+      </div>
+      <div class="sd-scroll-preview" id="sd-scroll-preview" hidden><div class="sd-stitch" aria-label="Stitched preview"><div class="sd-stitch-clip" id="sd-stitch"></div><span class="sd-stitch-lbl" id="sd-stitch-lbl">800 px</span></div></div>
+      <div class="sd-hud sd-hud-scroll" id="sd-hud-scroll" hidden role="dialog" aria-label="Scrolling capture">
+        <div class="sd-scroll-controls">
+          <button class="sd-btn" type="button" id="sd-scroll-cancel">Cancel <kbd class="sd-key">esc</kbd></button>
+          <button class="sd-btn" type="button" id="sd-scroll-start">Start Capture <kbd class="sd-key">↩</kbd></button>
+          <button class="sd-btn" type="button" id="sd-scroll-auto" aria-pressed="false" hidden><i data-lucide="play" aria-hidden="true"></i><span>Auto Scroll</span></button>
+          <button class="sd-btn" type="button" id="sd-scroll-done" hidden>Done <kbd class="sd-key">↩</kbd></button>
+        </div>
+        <div class="sd-scroll-status" id="sd-scroll-msg" aria-live="polite">Selected area · simulated</div>
+      </div>
+      <div class="sd-hud" id="sd-hud-ocr" hidden role="dialog" aria-label="Captured text">
+        <h4><i data-lucide="scan-text" aria-hidden="true"></i> Text copied to clipboard <span class="sd-sim">simulated</span></h4>
+        <p>Sample OCR result for the selected area, line breaks kept. No recognition runs here.</p>
+        <div class="sd-ocr-text">Nordwind GmbH   billing@nordwind.example   $4,200   Paid
+Acme Studio   ap@acme.example   $1,850   Overdue
+Helios Labs   finance@helios.example   $980   Sent</div>
+        <div class="sd-hud-row">
+          <span class="sd-rec-hint">Closes on its own after 4 s</span>
+          <span style="flex:1"></span>
+          <button class="sd-btn" type="button" id="sd-ocr-close">Close</button>
+        </div>
+      </div>
+      <div class="sd-thumbs" id="sd-thumbs" data-pos="left-center" aria-label="Recent captures" aria-live="polite"></div>
+      <div class="sd-dock" aria-hidden="true"><span></span><span></span><span></span><span class="sd-dock-shotty"><i data-lucide="camera" aria-hidden="true"></i></span><span></span></div>
+    </div>
+    <div class="sd-caption">Simulated desktop: the capture menu adds cards with the same synthetic image. Cards stay until closed; click one to edit, and Done in the editor returns the edited state to its card.</div>
+    <div class="sd-toast" id="sd-toast-desktop" aria-live="polite"></div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div id="sd-panel-settings" class="sd-panel" role="tabpanel" aria-labelledby="sd-tab-settings">
+    <div class="sd-window sd-settings" aria-label="Shotty settings window">
+      <div class="sd-titlebar">
+        <div class="sd-lights"><span></span><span></span><span></span></div>
+        <div class="sd-title">Shotty Settings</div>
+        <div></div>
+      </div>
+      <div class="sd-settings-body">
+        <nav class="sd-sidebar" id="sd-sidebar" aria-label="Settings categories">
+          <button type="button" data-pane="general" aria-selected="true"><i data-lucide="settings-2" aria-hidden="true"></i>General</button>
+          <button type="button" data-pane="capture" aria-selected="false"><i data-lucide="camera" aria-hidden="true"></i>Capture</button>
+          <button type="button" data-pane="thumbnails" aria-selected="false"><i data-lucide="image" aria-hidden="true"></i>Thumbnails</button>
+          <button type="button" data-pane="editor" aria-selected="false"><i data-lucide="pencil" aria-hidden="true"></i>Editor</button>
+          <button type="button" data-pane="shortcuts" aria-selected="false"><i data-lucide="keyboard" aria-hidden="true"></i>Shortcuts</button>
+          <button type="button" data-pane="permissions" aria-selected="false"><i data-lucide="shield-check" aria-hidden="true"></i>Permissions</button>
+        </nav>
+
+        <div class="sd-pane" data-pane="general">
+          <h3>General</h3>
+          <div class="sd-section">
+            <h4>Application</h4>
+            <div class="sd-row"><div class="sd-lbl">Show in menu bar<small>Capture menu and status icon</small></div><input class="sd-switch" type="checkbox" id="sd-set-menubar" checked aria-label="Show in menu bar"></div>
+            <div class="sd-row"><div class="sd-lbl">Show in Dock<small>Off keeps Shotty out of ⌘-Tab</small></div><input class="sd-switch" type="checkbox" id="sd-set-dock" aria-label="Show in Dock"></div>
+            <div class="sd-row"><div class="sd-lbl">Launch at login</div><input class="sd-switch" type="checkbox" id="sd-set-login" aria-label="Launch at login"></div>
+          </div>
+          <div class="sd-section">
+            <h4>Appearance</h4>
+            <div class="sd-row"><div class="sd-lbl">Color scheme</div>
+              <div class="sd-radio-seg" role="radiogroup" aria-label="Appearance">
+                <label><input type="radio" name="sd-appearance" value="system" checked>System</label>
+                <label><input type="radio" name="sd-appearance" value="light">Light</label>
+                <label><input type="radio" name="sd-appearance" value="dark">Dark</label>
+              </div>
+            </div>
+          </div>
+          <p class="sd-note" id="sd-general-note"></p>
+        </div>
+
+        <div class="sd-pane" data-pane="capture" hidden>
+          <h3>Capture</h3>
+          <div class="sd-section">
+            <h4>After capture</h4>
+            <div class="sd-row"><div class="sd-lbl">Copy to clipboard</div><input class="sd-switch" type="checkbox" id="sd-set-copy" aria-label="Copy to clipboard"></div>
+            <div class="sd-row"><div class="sd-lbl">Save to folder<small>File name: Shotty 2026-09-25 at 12.19.44.png</small></div><input class="sd-switch" type="checkbox" id="sd-set-save" aria-label="Save to folder"></div>
+            <div class="sd-row"><div class="sd-lbl">Show thumbnail</div><input class="sd-switch" type="checkbox" id="sd-set-thumb" checked aria-label="Show thumbnail"></div>
+          </div>
+          <div class="sd-section">
+            <h4>Files</h4>
+            <div class="sd-row"><div class="sd-lbl">Save folder</div><div class="sd-ctl-wrap"><span class="sd-path"><i data-lucide="folder" aria-hidden="true"></i>Downloads</span><button class="sd-btn" type="button" id="sd-choose-folder">Choose…</button></div></div>
+            <div class="sd-row"><div class="sd-lbl">Format</div><select class="sd-select" aria-label="Format"><option>PNG</option><option>JPEG</option></select></div>
+            <div class="sd-row"><div class="sd-lbl">Resolution<small>Original keeps Retina pixels (2x)</small></div><select class="sd-select" aria-label="Resolution"><option>Original (Retina)</option><option>Downscale to 1x</option></select></div>
+          </div>
+          <div class="sd-section">
+            <h4>Selection</h4>
+            <div class="sd-row"><div class="sd-lbl">Freeze screen while selecting</div><input class="sd-switch" type="checkbox" checked aria-label="Freeze screen while selecting"></div>
+            <div class="sd-row"><div class="sd-lbl">Show cursor in captures</div><input class="sd-switch" type="checkbox" aria-label="Show cursor in captures"></div>
+            <div class="sd-row"><div class="sd-lbl">Window capture shadow</div><input class="sd-switch" type="checkbox" checked aria-label="Window capture shadow"></div>
+            <div class="sd-row"><div class="sd-lbl">Captured text (OCR)<small>Language: auto-detect · copies to clipboard</small></div><select class="sd-select" aria-label="OCR languages"><option>Automatic</option><option>English</option><option>German</option></select></div>
+          </div>
+        </div>
+
+        <div class="sd-pane" data-pane="thumbnails" hidden>
+          <h3>Thumbnails</h3>
+          <div class="sd-section">
+            <div class="sd-row"><div class="sd-lbl">Display<small>The whole stack follows your pointer, including earlier captures</small></div><select class="sd-select" id="sd-set-display" aria-label="Thumbnail display"><option value="active">Follow active display</option><option value="main">Main display</option><option value="studio">Studio Display</option></select></div>
+            <div class="sd-row"><div class="sd-lbl">Position<small>On the active display · left center by default</small></div>
+              <div class="sd-corners" id="sd-corners" role="group" aria-label="Thumbnail corner">
+                <button type="button" data-pos="top-left" aria-label="Top left" aria-pressed="false"></button>
+                <button type="button" data-pos="top-right" aria-label="Top right" aria-pressed="false"></button>
+                <button type="button" data-pos="left-center" aria-label="Left center" aria-pressed="true"></button>
+                <button type="button" data-pos="right-center" aria-label="Right center" aria-pressed="false"></button>
+                <button type="button" data-pos="bottom-left" aria-label="Bottom left" aria-pressed="false"></button>
+                <button type="button" data-pos="bottom-right" aria-label="Bottom right" aria-pressed="false"></button>
+              </div>
+            </div>
+            <div class="sd-row"><div class="sd-lbl">Auto close<small>Keep thumbnails until you close or save them</small></div>
+              <select class="sd-select" id="sd-set-autoclose" aria-label="Auto close"><option value="never">Never</option><option value="5">After 5 s</option><option value="15">After 15 s</option></select></div>
+            <div class="sd-row"><div class="sd-lbl">Size</div>
+              <div class="sd-radio-seg" role="radiogroup" aria-label="Thumbnail size">
+                <label><input type="radio" name="sd-thumbsize" value="small">Small</label>
+                <label><input type="radio" name="sd-thumbsize" value="medium" checked>Medium</label>
+                <label><input type="radio" name="sd-thumbsize" value="large">Large</label>
+              </div>
+            </div>
+          </div>
+          <div class="sd-section">
+            <div class="sd-row"><div class="sd-lbl">Keep thumbnail after saving<small>Off dismisses it once the file is written</small></div><input class="sd-switch" type="checkbox" id="sd-set-keep" aria-label="Keep thumbnail after saving"></div>
+          </div>
+        </div>
+
+        <div class="sd-pane" data-pane="editor" hidden>
+          <h3>Editor</h3>
+          <div class="sd-section">
+            <div class="sd-row"><div class="sd-lbl">Remember last tool<small>Off opens every capture with Select</small></div><input class="sd-switch" type="checkbox" aria-label="Remember last tool"></div>
+            <div class="sd-row"><div class="sd-lbl">Remember color and stroke width</div><input class="sd-switch" type="checkbox" checked aria-label="Remember color and stroke width"></div>
+            <div class="sd-row"><div class="sd-lbl">Default color</div><span class="sd-group" role="group" aria-label="Default color"><button type="button" class="sd-swatch" aria-label="Color #ff3b30" aria-pressed="true" style="background:#ff3b30"></button><button type="button" class="sd-swatch" aria-label="Color #ff9500" aria-pressed="false" style="background:#ff9500"></button><button type="button" class="sd-swatch" aria-label="Color #ffcc00" aria-pressed="false" style="background:#ffcc00"></button><button type="button" class="sd-swatch" aria-label="Color #34c759" aria-pressed="false" style="background:#34c759"></button><button type="button" class="sd-swatch" aria-label="Color #0a84ff" aria-pressed="false" style="background:#0a84ff"></button><button type="button" class="sd-swatch" aria-label="Color #1d1d1f" aria-pressed="false" style="background:#1d1d1f"></button><button type="button" class="sd-swatch" aria-label="Color #ffffff" aria-pressed="false" style="background:#ffffff"></button></span></div>
+          </div>
+          <div class="sd-section">
+            <div class="sd-row"><div class="sd-lbl">Close editor after Copy Image</div><input class="sd-switch" type="checkbox" aria-label="Close editor after Copy Image"></div>
+            <div class="sd-row"><div class="sd-lbl">Close editor after Save</div><input class="sd-switch" type="checkbox" aria-label="Close editor after Save"></div>
+            <div class="sd-row"><div class="sd-lbl">Open editor at<small>Fit shows the whole capture; 100% keeps Retina pixels 1:1</small></div><select class="sd-select" aria-label="Initial zoom"><option>Fit</option><option>100%</option></select></div>
+          </div>
+        </div>
+
+        <div class="sd-pane" data-pane="shortcuts" hidden>
+          <h3>Shortcuts</h3>
+          <p class="sd-note">Click a shortcut to record a new one. Global shortcuts work in every app.</p>
+          <div id="sd-shortcut-groups"></div>
+          <div class="sd-row" style="padding:0"><button class="sd-btn" type="button" id="sd-shortcuts-reset">Restore defaults</button></div>
+        </div>
+
+        <div class="sd-pane" data-pane="permissions" hidden>
+          <h3>Permissions</h3>
+          <div class="sd-section">
+            <div class="sd-row"><div class="sd-lbl">Screen &amp; System Audio Recording<small>Required for every capture (ScreenCaptureKit)</small></div><span class="sd-perm ok"><i data-lucide="check" aria-hidden="true"></i>Granted</span></div>
+            <div class="sd-row"><div class="sd-lbl">Accessibility<small>Scrolling capture scrolls the target window for you</small></div><div class="sd-ctl-wrap"><span class="sd-perm no"><i data-lucide="x" aria-hidden="true"></i>Not granted</span><button class="sd-btn" type="button" id="sd-open-sys">Open System Settings…</button></div></div>
+          </div>
+          <p class="sd-note">Shotty checks both on launch and shows a one-time banner if anything is missing. Global shortcuts use Carbon hotkeys and need no extra permission.</p>
+        </div>
+      </div>
+    </div>
+    <div class="sd-toast" id="sd-toast-settings" aria-live="polite"></div>
+  </div>
+</div>
+
+<details class="sd-limits" id="sd-limits">
+  <summary>Prototype limits: what is real here and what is simulated</summary>
+  <ul>
+    <li>Real: the editor draws on an HTML canvas over a synthetic sample image rendered at 2x. Drag creation for rectangle, ellipse, line, arrow, redact, spotlight and crop (any direction, 4 px threshold, Shift for square, circle or 45° lines), live preview, the tool stays active after drawing.</li>
+    <li>Real: Select (V) picks the nearest outline, drags to move (Shift locks an axis), resizes with the blue handles or line endpoints, arrow keys nudge (Shift 10 px), Backspace deletes. Escape cancels a drag; ⌘Z and ⇧⌘Z or ⌘Y undo and redo one gesture at a time.</li>
+    <li>Real: counters number sequentially; text is typed inline where you click in a multiline field (Return adds a line; ⌘Return, Escape or clicking outside finishes and keeps text; tool letters are not intercepted while typing); zoom (⌘+ ⌘- ⌘0 ⌘1) keeps pointer coordinates correct; crop applies with Enter and is undoable.</li>
+    <li>Real: Done stores the editable state per capture card and returns to the desktop; reopening a card restores its annotations and crop, and Done recreates a card that was closed while editing. Every mock capture shares one synthetic source image. Thumbnail miniatures still show that source; they do not render the edits.</li>
+    <li>Real: redaction reads the source pixels. Pixelate averages blocks and adds per-block noise; Blur uses a browser gaussian over padded source samples; Solid covers. Both effects only obscure visually and make no recoverability guarantee. Strength changes with the slider or [ and ].</li>
+    <li>Simulated: capture (area, window, fullscreen, scrolling, OCR), permissions, the menu bar item, settings persistence, shortcut registration, Copy and Save. Nothing is written to the clipboard or disk. Display choices are illustrative; real pointer-driven relocation across monitors is not demonstrated.</li>
+    <li>Settings show a flat layout with browser-native checkboxes, radio buttons, and menus. The macOS app uses SwiftUI Settings, a native sidebar and Form, system colors, SF Symbols, and system dialogs. Browser controls, titlebar, materials, focus rings, and typography are approximations, not custom-control requirements for the app.</li>
+    <li>Scrolling: Start → scroll manually or click Auto Scroll → Done is interactive. Manual scrolling hides Auto Scroll for this capture; a new capture restores it. Stopping automation on manual input is a Shotty proposal. The region handles are illustrative, the miniature repeats synthetic content, and no screen stitching or reliable end detection runs here.</li>
+    <li>Missing: real ScreenCaptureKit capture, window and scrolling stitching algorithms (the product includes horizontal scrolling; the preview only simulates vertical), OCR, native text input and IME, the native window minimum width (720 pt; below it this preview switches to overflow menus), SF Symbols (Lucide icons stand in), curved arrows, full tool-style choices, Option-center drawing, multi-selection and marquee, duplicate and copy or paste of objects, and pinch or Space-drag panning.</li>
+  </ul>
+</details>
+
+<script>
+(() => {
+  const root = document.getElementById("shotty-design");
+  const app = document.getElementById("sd-app");
+  const $ = (id) => document.getElementById(id);
+  const icons = () => globalThis.lucide && lucide.createIcons({ attrs: { width: 16, height: 16 } });
+  const state = { captures: 0, thumbs: [], autoclose: "never", shortcuts: {} };
+  const defaultShortcuts = {
+    global: [
+      ["area", "Capture Area", "⌃⌥⌘4"], ["window", "Capture Window", "⌃⌥⌘W"], ["fullscreen", "Capture Fullscreen", "⌃⌥⌘3"],
+      ["scrolling", "Scrolling Capture", "⌃⌥⌘5"], ["ocr", "Capture Text", "⌃⌥⌘T"], ["last", "Open Last Capture", "⌃⌥⌘L"],
+    ],
+    editor: [
+      ["select", "Select", "V"], ["arrow", "Arrow", "A"], ["rectangle", "Rectangle", "R"], ["ellipse", "Ellipse", "E"], ["line", "Line", "L"],
+      ["text", "Text", "T"], ["redact", "Redact", "P"], ["spotlight", "Spotlight", "H"], ["counter", "Counter", "C"], ["crop", "Crop", "K"],
+      ["copy", "Copy Image", "⇧⌘C"], ["save", "Save", "⌘S"], ["done", "Done", "⌘↩"], ["zoomin", "Zoom In", "⌘+"], ["zoomout", "Zoom Out", "⌘-"], ["fit", "Zoom to Fit", "⌘0"],
+    ],
+  };
+  const systemTaken = { "⌘⇧3": "macOS · Save picture of screen", "⌘⇧4": "macOS · Save picture of area", "⌘⇧5": "macOS · Screenshot toolbar", "⌘Q": "Quit", "⌘,": "Settings" };
+
+  // ----- Toast -----
+  const toastTimers = {};
+  function toast(id, msg, icon) {
+    const el = $(id);
+    el.innerHTML = `<span>${icon ? `<i data-lucide="${icon}" aria-hidden="true"></i>` : ""}${msg}</span>`;
+    icons();
+    clearTimeout(toastTimers[id]);
+    toastTimers[id] = setTimeout(() => { el.innerHTML = ""; }, 3500);
+  }
+
+
+  // ===== Editor: canvas engine =====
+  const ed = {
+    tool: "select", color: "#ff3b30", stroke: 4, textSize: 24, redactStyle: "pixelate", redactStrength: 14, dim: 55, aspect: "free",
+    items: [], sel: null, draft: null, drag: null, undo: [], redo: [], counter: 1,
+    crop: { x: 0, y: 0, w: 1280, h: 800 }, cropDraft: null, zoom: 1, fitZoom: 1, kind: "Area",
+    src: null, ready: false, editing: null, pop: null,
+  };
+  const IMG_W = 1280, IMG_H = 800;
+  const editorPanel = $("sd-panel-editor");
+  const editorEl = $("sd-editor");
+  const stage = $("sd-stage");
+  const cv = $("sd-cv");
+  const cvWrap = $("sd-cv-wrap");
+  const ctx = cv.getContext("2d");
+  const palette = ["#ff3b30", "#ff9500", "#ffcc00", "#34c759", "#0a84ff", "#af52de", "#1d1d1f", "#ffffff"];
+  const widths = [2, 4, 6];
+  const toolKeys = { v: "select", a: "arrow", r: "rectangle", e: "ellipse", l: "line", t: "text", p: "redact", h: "spotlight", c: "counter", k: "crop" };
+  const toolNames = { select: "Select", arrow: "Arrow", rectangle: "Rectangle", ellipse: "Ellipse", line: "Line", text: "Text", redact: "Redact", spotlight: "Spotlight", counter: "Counter", crop: "Crop" };
+  const boxTools = new Set(["rectangle", "ellipse", "redact", "spotlight", "crop"]);
+  const lineTools = new Set(["line", "arrow"]);
+  const FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif';
+
+  // Rasterize the sample SVG symbol into a 2x offscreen source (Retina-like) so redaction works on real pixels.
+  function loadSource() {
+    const inner = document.getElementById("sd-shot").innerHTML;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${IMG_W * 2}" height="${IMG_H * 2}" viewBox="0 0 ${IMG_W} ${IMG_H}">${inner}</svg>`;
+    const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = IMG_W * 2; c.height = IMG_H * 2;
+      c.getContext("2d").drawImage(img, 0, 0);
+      ed.src = c; ed.ready = true;
+      URL.revokeObjectURL(url);
+      fitZoom();
+      draw();
+    };
+    img.src = url;
+  }
+
+  // ----- geometry helpers -----
+  const norm = (r) => ({ x: Math.min(r.x, r.x + r.w), y: Math.min(r.y, r.y + r.h), w: Math.abs(r.w), h: Math.abs(r.h) });
+  const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+  function segDist(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1, dy = y2 - y1, l2 = dx * dx + dy * dy;
+    const t = l2 ? Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / l2)) : 0;
+    return dist(px, py, x1 + t * dx, y1 + t * dy);
+  }
+  function bounds(a) {
+    if (lineTools.has(a.type)) return norm({ x: a.x1, y: a.y1, w: a.x2 - a.x1, h: a.y2 - a.y1 });
+    if (a.type === "counter") return { x: a.x - 18, y: a.y - 18, w: 36, h: 36 };
+    if (a.type === "text") { ctx.font = `500 ${a.size}px ${FONT}`; const lines = a.text.split("\n"); const w = Math.max(...lines.map((l) => ctx.measureText(l).width)); return { x: a.x - 2, y: a.y - a.size, w: w + 4, h: a.size * 1.25 * lines.length }; }
+    return { x: a.x, y: a.y, w: a.w, h: a.h };
+  }
+  const inside = (b, x, y) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+  function outlineDist(a, x, y) {
+    if (lineTools.has(a.type)) return segDist(x, y, a.x1, a.y1, a.x2, a.y2);
+    const b = bounds(a);
+    if (a.type === "ellipse") { const rx = b.w / 2, ry = b.h / 2; if (!rx || !ry) return 1e9; const nx = (x - b.x - rx) / rx, ny = (y - b.y - ry) / ry; return Math.abs(Math.hypot(nx, ny) - 1) * Math.min(rx, ry); }
+    if (a.type === "rectangle") { const dl = Math.abs(x - b.x), dr = Math.abs(x - b.x - b.w), dt = Math.abs(y - b.y), db = Math.abs(y - b.y - b.h); const inX = x >= b.x && x <= b.x + b.w, inY = y >= b.y && y <= b.y + b.h; return Math.min(inY ? Math.min(dl, dr) : 1e9, inX ? Math.min(dt, db) : 1e9, inX && inY ? 1e9 : Math.min(dl, dr, dt, db) + 1e3); }
+    return inside(b, x, y) ? 0 : 1e9;
+  }
+  function hitTest(x, y) {
+    const tol = 8 / ed.zoom;
+    let best = null, bestD = tol;
+    for (let i = ed.items.length - 1; i >= 0; i--) {
+      const a = ed.items[i], d = outlineDist(a, x, y);
+      if (d < bestD) { best = a; bestD = d; }
+    }
+    return best;
+  }
+  function handlesFor(a) {
+    if (lineTools.has(a.type)) return [{ id: "p1", x: a.x1, y: a.y1 }, { id: "p2", x: a.x2, y: a.y2 }];
+    if (a.type === "counter" || a.type === "text") return [];
+    const b = bounds(a), cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    return [
+      { id: "nw", x: b.x, y: b.y }, { id: "n", x: cx, y: b.y }, { id: "ne", x: b.x + b.w, y: b.y }, { id: "e", x: b.x + b.w, y: cy },
+      { id: "se", x: b.x + b.w, y: b.y + b.h }, { id: "s", x: cx, y: b.y + b.h }, { id: "sw", x: b.x, y: b.y + b.h }, { id: "w", x: b.x, y: cy },
+    ];
+  }
+  function applyResize(a, orig, id, dx, dy, shift) {
+    if (lineTools.has(a.type)) {
+      if (id === "p1") { a.x1 = orig.x1 + dx; a.y1 = orig.y1 + dy; } else { a.x2 = orig.x2 + dx; a.y2 = orig.y2 + dy; }
+      if (shift) snapLine(a, id === "p1" ? "p1" : "p2");
+      return;
+    }
+    let x = orig.x, y = orig.y, r = orig.x + orig.w, b = orig.y + orig.h;
+    if (id.includes("w")) x += dx; if (id.includes("e")) r += dx; if (id.includes("n")) y += dy; if (id.includes("s")) b += dy;
+    let w = r - x, h = b - y;
+    if (shift && id.length === 2) { const m = Math.max(Math.abs(w), Math.abs(h)); w = Math.sign(w || 1) * m; h = Math.sign(h || 1) * m; if (id.includes("w")) x = r - w; if (id.includes("n")) y = b - h; }
+    Object.assign(a, norm({ x, y, w, h }));
+  }
+  function snapLine(a, moving) {
+    const fx = moving === "p2" ? a.x1 : a.x2, fy = moving === "p2" ? a.y1 : a.y2;
+    const mx = moving === "p2" ? a.x2 : a.x1, my = moving === "p2" ? a.y2 : a.y1;
+    const ang = Math.round(Math.atan2(my - fy, mx - fx) / (Math.PI / 4)) * (Math.PI / 4), len = dist(fx, fy, mx, my);
+    const nx = fx + Math.cos(ang) * len, ny = fy + Math.sin(ang) * len;
+    if (moving === "p2") { a.x2 = nx; a.y2 = ny; } else { a.x1 = nx; a.y1 = ny; }
+  }
+
+  // ----- drawing -----
+  function drawRedact(a, c = ctx) {
+    const b = norm(a); if (b.w < 1 || b.h < 1) return;
+    const x0 = Math.max(0, b.x), y0 = Math.max(0, b.y), x1 = Math.min(IMG_W, b.x + b.w), y1 = Math.min(IMG_H, b.y + b.h);
+    if (x1 <= x0 || y1 <= y0) return;
+    if (a.style === "solid") { c.fillStyle = "#1d1d1f"; c.fillRect(x0, y0, x1 - x0, y1 - y0); return; }
+    const t = a.strength || 14;
+    if (a.style === "blur") {
+      // Blur: sample a padded region at a coarse block size, then gaussian; visual obscuring only, no recoverability claim.
+      const pad = t, px0 = Math.max(0, x0 - pad), py0 = Math.max(0, y0 - pad), px1 = Math.min(IMG_W, x1 + pad), py1 = Math.min(IMG_H, y1 + pad);
+      const coarse = Math.max(4, t / 2), tw = Math.max(1, Math.round((px1 - px0) / coarse)), th = Math.max(1, Math.round((py1 - py0) / coarse));
+      const tmp = scratch(tw, th); tmp.getContext("2d").drawImage(ed.src, px0 * 2, py0 * 2, (px1 - px0) * 2, (py1 - py0) * 2, 0, 0, tw, th);
+      c.save(); c.beginPath(); c.rect(x0, y0, x1 - x0, y1 - y0); c.clip(); c.filter = `blur(${t * 0.5}px)`; c.imageSmoothingEnabled = true;
+      c.drawImage(tmp, 0, 0, tw, th, px0, py0, px1 - px0, py1 - py0); c.restore(); return;
+    }
+    // Pixelate: average the source pixels per block, add small per-block noise, draw back with nearest-neighbor.
+    const tw = Math.max(1, Math.ceil((x1 - x0) / t)), th = Math.max(1, Math.ceil((y1 - y0) / t));
+    const tmp = scratch(tw, th), tc = tmp.getContext("2d");
+    tc.imageSmoothingEnabled = true; tc.drawImage(ed.src, x0 * 2, y0 * 2, (x1 - x0) * 2, (y1 - y0) * 2, 0, 0, tw, th);
+    const id = tc.getImageData(0, 0, tw, th), d = id.data, seed = a.seed || 1;
+    for (let i = 0; i < d.length; i += 4) { const n = ((Math.sin(i * 12.9898 + seed) * 43758.5453) % 1) * 16; d[i] += n; d[i + 1] += n; d[i + 2] += n; }
+    tc.putImageData(id, 0, 0);
+    c.save(); c.imageSmoothingEnabled = false; c.drawImage(tmp, 0, 0, tw, th, x0, y0, tw * t, th * t); c.restore();
+  }
+  const scratchPool = {};
+  function scratch(w, h) { const k = "s"; const c = scratchPool[k] || (scratchPool[k] = document.createElement("canvas")); c.width = w; c.height = h; return c; }
+  function drawItem(a) {
+    ctx.lineWidth = a.stroke || 4; ctx.strokeStyle = a.color || ed.color; ctx.fillStyle = a.color || ed.color; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    if (a.type === "rectangle") { const b = norm(a); ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 3); ctx.stroke(); }
+    else if (a.type === "ellipse") { const b = norm(a); if (b.w && b.h) { ctx.beginPath(); ctx.ellipse(b.x + b.w / 2, b.y + b.h / 2, b.w / 2, b.h / 2, 0, 0, Math.PI * 2); ctx.stroke(); } }
+    else if (a.type === "line" || a.type === "arrow") {
+      ctx.beginPath(); ctx.moveTo(a.x1, a.y1); ctx.lineTo(a.x2, a.y2); ctx.stroke();
+      if (a.type === "arrow") { const ang = Math.atan2(a.y2 - a.y1, a.x2 - a.x1), hl = 6 + a.stroke * 2.5; ctx.beginPath(); ctx.moveTo(a.x2, a.y2); ctx.lineTo(a.x2 - hl * Math.cos(ang - 0.5), a.y2 - hl * Math.sin(ang - 0.5)); ctx.lineTo(a.x2 - hl * Math.cos(ang + 0.5), a.y2 - hl * Math.sin(ang + 0.5)); ctx.closePath(); ctx.fill(); }
+    }
+    else if (a.type === "text") { ctx.font = `500 ${a.size}px ${FONT}`; ctx.textBaseline = "alphabetic"; ctx.lineWidth = 5; ctx.strokeStyle = a.color === "#ffffff" ? "rgba(0,0,0,.65)" : "rgba(255,255,255,.9)"; a.text.split("\n").forEach((line, i) => { const y = a.y + i * a.size * 1.25; ctx.strokeText(line, a.x, y); ctx.fillText(line, a.x, y); }); }
+    else if (a.type === "counter") { ctx.beginPath(); ctx.arc(a.x, a.y, 18, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = a.color === "#ffffff" || a.color === "#ffcc00" ? "#1d1d1f" : "#fff"; ctx.font = `500 20px ${FONT}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(a.n), a.x, a.y + 1); ctx.textAlign = "start"; ctx.textBaseline = "alphabetic"; }
+    else if (a.type === "redact") drawRedact(a);
+    else if (a.type === "spotlight") { const b = norm(a); ctx.save(); ctx.beginPath(); ctx.rect(-1e4, -1e4, 3e4, 3e4); ctx.roundRect(b.x, b.y, b.w, b.h, 10); ctx.fillStyle = `rgba(0,0,0,${a.dim / 100})`; ctx.fill("evenodd"); ctx.restore(); }
+  }
+  function drawHandles(a) {
+    const r = 5 / ed.zoom, b = bounds(a);
+    ctx.save(); ctx.lineWidth = 1 / ed.zoom; ctx.strokeStyle = "#0a84ff";
+    if (!lineTools.has(a.type)) { ctx.setLineDash([4 / ed.zoom, 3 / ed.zoom]); ctx.strokeRect(b.x, b.y, b.w, b.h); ctx.setLineDash([]); }
+    for (const h of handlesFor(a)) { ctx.beginPath(); ctx.arc(h.x, h.y, r, 0, Math.PI * 2); ctx.fillStyle = "#fff"; ctx.fill(); ctx.lineWidth = 1.5 / ed.zoom; ctx.stroke(); }
+    ctx.restore();
+  }
+  let rafId = 0;
+  function draw() { if (!rafId) rafId = requestAnimationFrame(paint); }
+  function sync() { updateChrome(); draw(); }
+  function paint() {
+    rafId = 0; if (!ed.ready) return;
+    const dpr = window.devicePixelRatio || 1, z = ed.zoom, c = ed.crop;
+    const cw = Math.round(c.w * z), ch = Math.round(c.h * z);
+    if (cv.width !== Math.round(cw * dpr) || cv.height !== Math.round(ch * dpr)) { cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr); }
+    cv.style.width = cw + "px"; cv.style.height = ch + "px";
+    ctx.setTransform(dpr * z, 0, 0, dpr * z, -c.x * dpr * z, -c.y * dpr * z);
+    ctx.clearRect(c.x, c.y, c.w, c.h);
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(ed.src, 0, 0, IMG_W, IMG_H);
+    ctx.save(); ctx.beginPath(); ctx.rect(c.x, c.y, c.w, c.h); ctx.clip();
+    for (const a of ed.items) drawItem(a);
+    if (ed.draft) drawItem(ed.draft);
+    ctx.restore();
+    const cd = ed.cropDraft;
+    if (cd) { const b = norm(cd); ctx.save(); ctx.beginPath(); ctx.rect(c.x, c.y, c.w, c.h); ctx.roundRect(b.x, b.y, b.w, b.h, 0); ctx.fillStyle = "rgba(0,0,0,.5)"; ctx.fill("evenodd"); ctx.restore(); drawHandles({ ...b, type: "crop" }); }
+    const sel = ed.items.find((a) => a.id === ed.sel);
+    if (sel) drawHandles(sel);
+  }
+
+  // ----- zoom -----
+  function fitZoom() {
+    const w = stage.clientWidth - 32, h = stage.clientHeight - 32;
+    ed.fitZoom = Math.min(2, Math.max(0.1, Math.min(w / ed.crop.w, h / ed.crop.h)));
+    ed.zoom = ed.fitZoom; ed.zoomMode = "fit"; positionTextEditor(); sync();
+  }
+  function setZoom(z, mode) { ed.zoom = Math.max(0.1, Math.min(4, z)); ed.zoomMode = mode || "manual"; positionTextEditor(); sync(); }
+  const zoomLabel = () => `${Math.round(ed.zoom * 100)}%`;
+  $("sd-zoom-in").addEventListener("click", () => setZoom(ed.zoom * 1.25));
+  $("sd-zoom-out").addEventListener("click", () => setZoom(ed.zoom / 1.25));
+  $("sd-zoom-fit").addEventListener("click", () => (ed.zoomMode === "fit" ? setZoom(1, "actual") : fitZoom()));
+  new ResizeObserver(() => { if (ed.ready && ed.zoomMode === "fit") fitZoom(); layoutToolbar(); }).observe(stage);
+
+  // ----- pointer -----
+  function toImg(ev) { const r = cv.getBoundingClientRect(); return { x: (ev.clientX - r.left) / ed.zoom + ed.crop.x, y: (ev.clientY - r.top) / ed.zoom + ed.crop.y }; }
+  function newId() { return Math.random().toString(36).slice(2, 8); }
+  cv.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0 || !ed.ready) return;
+    if (ed.editing) commitText();
+    closePop();
+    const p = toImg(ev);
+    ev.preventDefault(); cv.setPointerCapture(ev.pointerId);
+    const target = ed.cropDraft ? { ...norm(ed.cropDraft), type: "crop", id: "crop" } : ed.items.find((a) => a.id === ed.sel);
+    if (target) {
+      const hr = 7 / ed.zoom, h = handlesFor(target).find((k) => dist(k.x, k.y, p.x, p.y) <= hr);
+      if (h) { const snap = target.id !== "crop"; ed.drag = { mode: "resize", handle: h.id, target, orig: { ...target }, start: p, snap }; if (snap) snapshot(); return; }
+    }
+    if (ed.tool === "select") {
+      const hit = hitTest(p.x, p.y);
+      ed.sel = hit ? hit.id : null;
+      if (hit) { ed.drag = { mode: "move", target: hit, orig: { ...hit }, start: p, snap: true }; snapshot(); }
+      sync(); return;
+    }
+    if (ed.tool === "counter") { snapshot(); ed.items.push({ id: newId(), type: "counter", x: p.x, y: p.y, n: ed.counter++, color: ed.color }); sync(); return; }
+    if (ed.tool === "text") { startText(p.x, p.y); return; }
+    if (ed.tool === "crop" && ed.cropDraft && inside(norm(ed.cropDraft), p.x, p.y)) { ed.drag = { mode: "move", target: ed.cropDraft, orig: { ...ed.cropDraft }, start: p, isCrop: true }; return; }
+    ed.drag = { mode: "create", start: p, moved: false };
+  });
+  cv.addEventListener("pointermove", (ev) => {
+    const d = ed.drag; if (!d) return;
+    const p = toImg(ev), dx = p.x - d.start.x, dy = p.y - d.start.y;
+    if (d.mode === "create") {
+      if (!d.moved && Math.hypot(dx, dy) * ed.zoom < 4) return;
+      d.moved = true;
+      let w = dx, h = dy;
+      if (boxTools.has(ed.tool)) {
+        if (ev.shiftKey && ed.tool !== "crop") { const m = Math.max(Math.abs(w), Math.abs(h)); w = Math.sign(w || 1) * m; h = Math.sign(h || 1) * m; }
+        if (ed.tool === "crop" && ed.aspect !== "free") { const [aw, ah] = ed.aspect.split(":").map(Number); h = Math.sign(h || 1) * Math.abs(w) * ah / aw; }
+        const box = { x: d.start.x, y: d.start.y, w, h };
+        if (ed.tool === "crop") { ed.cropDraft = box; }
+        else ed.draft = { id: "draft", type: ed.tool, ...box, color: ed.color, stroke: ed.stroke, style: ed.redactStyle, strength: ed.redactStrength, dim: ed.dim, seed: 7 };
+      } else if (lineTools.has(ed.tool)) {
+        ed.draft = { id: "draft", type: ed.tool, x1: d.start.x, y1: d.start.y, x2: p.x, y2: p.y, color: ed.color, stroke: ed.stroke };
+        if (ev.shiftKey) snapLine(ed.draft, "p2");
+      }
+      draw(); return;
+    }
+    const t = d.target;
+    if (d.mode === "move") {
+      let mx = dx, my = dy; if (ev.shiftKey) { if (Math.abs(mx) > Math.abs(my)) my = 0; else mx = 0; }
+      if (lineTools.has(t.type)) { t.x1 = d.orig.x1 + mx; t.y1 = d.orig.y1 + my; t.x2 = d.orig.x2 + mx; t.y2 = d.orig.y2 + my; }
+      else { t.x = d.orig.x + mx; t.y = d.orig.y + my; }
+    } else if (d.mode === "resize") {
+      if (d.target.id === "crop") { const r = { ...ed.cropDraft }; applyResize(r, norm(d.orig), d.handle, dx, dy, ev.shiftKey); ed.cropDraft = r; }
+      else applyResize(t, d.orig, d.handle, dx, dy, ev.shiftKey);
+    }
+    draw();
+  });
+  function endDrag(cancel) {
+    const d = ed.drag; if (!d) return; ed.drag = null;
+    if (d.mode === "create") {
+      if (ed.draft && !cancel) { const a = ed.draft; a.id = newId(); if (boxTools.has(a.type)) Object.assign(a, norm(a)); snapshot(); ed.items.push(a); if (a.type === "redact") a.seed = Math.random() * 100; }
+      if (ed.cropDraft) ed.cropDraft = norm(ed.cropDraft);
+      ed.draft = null;
+      if (cancel && ed.tool === "crop") ed.cropDraft = null;
+    } else if (cancel) {
+      if (d.isCrop || d.target.id === "crop") ed.cropDraft = d.orig; else Object.assign(d.target, d.orig);
+      if (d.snap) ed.undo.pop();
+    }
+    sync();
+  }
+  cv.addEventListener("pointerup", () => endDrag(false));
+  cv.addEventListener("pointercancel", () => endDrag(true));
+  cv.addEventListener("dblclick", (ev) => { const p = toImg(ev); const hit = hitTest(p.x, p.y); if (hit && hit.type === "text") { startText(hit.x, hit.y, hit); } });
+
+  // ----- history -----
+  function snapshot() { ed.undo.push(JSON.stringify({ items: ed.items, crop: ed.crop, counter: ed.counter })); if (ed.undo.length > 60) ed.undo.shift(); ed.redo = []; }
+  function restore(json) { const s = JSON.parse(json); ed.items = s.items; ed.crop = s.crop; ed.counter = s.counter; ed.sel = null; ed.cropDraft = null; if (ed.zoomMode === "fit") fitZoom(); setTitle(); sync(); }
+  function undo() { if (!ed.undo.length) return; ed.redo.push(JSON.stringify({ items: ed.items, crop: ed.crop, counter: ed.counter })); restore(ed.undo.pop()); }
+  function redo() { if (!ed.redo.length) return; ed.undo.push(JSON.stringify({ items: ed.items, crop: ed.crop, counter: ed.counter })); restore(ed.redo.pop()); }
+  $("sd-undo").addEventListener("click", undo); $("sd-redo").addEventListener("click", redo);
+
+  // ----- text editing -----
+  function startText(x, y, existing) {
+    const input = document.createElement("textarea");
+    input.rows = 1; input.className = "sd-text-edit"; input.setAttribute("aria-label", "Annotation text. Return adds a line, Command-Return or Escape finishes and keeps text");
+    input.value = existing ? existing.text : "";
+    ed.editing = { input, x, y, existing, index: existing ? ed.items.indexOf(existing) : ed.items.length, size: existing ? existing.size : ed.textSize, color: existing ? existing.color : ed.color };
+    cvWrap.append(input); positionTextEditor(); input.focus();
+    input.addEventListener("keydown", (e) => { e.stopPropagation(); if ((e.key === "Enter" && (e.metaKey || e.ctrlKey)) || e.key === "Escape") { e.preventDefault(); commitText(); } });
+    input.addEventListener("blur", () => { if (ed.editing && ed.editing.input === input) commitText(); });
+    input.addEventListener("input", sizeTextEditor);
+    if (existing) { ed.items = ed.items.filter((a) => a !== existing); draw(); }
+  }
+  function positionTextEditor() {
+    const e = ed.editing; if (!e) return;
+    const z = ed.zoom; e.input.style.left = (e.x - ed.crop.x) * z - 3 + "px"; e.input.style.top = (e.y - ed.crop.y - e.size) * z - 2 + "px";
+    e.input.style.fontSize = e.size * z + "px"; e.input.style.color = e.color; sizeTextEditor();
+  }
+  function sizeTextEditor() {
+    const e = ed.editing; if (!e) return;
+    const lines = e.input.value.split("\n"), longest = Math.max(...lines.map((l) => l.length), 0);
+    e.input.rows = lines.length; e.input.style.width = Math.max(40, (longest + 2) * e.size * 0.58 * ed.zoom) + "px";
+  }
+  function commitText() {
+    const e = ed.editing; if (!e) return; ed.editing = null; e.input.remove();
+    const text = e.input.value.replace(/\s+$/, "").replace(/^\n+/, "");
+    if (e.existing) {
+      ed.items.splice(e.index, 0, e.existing);
+      if (text !== e.existing.text) { snapshot(); ed.items.splice(e.index, 1, ...(text ? [{ ...e.existing, text }] : [])); }
+    }
+    else if (text) { snapshot(); ed.items.push({ id: newId(), type: "text", x: e.x, y: e.y, text, size: e.size, color: e.color }); }
+    sync();
+  }
+  function cancelText() { const e = ed.editing; if (!e) return; ed.editing = null; e.input.remove(); if (e.existing) ed.items.splice(e.index, 0, e.existing); draw(); }
+
+  // ----- tools & contextual controls -----
+  function setTool(t) { ed.tool = t; if (t !== "select") ed.sel = null; if (t !== "crop") ed.cropDraft = null; closePop(); sync(); }
+  function selected() { return ed.items.find((a) => a.id === ed.sel); }
+  function styleTarget() { return ed.tool === "select" ? selected() : null; }
+  function updateChrome() {
+    root.querySelectorAll("#sd-tools .sd-tb").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tool === ed.tool)));
+    const tb = $("sd-tools-btn"); const cur = root.querySelector(`#sd-tools [data-tool="${ed.tool}"]`); tb.innerHTML = cur.innerHTML + '<i data-lucide="chevron-down" aria-hidden="true"></i>'; tb.setAttribute("aria-label", `Tools: ${toolNames[ed.tool]}`);
+    root.querySelector("#sd-tools .sd-num").textContent = ed.counter;
+    $("sd-zoom-fit").textContent = zoomLabel();
+    $("sd-undo").disabled = !ed.undo.length; $("sd-redo").disabled = !ed.redo.length;
+    renderCtx(); icons();
+  }
+  function renderCtx() {
+    const t = styleTarget(); const type = t ? t.type : ed.tool;
+    const color = t ? t.color : ed.color, stroke = t ? t.stroke : ed.stroke;
+    const parts = [];
+    const colorChip = `<button class="sd-chip" type="button" data-pop="color" aria-haspopup="true" aria-expanded="false" aria-label="Color"><span class="sd-dot" style="background:${color}"></span></button>`;
+    const widthChip = `<button class="sd-chip" type="button" data-pop="width" aria-haspopup="true" aria-expanded="false" aria-label="Stroke width"><span class="sd-wline" style="height:${stroke}px"></span></button>`;
+    if (["rectangle", "ellipse", "line", "arrow"].includes(type)) parts.push(colorChip, widthChip);
+    else if (type === "text") parts.push(colorChip, `<button class="sd-chip" type="button" data-pop="textsize" aria-haspopup="true" aria-expanded="false" aria-label="Text size"><i data-lucide="type" aria-hidden="true"></i>${t ? t.size : ed.textSize}</button>`);
+    else if (type === "counter") parts.push(colorChip, `<span class="sd-hint">Next ${ed.counter}</span>`);
+    else if (type === "redact") { const st = t ? t.style : ed.redactStyle; parts.push(`<button class="sd-chip" type="button" data-pop="redact" aria-haspopup="true" aria-expanded="false" aria-label="Redaction style"><i data-lucide="${st === "solid" ? "square" : st === "blur" ? "droplet" : "grid-2x2"}" aria-hidden="true"></i>${st[0].toUpperCase() + st.slice(1)} · ${t ? t.strength : ed.redactStrength}</button>`); }
+    else if (type === "spotlight") parts.push(`<button class="sd-chip" type="button" data-pop="dim" aria-haspopup="true" aria-expanded="false" aria-label="Dim amount"><i data-lucide="sun-dim" aria-hidden="true"></i>${t ? t.dim : ed.dim}%</button>`);
+    else if (type === "crop") parts.push(`<button class="sd-chip" type="button" data-pop="aspect" aria-haspopup="true" aria-expanded="false" aria-label="Aspect ratio"><i data-lucide="ratio" aria-hidden="true"></i>${ed.aspect === "free" ? "Free" : ed.aspect}</button>`, ed.cropDraft ? `<button class="sd-chip" type="button" id="sd-crop-apply">Apply <kbd class="sd-key">↩</kbd></button>` : `<span class="sd-hint">Drag to choose the crop</span>`);
+    else if (type === "select") parts.push(`<span class="sd-hint">${ed.items.length ? "Click an object to select" : "No annotations yet"}</span>`);
+    if (t) parts.push(`<button class="sd-tb" type="button" id="sd-delete" aria-label="Delete, ⌫" data-tooltip="Delete · ⌫"><i data-lucide="trash-2" aria-hidden="true"></i></button>`);
+    $("sd-ctx").innerHTML = parts.join("");
+    $("sd-style-btn").disabled = !parts.some((p) => p.includes("data-pop"));
+  }
+
+  // popovers
+  function closePop() { if (!ed.pop) return; ed.pop.el.remove(); ed.pop.anchor.setAttribute("aria-expanded", "false"); ed.pop = null; renderCtx(); icons(); }
+  function openPop(kind, anchor) {
+    if (ed.pop && ed.pop.kind === kind) { closePop(); return; }
+    const fromStylePop = ed.pop && ed.pop.kind === "style";
+    closePop();
+    if (!anchor.isConnected || fromStylePop) anchor = editorEl.querySelector(`.sd-ctx [data-pop="${kind}"]`) || $("sd-style-btn");
+    if (kind === "tools") anchor = $("sd-tools-btn"); if (kind === "style") anchor = $("sd-style-btn");
+    const t = styleTarget();
+    const el = document.createElement("div"); el.className = "sd-pop"; el.setAttribute("role", "dialog"); el.setAttribute("aria-label", anchor.getAttribute("aria-label") || kind);
+    const cur = (k, dflt) => (t && t[k] != null ? t[k] : dflt);
+    if (kind === "tools") el.innerHTML = Object.entries(toolNames).map(([k, n]) => `<button class="sd-tb" type="button" data-tool="${k}" aria-pressed="${k === ed.tool}">${root.querySelector(`#sd-tools [data-tool="${k}"]`).innerHTML}${n}<kbd class="sd-key">${Object.keys(toolKeys).find((x) => toolKeys[x] === k).toUpperCase()}</kbd></button>`).join("");
+    else if (kind === "style") { el.innerHTML = `<div class="sd-pop-sec"></div>`; el.firstElementChild.innerHTML = $("sd-ctx").innerHTML; el.firstElementChild.style.display = "flex"; el.firstElementChild.style.gap = "6px"; el.firstElementChild.style.flexWrap = "wrap"; }
+    else if (kind === "color") el.innerHTML = `<h5>Color</h5><div class="sd-pop-grid">${palette.map((c) => `<button type="button" class="sd-swatch" data-color="${c}" aria-label="${c}" aria-pressed="${c === cur("color", ed.color)}" style="background:${c}"></button>`).join("")}</div>`;
+    else if (kind === "width") el.innerHTML = `<h5>Stroke</h5><div class="sd-pop-row">${widths.map((w) => `<button type="button" class="sd-wopt" data-width="${w}" aria-label="${w} px" aria-pressed="${w === cur("stroke", ed.stroke)}"><i style="height:${w}px"></i></button>`).join("")}</div>`;
+    else if (kind === "textsize") el.innerHTML = `<h5>Size</h5><div class="sd-pop-row">${[18, 24, 32, 44].map((s) => `<button type="button" class="sd-wopt" data-size="${s}" aria-pressed="${s === cur("size", ed.textSize)}">${s}</button>`).join("")}</div>`;
+    else if (kind === "redact") {
+      const st = cur("style", ed.redactStyle), str = cur("strength", ed.redactStrength);
+      el.innerHTML = `<h5>Style</h5><div class="sd-rstyle">${["pixelate", "blur", "solid"].map((s) => `<button type="button" data-rstyle="${s}" aria-pressed="${s === st}"><canvas width="112" height="72" aria-hidden="true"></canvas>${s[0].toUpperCase() + s.slice(1)}</button>`).join("")}</div><div class="sd-range-lbl"><span>Strength</span><output id="sd-str-out">${str}</output></div><input class="sd-range" type="range" min="6" max="40" step="2" value="${str}" aria-label="Strength" data-range="strength">`;
+      queueMicrotask(() => el.querySelectorAll("canvas").forEach((c, i) => samplePreview(c, ["pixelate", "blur", "solid"][i], str)));
+    }
+    else if (kind === "dim") el.innerHTML = `<div class="sd-range-lbl"><span>Dim</span><output id="sd-dim-out">${cur("dim", ed.dim)}%</output></div><input class="sd-range" type="range" min="20" max="90" step="5" value="${cur("dim", ed.dim)}" aria-label="Dim amount" data-range="dim">`;
+    else if (kind === "aspect") el.innerHTML = `<h5>Aspect</h5><div class="sd-pop-row">${["free", "16:9", "4:3", "1:1"].map((a) => `<button type="button" class="sd-wopt" data-aspect="${a}" aria-pressed="${a === ed.aspect}">${a === "free" ? "Free" : a}</button>`).join("")}</div>`;
+    const left = Math.max(8, Math.min(anchor.offsetLeft, editorEl.clientWidth - 200));
+    el.style.left = left + "px";
+    editorEl.append(el); anchor.setAttribute("aria-expanded", "true"); ed.pop = { kind, el, anchor }; icons();
+    const first = el.querySelector("button, input"); first && first.focus();
+  }
+  function samplePreview(c, style, strength) {
+    if (!ed.ready) return;
+    const cc = c.getContext("2d"), sx = 288, sy = 350, sw = 224, sh = 144;
+    cc.setTransform(0.5, 0, 0, 0.5, -sx * 0.5, -sy * 0.5); cc.clearRect(sx, sy, sw, sh); cc.drawImage(ed.src, 0, 0, IMG_W, IMG_H);
+    drawRedact({ type: "redact", x: sx + 10, y: sy + 22, w: sw - 20, h: sh - 44, style, strength, seed: 3 }, cc);
+  }
+  editorEl.addEventListener("click", (ev) => {
+    const popBtn = ev.target.closest("[data-pop]");
+    if (popBtn) { openPop(popBtn.dataset.pop, popBtn); return; }
+    const inPop = ev.target.closest(".sd-pop");
+    const toolBtn = ev.target.closest("[data-tool]");
+    if (toolBtn) { setTool(toolBtn.dataset.tool); return; }
+    const t = styleTarget();
+    const apply = (k, v) => { if (t) { snapshot(); t[k] = v; } else ed[k] = v; sync(); };
+    const sw = ev.target.closest("[data-color]"); if (sw) { apply("color", sw.dataset.color); closePop(); return; }
+    const w = ev.target.closest("[data-width]"); if (w) { apply("stroke", Number(w.dataset.width)); closePop(); return; }
+    const sz = ev.target.closest("[data-size]"); if (sz) { if (t) { snapshot(); t.size = Number(sz.dataset.size); } else ed.textSize = Number(sz.dataset.size); closePop(); sync(); return; }
+    const rs = ev.target.closest("[data-rstyle]"); if (rs) { if (t) { snapshot(); t.style = rs.dataset.rstyle; } else ed.redactStyle = rs.dataset.rstyle; inPop.querySelectorAll("[data-rstyle]").forEach((b) => b.setAttribute("aria-pressed", String(b === rs))); draw(); return; }
+    const as = ev.target.closest("[data-aspect]"); if (as) { ed.aspect = as.dataset.aspect; closePop(); sync(); return; }
+    if (ev.target.closest("#sd-delete")) { if (t) { snapshot(); ed.items = ed.items.filter((a) => a !== t); ed.sel = null; closePop(); sync(); } return; }
+    if (ev.target.closest("#sd-crop-apply")) { applyCrop(); return; }
+    if (!inPop && !ev.target.closest("[data-pop]")) closePop();
+  });
+  editorEl.addEventListener("input", (ev) => {
+    const r = ev.target.closest("[data-range]"); if (!r) return;
+    const t = styleTarget(), v = Number(r.value);
+    if (r.dataset.range === "strength") { if (t) t.strength = v; else ed.redactStrength = v; $("sd-str-out").textContent = v; ed.pop.el.querySelectorAll("canvas").forEach((c, i) => samplePreview(c, ["pixelate", "blur", "solid"][i], v)); }
+    else { if (t) t.dim = v; else ed.dim = v; $("sd-dim-out").textContent = v + "%"; }
+    draw();
+  });
+  editorEl.addEventListener("pointerdown", (ev) => { if (ev.target.matches("[data-range]") && styleTarget()) snapshot(); }, true);
+  function applyCrop() { if (!ed.cropDraft) return; const b = norm(ed.cropDraft); if (b.w < 8 || b.h < 8) return; snapshot(); ed.crop = { x: Math.max(0, b.x), y: Math.max(0, b.y), w: Math.min(IMG_W - Math.max(0, b.x), b.w), h: Math.min(IMG_H - Math.max(0, b.y), b.h) }; ed.cropDraft = null; setTool("select"); fitZoom(); setTitle(); }
+
+  // keyboard: active while the last pointer interaction was inside the editor and no field is focused
+  let armed = true;
+  document.addEventListener("pointerdown", (ev) => { armed = editorPanel.contains(ev.target); });
+  document.addEventListener("keydown", (ev) => {
+    if (!armed || editorPanel.hidden || ed.editing) return;
+    const a = document.activeElement; if (a && (a.tagName === "INPUT" || a.tagName === "SELECT" || a.tagName === "TEXTAREA")) return;
+    const meta = ev.metaKey || ev.ctrlKey, k = ev.key.toLowerCase();
+    if (ev.key === "Escape") { if (ed.drag) endDrag(true); else if (ed.pop) closePop(); else if (ed.cropDraft) { ed.cropDraft = null; sync(); } else if (ed.sel) { ed.sel = null; sync(); } ev.preventDefault(); return; }
+    if (meta && k === "z") { ev.shiftKey ? redo() : undo(); ev.preventDefault(); return; }
+    if (meta && k === "y") { redo(); ev.preventDefault(); return; }
+    if (meta && (k === "=" || k === "+")) { setZoom(ed.zoom * 1.25); ev.preventDefault(); return; }
+    if (meta && k === "-") { setZoom(ed.zoom / 1.25); ev.preventDefault(); return; }
+    if (meta && k === "0") { fitZoom(); ev.preventDefault(); return; }
+    if (meta && k === "1") { setZoom(1, "actual"); ev.preventDefault(); return; }
+    if (meta && ev.shiftKey && k === "c") { $("sd-copy").click(); ev.preventDefault(); return; }
+    if (meta && k === "s") { $("sd-save").click(); ev.preventDefault(); return; }
+    if (meta && ev.key === "Enter") { $("sd-done").click(); ev.preventDefault(); return; }
+    if (meta || ev.altKey) return;
+    if (ev.key === "Enter" && ed.cropDraft) { applyCrop(); ev.preventDefault(); return; }
+    if ((ev.key === "Backspace" || ev.key === "Delete") && ed.sel) { snapshot(); ed.items = ed.items.filter((x) => x.id !== ed.sel); ed.sel = null; sync(); ev.preventDefault(); return; }
+    if (ev.key.startsWith("Arrow") && ed.sel) { const s = selected(), d = ev.shiftKey ? 10 : 1, dx = ev.key === "ArrowLeft" ? -d : ev.key === "ArrowRight" ? d : 0, dy = ev.key === "ArrowUp" ? -d : ev.key === "ArrowDown" ? d : 0; snapshot(); if (lineTools.has(s.type)) { s.x1 += dx; s.x2 += dx; s.y1 += dy; s.y2 += dy; } else { s.x += dx; s.y += dy; } draw(); ev.preventDefault(); return; }
+    if ((k === "[" || k === "]") && (ed.tool === "redact" || (selected() || {}).type === "redact")) { const t = styleTarget(); const v = Math.max(6, Math.min(40, (t ? t.strength : ed.redactStrength) + (k === "]" ? 2 : -2))); if (t) { snapshot(); t.strength = v; } else ed.redactStrength = v; sync(); ev.preventDefault(); return; }
+    if (toolKeys[k] && !ev.shiftKey) { setTool(toolKeys[k]); ev.preventDefault(); }
+  });
+
+  // responsive toolbar: collapse style, then tools, into popovers instead of wrapping
+  function layoutToolbar() {
+    const w = editorEl.clientWidth;
+    editorEl.dataset.narrow = String(w < 560);
+    editorEl.dataset.compactStyle = String(w < 720);
+    editorEl.dataset.compactTools = String(w < 600);
+    $("sd-preview-note").dataset.show = String(w < 720);
+    if (ed.pop) closePop();
+  }
+
+  $("sd-copy").addEventListener("click", () => toast("sd-toast-editor", "Copy Image is simulated in this prototype", "copy"));
+  $("sd-save").addEventListener("click", () => toast("sd-toast-editor", "Save is simulated: would write PNG to ~/Downloads", "download"));
+  // Documents: every capture keeps its editable state (annotations, crop, counter) keyed by thumbnail id.
+  const docs = {};
+  function saveDoc() { if (ed.docId == null) return; docs[ed.docId] = JSON.parse(JSON.stringify({ items: ed.items, crop: ed.crop, counter: ed.counter })); }
+  $("sd-done").addEventListener("click", () => {
+    if (ed.editing) commitText();
+    saveDoc();
+    const n = ed.items.length;
+    let card = $("sd-thumbs").querySelector(`.sd-thumb[data-id="${ed.docId}"]`);
+    if (!card) { const rec = state.thumbs.find((t) => t.id === ed.docId); if (rec) card = addThumb(rec.kind, rec.pages, rec.id); }
+    if (card) markEdited(card, n);
+    $("sd-tab-desktop").click(); $("sd-tab-desktop").focus();
+    toast("sd-toast-desktop", `Capture ${ed.docId} keeps ${n} annotation${n === 1 ? "" : "s"}; reopen the card to continue editing`, "check");
+  });
+  function markEdited(card, n) { const b = card && card.querySelector(".sd-thumb-edited"); if (b) b.textContent = n ? `· ${n} edit${n === 1 ? "" : "s"}` : ""; }
+
+  // open a capture from a thumbnail; all mock captures share the same synthetic source image
+  function openCapture(rec) {
+    if (ed.editing) cancelText();
+    ed.docId = rec.id; ed.kind = rec.kindName || "Area";
+    const d = docs[rec.id] || { items: [], crop: { x: 0, y: 0, w: IMG_W, h: IMG_H }, counter: 1 };
+    ed.items = JSON.parse(JSON.stringify(d.items)); ed.crop = { ...d.crop }; ed.counter = d.counter;
+    ed.undo = []; ed.redo = []; ed.sel = null; ed.cropDraft = null;
+    setTitle();
+    setTool("select"); fitZoom();
+  }
+  function setTitle() { $("sd-editor-title").textContent = `${ed.kind} capture · ${Math.round(ed.crop.w)} × ${Math.round(ed.crop.h)} @2x · PNG${ed.crop.w !== IMG_W || ed.crop.h !== IMG_H ? " (cropped)" : ""}`; }
+  function seedSample() {
+    ed.items = [
+      { id: "s1", type: "rectangle", x: 1070, y: 410, w: 100, h: 42, color: "#ff3b30", stroke: 4 },
+      { id: "s2", type: "arrow", x1: 940, y1: 330, x2: 1062, y2: 404, color: "#ff3b30", stroke: 4 },
+      { id: "s3", type: "counter", x: 292, y: 436, n: 1, color: "#ff3b30" },
+      { id: "s4", type: "redact", x: 552, y: 418, w: 250, h: 30, style: "pixelate", strength: 14, seed: 42 },
+    ];
+    ed.counter = 2;
+  }
+  seedSample(); ed.docId = 1; layoutToolbar(); updateChrome(); loadSource();
+
+
+  // ----- Desktop & thumbnails -----
+  const kinds = { area: "Area", window: "Window", fullscreen: "Fullscreen", scrolling: "Scrolling", ocr: "Text" };
+  let thumbSeq = 0;
+  function addThumb(kind, pages = 2, reuseId) {
+    const id = reuseId || ++thumbSeq;
+    if (!reuseId) state.thumbs.push({ id, kind, pages });
+    const el = document.createElement("div");
+    el.className = "sd-thumb";
+    el.dataset.id = id;
+    const tall = kind === "scrolling";
+    el.innerHTML = `
+      <button class="sd-thumb-open" type="button" aria-label="Open ${kinds[kind]} capture ${id} in editor">
+        <svg viewBox="${tall ? `0 0 1280 ${800 * Math.min(pages, 3)}` : kind === "window" ? "120 44 960 700" : "0 0 1280 800"}" aria-hidden="true">${tall ? Array.from({ length: Math.min(pages, 3) }, (_, i) => `<use href="#sd-shot" y="${800 * i}"/>`).join("") : '<use href="#sd-shot"/>'}</svg>
+      </button>
+      <div class="sd-thumb-actions">
+        <button type="button" data-act="close" aria-label="Close thumbnail ${id}"><i data-lucide="x" aria-hidden="true"></i></button>
+        <button type="button" data-act="save" aria-label="Save capture ${id} to Downloads"><i data-lucide="download" aria-hidden="true"></i></button>
+      </div>
+      <div class="sd-thumb-badge">${kinds[kind]} · 1280 × ${tall ? 800 * pages : 800} <span class="sd-thumb-edited"></span></div>`;
+    $("sd-thumbs").append(el);
+    if (docs[id]) markEdited(el, docs[id].items.length);
+    icons();
+    if (state.autoclose !== "never") setTimeout(() => el.isConnected && el.remove(), Number(state.autoclose) * 1000);
+    return el;
+  }
+  function thumbnailCommand(thumb, command) {
+    if (command === "close") { thumb.remove(); return; }
+    if (command === "copy") { toast("sd-toast-desktop", "Copy Image simulated; clipboard unchanged"); return; }
+    if (command === "save-as") { toast("sd-toast-desktop", "Save As dialog simulated; no file written"); return; }
+    if (command === "save") { toast("sd-toast-desktop", `Save capture ${thumb.dataset.id} to ~/Downloads simulated; no file written`); if (!$("sd-set-keep").checked) thumb.remove(); return; }
+    if (command === "open") {
+      const rec = state.thumbs.find((t) => String(t.id) === thumb.dataset.id) || { id: Number(thumb.dataset.id), kind: "area", pages: 1 };
+      openCapture({ id: rec.id, kindName: kinds[rec.kind] });
+      $("sd-tab-editor").click();
+      $("sd-tab-editor").focus();
+    }
+  }
+  $("sd-thumbs").addEventListener("click", (ev) => {
+    const thumb = ev.target.closest(".sd-thumb");
+    if (!thumb) return;
+    thumbnailCommand(thumb, ev.target.closest("[data-act]")?.dataset.act || "open");
+  });
+  const thumbMenu = $("sd-thumb-menu");
+  let menuThumb = null;
+  function closeThumbMenu() { thumbMenu.hidden = true; menuThumb?.querySelector(".sd-thumb-open")?.focus(); }
+  $("sd-thumbs").addEventListener("contextmenu", (ev) => {
+    const thumb = ev.target.closest(".sd-thumb");
+    if (!thumb) return;
+    ev.preventDefault(); menuThumb = thumb; thumbMenu.hidden = false;
+    const bounds = $("sd-desktop").getBoundingClientRect();
+    thumbMenu.style.left = `${Math.max(8, Math.min(ev.clientX - bounds.left, bounds.width - thumbMenu.offsetWidth - 8))}px`;
+    thumbMenu.style.top = `${Math.max(30, Math.min(ev.clientY - bounds.top, bounds.height - thumbMenu.offsetHeight - 8))}px`;
+    thumbMenu.querySelector("button").focus();
+  });
+  thumbMenu.addEventListener("click", (ev) => {
+    const command = ev.target.closest("[data-command]")?.dataset.command;
+    if (!command || !menuThumb) return;
+    closeThumbMenu(); thumbnailCommand(menuThumb, command);
+  });
+  thumbMenu.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); closeThumbMenu(); }
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      const entries = [...thumbMenu.querySelectorAll("button")];
+      entries[(entries.indexOf(document.activeElement) + (ev.key === "ArrowDown" ? 1 : -1) + entries.length) % entries.length].focus();
+    }
+  });
+  document.addEventListener("pointerdown", (ev) => { if (!thumbMenu.hidden && !thumbMenu.contains(ev.target)) thumbMenu.hidden = true; });
+
+  const menu = $("sd-menu");
+  const mbBtn = $("sd-mb-shotty");
+  function toggleMenu(open) { menu.hidden = !open; mbBtn.setAttribute("aria-expanded", String(open)); if (open) menu.querySelector("button").focus(); }
+  mbBtn.addEventListener("click", () => toggleMenu(menu.hidden));
+  root.addEventListener("keydown", (ev) => { if (ev.key === "Escape") { if (!menu.hidden) toggleMenu(false); hideHud(); } });
+  document.addEventListener("click", (ev) => { if (!menu.hidden && !menu.contains(ev.target) && ev.target !== mbBtn && !mbBtn.contains(ev.target)) toggleMenu(false); });
+
+  function hideHud() { if (autoTimer) setAuto(false); scrollStarted = false; app.dataset.scrolling = "false"; $("sd-overlay").hidden = true; $("sd-hud-scroll").hidden = true; $("sd-scroll-preview").hidden = true; $("sd-hud-ocr").hidden = true; }
+  let scrollPages = 1, autoTimer = null, scrollStarted = false, manualOnly = false, lastScrollAt = 0;
+  function setAuto(on) {
+    if (on && (!scrollStarted || manualOnly || scrollPages >= 6)) return;
+    clearInterval(autoTimer); autoTimer = null;
+    const b = $("sd-scroll-auto");
+    b.setAttribute("aria-pressed", String(on));
+    b.innerHTML = on ? '<i data-lucide="pause" aria-hidden="true"></i><span>Pause</span>' : '<i data-lucide="play" aria-hidden="true"></i><span>Auto Scroll</span>';
+    icons();
+    if (on) autoTimer = setInterval(() => { if (scrollPages >= 6) { setAuto(false); updateScroll(); return; } scrollPages++; updateScroll(); }, 900);
+  }
+  function runCapture(kind) {
+    toggleMenu(false);
+    hideHud();
+    if (kind === "scrolling") {
+      scrollPages = 1; manualOnly = false; lastScrollAt = 0;
+      app.dataset.scrolling = "true";
+      $("sd-overlay").hidden = false;
+      $("sd-hud-scroll").hidden = false;
+      setAuto(false);
+      updateScroll();
+      $("sd-scroll-start").focus();
+      return;
+    }
+    if (kind === "ocr") {
+      $("sd-overlay").hidden = false;
+      setTimeout(() => { $("sd-overlay").hidden = true; $("sd-hud-ocr").hidden = false; $("sd-ocr-close").focus(); }, 350);
+      return;
+    }
+    $("sd-overlay").hidden = false;
+    setTimeout(() => {
+      $("sd-overlay").hidden = true;
+      if ($("sd-set-thumb").checked) addThumb(kind); else toast("sd-toast-desktop", `${kinds[kind]} captured · thumbnail disabled in Settings (mock)`);
+    }, 350);
+  }
+  function updateScroll() {
+    $("sd-scroll-start").hidden = scrollStarted;
+    $("sd-scroll-auto").hidden = !scrollStarted || manualOnly;
+    $("sd-scroll-done").hidden = !scrollStarted;
+    $("sd-scroll-preview").hidden = !scrollStarted;
+    $("sd-stitch-lbl").textContent = `${800 * scrollPages} px`;
+    const clip = $("sd-stitch");
+    clip.innerHTML = Array.from({ length: scrollPages }, () => '<svg viewBox="0 0 1280 800" aria-hidden="true"><use href="#sd-shot"/></svg>').join("");
+    const pageH = clip.firstElementChild ? clip.firstElementChild.getBoundingClientRect().height : 52;
+    clip.style.transform = `translateY(${Math.min(0, clip.parentElement.clientHeight - pageH * scrollPages)}px)`;
+    $("sd-scroll-auto").disabled = scrollPages >= 6;
+    $("sd-scroll-msg").textContent = !scrollStarted ? "Selected area · simulated" : scrollPages >= 6 ? "Preview limit reached · Done keeps the simulated result" : `${autoTimer ? "Auto scrolling" : manualOnly ? "Manual scrolling" : "Scroll inside the selected area"} · 1280 × ${800 * scrollPages} · simulated`;
+  }
+  $("sd-scroll-start").addEventListener("click", () => { scrollStarted = true; updateScroll(); $("sd-scroll-auto").focus(); });
+  $("sd-overlay").addEventListener("wheel", (ev) => {
+    if (!scrollStarted || (!ev.deltaX && !ev.deltaY)) return;
+    const selection = $("sd-overlay").querySelector(".sd-sel-rect").getBoundingClientRect();
+    if (ev.clientX < selection.left || ev.clientX > selection.right || ev.clientY < selection.top || ev.clientY > selection.bottom) return;
+    ev.preventDefault();
+    manualOnly = true;
+    if (autoTimer) setAuto(false);
+    if (document.activeElement === $("sd-scroll-auto")) $("sd-scroll-done").focus();
+    if (ev.deltaY > 0 && Date.now() - lastScrollAt > 250 && scrollPages < 6) { scrollPages++; lastScrollAt = Date.now(); }
+    updateScroll();
+  }, { passive: false });
+  root.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Enter" || $("sd-hud-scroll").hidden || ev.target.tagName === "BUTTON") return;
+    ev.preventDefault(); $(scrollStarted ? "sd-scroll-done" : "sd-scroll-start").click();
+  });
+  $("sd-scroll-auto").addEventListener("click", () => { setAuto(!autoTimer); updateScroll(); });
+  $("sd-scroll-cancel").addEventListener("click", () => { setAuto(false); hideHud(); });
+  $("sd-scroll-done").addEventListener("click", () => { setAuto(false); hideHud(); addThumb("scrolling", scrollPages); });
+  $("sd-ocr-close").addEventListener("click", hideHud);
+  menu.addEventListener("click", (ev) => {
+    const b = ev.target.closest("button");
+    if (!b) return;
+    if (b.dataset.capture) runCapture(b.dataset.capture);
+    else if (b.dataset.open === "settings") { toggleMenu(false); $("sd-tab-settings").click(); }
+    else { toggleMenu(false); toast("sd-toast-desktop", "Quit (mock)"); }
+  });
+
+  // ----- Settings -----
+  root.querySelectorAll('.sd-settings .sd-row > input[type="checkbox"]').forEach((input, index) => {
+    const text = input.parentElement.querySelector('.sd-lbl');
+    if (!text) return;
+    if (!input.id) input.id = `sd-preference-${index}`;
+    const label = document.createElement('label');
+    label.className = text.className; label.htmlFor = input.id;
+    label.append(...text.childNodes); text.replaceWith(label);
+  });
+  const sidebar = $("sd-sidebar");
+  function showPane(name) {
+    sidebar.querySelectorAll("button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.pane === name)));
+    root.querySelectorAll(".sd-pane").forEach((p) => { p.hidden = p.dataset.pane !== name; });
+  }
+  sidebar.addEventListener("click", (ev) => { const b = ev.target.closest("button[data-pane]"); if (b) showPane(b.dataset.pane); });
+
+  root.querySelectorAll('input[name="sd-appearance"]').forEach((r) => r.addEventListener("change", () => { app.dataset.appearance = r.value; }));
+  $("sd-set-dock").addEventListener("change", (ev) => { app.dataset.dock = String(ev.target.checked); updateGeneralNote(); });
+  $("sd-set-menubar").addEventListener("change", updateGeneralNote);
+  function updateGeneralNote() {
+    const mb = $("sd-set-menubar").checked, dock = $("sd-set-dock").checked;
+    $("sd-general-note").textContent = !mb && !dock ? "Open Shotty from Finder or Spotlight to return to Settings." : "";
+    $("sd-general-note").hidden = mb || dock;
+  }
+  updateGeneralNote();
+  
+  $("sd-choose-folder").addEventListener("click", () => toast("sd-toast-settings", "Opens a folder picker (mock)"));
+  $("sd-open-sys").addEventListener("click", () => toast("sd-toast-settings", "Opens Privacy & Security › Accessibility (mock)"));
+  $("sd-corners").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button[data-pos]");
+    if (!b) return;
+    $("sd-corners").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    $("sd-thumbs").dataset.pos = b.dataset.pos;
+    tweakState.thumbPos = b.dataset.pos;
+  });
+  $("sd-set-autoclose").addEventListener("change", (ev) => { state.autoclose = ev.target.value; });
+  $("sd-set-display").addEventListener("change", () => toast("sd-toast-settings", "Display choice set for this preview; monitor movement requires the native app"));
+
+  // Shortcut recorder
+  const groupsEl = $("sd-shortcut-groups");
+  let recording = null;
+  function loadDefaults() { state.shortcuts = {}; for (const g of Object.keys(defaultShortcuts)) for (const [id, , key] of defaultShortcuts[g]) state.shortcuts[id] = key; }
+  function renderShortcuts() {
+    groupsEl.innerHTML = Object.entries({ global: "Global (all apps)", editor: "Editor" }).map(([g, title]) => `
+      <div class="sd-section" aria-label="${title}">
+        <div class="sd-row" style="min-height:32px;padding-top:6px;padding-bottom:4px"><div class="sd-lbl" style="color:var(--sd-text2);font-size:12px">${title}</div></div>
+        ${defaultShortcuts[g].map(([id, label]) => `
+          <div class="sd-row"><div class="sd-lbl">${label}</div>
+            <div class="sd-ctl-wrap">
+              <span class="sd-conflict" id="sd-conflict-${id}" hidden><i data-lucide="triangle-alert" aria-hidden="true"></i><span></span></span>
+              <button class="sd-shortcut" type="button" data-id="${id}" aria-label="Shortcut for ${label}: ${state.shortcuts[id] || "none"}" data-recording="false">${state.shortcuts[id] || "None"}</button>
+              <button class="sd-btn" type="button" data-clear="${id}" aria-label="Clear shortcut for ${label}" ${state.shortcuts[id] ? "" : "disabled"}><i data-lucide="x" aria-hidden="true"></i></button>
+            </div></div>`).join("")}
+      </div>`).join("");
+    root.querySelectorAll("#sd-menu [data-ks]").forEach((s) => { s.textContent = state.shortcuts[s.dataset.ks] || ""; });
+    icons();
+  }
+  function comboFromEvent(ev) {
+    if (["Shift", "Meta", "Control", "Alt", "CapsLock", "Fn"].includes(ev.key)) return null;
+    let k = ev.key.length === 1 ? ev.key.toUpperCase() : ev.key;
+    k = { ArrowUp: "↑", ArrowDown: "↓", ArrowLeft: "←", ArrowRight: "→", Enter: "↩", " ": "Space", Backspace: "⌫", Escape: "esc" }[ev.key] || k;
+    return (ev.ctrlKey ? "⌃" : "") + (ev.altKey ? "⌥" : "") + (ev.shiftKey ? "⇧" : "") + (ev.metaKey ? "⌘" : "") + k;
+  }
+  function stopRecording() {
+    if (!recording) return;
+    const b = recording.btn;
+    b.dataset.recording = "false";
+    b.innerHTML = state.shortcuts[b.dataset.id] || "None";
+    recording = null;
+  }
+  groupsEl.addEventListener("click", (ev) => {
+    const clear = ev.target.closest("[data-clear]");
+    if (clear) { state.shortcuts[clear.dataset.clear] = ""; renderShortcuts(); return; }
+    const b = ev.target.closest(".sd-shortcut");
+    if (!b) return;
+    if (recording && recording.btn === b) { stopRecording(); return; }
+    stopRecording();
+    recording = { btn: b, id: b.dataset.id };
+    b.dataset.recording = "true";
+    b.innerHTML = `<span class="sd-dot" aria-hidden="true"></span>Type shortcut… <span class="sd-rec-hint">esc cancels</span>`;
+    b.focus();
+  });
+  groupsEl.addEventListener("keydown", (ev) => {
+    if (!recording) return;
+    ev.preventDefault();
+    if (ev.key === "Escape") { stopRecording(); return; }
+    const combo = comboFromEvent(ev);
+    if (!combo) return;
+    const id = recording.id;
+    const isGlobal = defaultShortcuts.global.some(([g]) => g === id);
+    const conflictOwner = Object.entries(state.shortcuts).find(([other, key]) => other !== id && key === combo && (isGlobal === defaultShortcuts.global.some(([g]) => g === other)));
+    const mods = combo.replace(/[^⌃⌥⇧⌘]/g, "");
+    const conflict = systemTaken[combo] ? systemTaken[combo]
+      : conflictOwner ? `Already used by ${[...defaultShortcuts.global, ...defaultShortcuts.editor].find(([x]) => x === conflictOwner[0])[1]}`
+      : isGlobal && !/[⌃⌘]/.test(mods) && /⌥/.test(mods) ? "Option alone or Option+Shift is reserved by macOS. Add ⌘ or ⌃."
+      : isGlobal && !/[⌃⌥⌘]/.test(mods) ? "Global shortcuts need ⌘ or ⌃"
+      : null;
+    const c = $("sd-conflict-" + id);
+    if (conflict) { c.hidden = false; c.querySelector("span").textContent = conflict; recording.btn.innerHTML = `<span class="sd-dot" aria-hidden="true"></span>${combo} <span class="sd-rec-hint">taken</span>`; return; }
+    c.hidden = true;
+    state.shortcuts[id] = combo;
+    stopRecording();
+    renderShortcuts();
+    const again = groupsEl.querySelector(`.sd-shortcut[data-id="${id}"]`);
+    again && again.focus();
+  });
+  groupsEl.addEventListener("focusout", (ev) => { if (recording && !groupsEl.contains(ev.relatedTarget)) stopRecording(); });
+  $("sd-shortcuts-reset").addEventListener("click", () => { loadDefaults(); renderShortcuts(); root.querySelectorAll(".sd-conflict").forEach((c) => { c.hidden = true; }); });
+
+
+  // ----- Initial render -----
+  loadDefaults();
+  renderShortcuts();
+  addThumb("area"); saveDoc(); markEdited($("sd-thumbs").querySelector('.sd-thumb[data-id="1"]'), ed.items.length);
+  addThumb("window");
+
+  // ----- Tweak (design options) -----
+  const tweakState = { accent: "#ff3b30", redact: "pixelate", thumbPos: "left-center" };
+  function renderTweak() {
+    if (ed.color !== tweakState.accent) { ed.color = tweakState.accent; sync(); }
+    if (ed.redactStyle !== tweakState.redact) { ed.redactStyle = tweakState.redact; sync(); }
+    $("sd-thumbs").dataset.pos = tweakState.thumbPos;
+    $("sd-corners").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.pos === tweakState.thumbPos)));
+  }
+  renderTweak();
+  if (globalThis.Tweak) {
+    const t1 = new Tweak({ container: $("sd-editor"), onChange: renderTweak });
+    t1.addSelect(tweakState, "accent", { label: "Default annotation color", options: [{ label: "Red", value: "#ff3b30" }, { label: "Orange", value: "#ff9500" }, { label: "Blue", value: "#0a84ff" }, { label: "Black", value: "#1d1d1f" }], reference: "editor.annotationColor" });
+    t1.addSelect(tweakState, "redact", { label: "Default redaction", options: [{ label: "Pixelate", value: "pixelate" }, { label: "Blur", value: "blur" }, { label: "Solid", value: "solid" }], reference: "editor.redactStyle" });
+    const t2 = new Tweak({ container: $("sd-desktop"), onChange: renderTweak });
+    t2.addSelect(tweakState, "thumbPos", { label: "Thumbnail position", options: [{ label: "Left center", value: "left-center" }, { label: "Right center", value: "right-center" }, { label: "Bottom left", value: "bottom-left" }, { label: "Bottom right", value: "bottom-right" }, { label: "Top left", value: "top-left" }, { label: "Top right", value: "top-right" }], reference: "thumbnails.position" });
+  }
+})();
+</script>
+  <script>
+    // Standalone fallback: the conversation host supplies Lucide; a plain browser does not.
+    (() => {
+      const paint = () =>
+        globalThis.lucide && lucide.createIcons({ attrs: { width: 16, height: 16 } });
+      if (globalThis.lucide) {
+        paint();
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/lucide@0.469.0/dist/umd/lucide.min.js";
+      script.onload = paint;
+      document.getElementById("shotty-design").append(script);
+    })();
+  </script>
+</div>
