@@ -2,22 +2,57 @@
 
 A native macOS screenshot utility tailored to Markus's workflow.
 
-Implementation is at milestone 0. The signed native foundation harness and focused tests are in place; the everyday capture interface, editor, scrolling integration, OCR, and release acceptance remain unfinished. See [native verification](.plans/native-verification.md) for measured results and pending gates.
+The planned native feature set is implemented. Release acceptance is still in progress. See [native verification](.plans/native-verification.md) for measured results and pending gates.
 
 ## Build and test
 
-Requires an Apple Silicon Mac, macOS 26 or later, Xcode 27, and an existing Apple Development signing identity. Create a gitignored `Local.xcconfig` containing `DEVELOPMENT_TEAM = YOUR_TEAM_ID`. The shared project includes it through `Config/Signing.xcconfig`; no certificate or private key belongs in the repository.
+Requires an Apple Silicon Mac, macOS 26 or later, Xcode 27, and an existing Apple Development signing identity. Create a gitignored `Local.xcconfig` in the repository root containing `DEVELOPMENT_TEAM = YOUR_TEAM_ID`. The shared project includes it through `Config/Signing.xcconfig`; no certificate or private key belongs in the repository.
 
 Open `Shotty.xcodeproj` and select the shared Shotty scheme, or run:
 
 ```sh
 Scripts/build.sh
-xcodebuild -project Shotty.xcodeproj -scheme Shotty -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .build test
+xcodebuild -project Shotty.xcodeproj -scheme Shotty -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/acceptance-tests test
 ```
 
-The Release app is `.build/Build/Products/Release/Shotty.app`. Install the signed app at `/Applications/Shotty.app` before granting permissions and keep its bundle ID, `local.markus.Shotty`, stable. Quit it before replacing an installed build. This is private Apple Development signing, not a notarized release.
+`Scripts/build.sh` builds the signed Release app at `.build/Build/Products/Release/Shotty.app`. The target uses Hardened Runtime, no App Sandbox, and no entitlements. This is private Apple Development signing, not a notarized Developer ID release, so a copied build may not launch as trusted on another Mac.
 
-The temporary foundation window opens an animated synthetic fixture and captures its isolated window using ScreenCaptureKit. After waiting for the live fixture to change, Verify Frozen PNG compares the saved snapshot's RGBA pixels with the PNG decoder's output. The harness does not save screenshots into the repository. Screen Recording must be granted through macOS before capture tests can run. Its mouse-only observer is separate and never requests Accessibility or Input Monitoring.
+## Package, install, and roll back
+
+Set `MARKETING_VERSION` and increase `CURRENT_PROJECT_VERSION` in the Shotty target, then package:
+
+```sh
+Scripts/package.sh
+```
+
+It builds Release, refuses to continue unless `codesign --verify --deep --strict` passes and the bundle ID is `local.markus.Shotty`, and writes to `.build/releases/`:
+
+- `Shotty-<version>-<build>-<commit>.zip`, created with `ditto` so the signature survives. A `-dirty` suffix marks uncommitted changes.
+- A `.sha256` checksum beside it.
+- A `.txt` record of the signing authority, team, designated requirement, and entitlements.
+
+Install on the same Mac:
+
+1. Quit Shotty from its menu and choose whether to keep the active capture session. The installer refuses to run while Shotty is running; it does not quit the app for you.
+2. Run `Scripts/install.sh .build/releases/Shotty-<version>-<build>-<commit>.zip`.
+
+The installer checks the checksum when the `.sha256` file is present, verifies the signature and bundle ID, and warns before installing a build whose designated requirement differs from the installed one, because macOS ties permission grants to it. It unpacks into a private work directory on the `/Applications` volume and replaces `/Applications/Shotty.app` by renaming; if placing the new build fails, the old one is moved back. The replaced build is then kept at `~/Library/Application Support/Shotty Installer/Shotty.previous.app`. If that last step fails, the new install stays and the script prints where the replaced build was left.
+
+`Scripts/install.sh --rollback` reinstalls the previous build the same way and keeps the replaced one as the new previous build, so running it again returns to where you started. Only one previous build is kept. Settings in UserDefaults and the capture session in `~/Library/Application Support/Shotty/Session` are never touched by either operation. A rollback therefore runs the older app against the newer settings and session files, so check that it opens them before relying on it.
+
+Neither script strips quarantine or changes Gatekeeper settings. Judge a copied install by whether it actually launches. There is no auto-updater.
+
+## Permissions
+
+Grant permissions to the installed `/Applications/Shotty.app`, not to a build in `.build`. Grants are per Mac; signing does not carry them to another machine.
+
+- **Screen Recording** is required for every capture mode, including OCR. Shotty asks on the first capture and links to System Settings > Privacy & Security > Screen & System Audio Recording. macOS may require relaunching Shotty after granting it.
+- **Accessibility** is requested only when you start Auto Scroll. Manual scrolling capture works without it.
+- Input Monitoring, Full Disk Access, camera, and microphone are not needed.
+
+Keeping the bundle ID and signing identity stable keeps these grants across updates. On studio, grants have survived signed Release replacements with an unchanged designated requirement; see [signing verification](.plans/signing-verification.md). Install and permission continuity on m1 is deferred to a separate fleet change.
+
+The development harness captures a synthetic fixture window to verify frozen pixels and never saves screenshots into the repository. Its mouse-only observer does not request Accessibility or Input Monitoring.
 
 ## Specifications
 

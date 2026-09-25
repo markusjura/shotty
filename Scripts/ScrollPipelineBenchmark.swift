@@ -4,7 +4,7 @@ import Foundation
 import ImageIO
 
 /// Compile the production accumulator and its dependencies with Swift 6 optimization:
-/// xcrun swiftc -O -whole-module-optimization -swift-version 6 -parse-as-library -target arm64-apple-macos26.0 Shotty/Geometry/DisplayGeometry.swift Shotty/Capture/StillCaptureService.swift Shotty/Scrolling/ScrollAlignment.swift Shotty/Scrolling/ScrollStitchSession.swift Shotty/Scrolling/ScrollFrameConversion.swift Shotty/Scrolling/ScrollTileStore.swift Shotty/Scrolling/ScrollAccumulator.swift Scripts/ScrollPipelineBenchmark.swift -o /tmp/shotty-scroll-benchmark
+/// xcrun swiftc -O -whole-module-optimization -swift-version 6 -parse-as-library -target arm64-apple-macos26.0 Shotty/Geometry/DisplayGeometry.swift Shotty/Capture/StillCaptureService.swift Shotty/Capture/CaptureScratchSpace.swift Shotty/Scrolling/ScrollAlignment.swift Shotty/Scrolling/ScrollStitchSession.swift Shotty/Scrolling/ScrollFrameConversion.swift Shotty/Scrolling/ScrollTileStore.swift Shotty/Scrolling/ScrollAccumulator.swift Scripts/ScrollPipelineBenchmark.swift -o /tmp/shotty-scroll-benchmark
 /// Run with: /usr/bin/time -l /tmp/shotty-scroll-benchmark run 2000 1500 /tmp/shotty-scroll-benchmark-unique
 /// Then: /usr/bin/time -l /tmp/shotty-scroll-benchmark verify 2000 1500 /tmp/shotty-scroll-benchmark-unique
 /// The directory must not exist before `run`. `verify` removes it after checking every PNG pixel.
