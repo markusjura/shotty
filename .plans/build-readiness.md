@@ -1,8 +1,8 @@
 # Shotty build contract
 
-Status: 25 September 2026. Markus approved the prototype's look and layout. This document closes implementation choices left open during the audit. It supplements the interaction specification and implementation plan; the preview remains a visual reference, not evidence of working native capture. No native app has been built yet.
+Status: 25 September 2026. Markus approved the prototype's look and layout. This document closes implementation choices left open during the audit. It supplements the interaction specification and implementation plan; the preview remains a visual reference, not evidence of working native capture. A signed native foundation harness now builds and launches; milestone 0 remains in progress. See [native verification](native-verification.md).
 
-Repository rename verified: the checkout is `/Users/mj/workspace/shotty` and origin is `https://github.com/markusjura/shotty.git`. Markus completed the rename and restart. The current step is committing the planning baseline; application implementation has not started. Update README as part of implementation. A disposable signing probe built successfully; its certificate and outstanding verification are recorded in `signing-verification.md`.
+Repository rename verified: the checkout is `/Users/mj/workspace/shotty` and origin is `https://github.com/markusjura/shotty.git`. Markus completed the rename and committed the planning baseline as `26f9185`. Implementation has started with the foundation experiments, and README now points to `.plans/`. The existing development identity is reused; its certificate and outstanding verification are recorded in `signing-verification.md`.
 
 ## What is decided
 

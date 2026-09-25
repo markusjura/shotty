@@ -1,0 +1,2 @@
+// Keep the local signing team out of the shared project.
+#include? "../Local.xcconfig"

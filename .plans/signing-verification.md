@@ -1,5 +1,9 @@
 # Signing verification: free Apple Development certificate for Shotty
 
+## Native target verification, 25 September 2026
+
+The milestone-0 Shotty target now builds with the existing identity, bundle identifier `local.markus.Shotty`, macOS 26 deployment target, and Hardened Runtime. The signed Release app passes `codesign --verify --deep --strict`, has no embedded provisioning profile, and has no entitlements after disabling Xcode's injected development entitlements for Release. An initial install and a rebuilt update both launched at `/Applications/Shotty.app` on studio through Computer Use; their designated requirements match. Screen Recording has not yet been granted, so permission continuity remains untested. Actual launch and permission checks on m1 are still pending. See [native verification](native-verification.md) for the current evidence and remaining gates. No paid membership, Developer ID identity, notarization, key export, or security bypass was used.
+
 ## Observed setup result, 25 September 2026
 
 Markus signed into Xcode on studio. The free Personal Team is available. Manual Manage Certificates initially showed Apple Development disabled; selecting the Personal Team for a disposable target triggered automatic creation. `security find-identity -v -p codesigning` now reports one valid Apple Development identity. The issuer is Apple Worldwide Developer Relations Certification Authority, G3. The certificate is valid from 25 September 2026 at 14:00:20 UTC until 25 September 2027 at 14:00:19 UTC. The private key remains in the login keychain; nothing was exported or committed.

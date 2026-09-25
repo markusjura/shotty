@@ -1,6 +1,6 @@
 # Shotty implementation plan
 
-Status: revised product and implementation plan, 25 September 2026. The native application has not been implemented. A free Apple Development signing identity was created on studio during the readiness pass; signed-build validation is tracked in [signing-verification.md](signing-verification.md). The design preview is an interaction mockup, not a running SwiftUI app. The [build contract](build-readiness.md) records final decisions and takes precedence over earlier proposals. The detailed [interaction specification](interaction-spec.md) defines the refined UX, grounded in the [CleanShot feature audit](cleanshot-reference.md), and takes precedence over the preview.
+Status: revised product and implementation plan, 25 September 2026. Milestone 0 is in progress; a signed native foundation harness and focused tests exist, but its engineering gates have not passed. Measured results and pending checks are tracked in [native verification](native-verification.md). A free Apple Development signing identity was created on studio during the readiness pass; signed-build validation is tracked in [signing-verification.md](signing-verification.md). The design preview is an interaction mockup, not a running SwiftUI app. The [build contract](build-readiness.md) records final decisions and takes precedence over earlier proposals. The detailed [interaction specification](interaction-spec.md) defines the refined UX, grounded in the [CleanShot feature audit](cleanshot-reference.md), and takes precedence over the preview.
 
 ## Product decision
 
