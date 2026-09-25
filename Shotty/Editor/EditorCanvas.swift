@@ -1,7 +1,8 @@
 import AppKit
 
 /// Direct-manipulation canvas. One transform maps source pixels to view points:
-/// view = (image - viewport.origin) * zoom. The enclosing scroll view owns panning.
+/// view = (image - viewport.origin) * zoom + margin. The enclosing scroll view owns panning.
+/// Image content is clipped to the viewport; the margin only holds handles at the image edges.
 ///
 /// Drawing never renders the full source per pointer event. Committed documents with effects get
 /// one background full render; during a gesture only the dirty regions of the draft are rendered,
@@ -19,15 +20,23 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
             guard tool != oldValue else { return }
             finishText()
             cancelGesture(restoreSelection: true)
-            cropDraft = tool == .crop ? (document.state.crop ?? sourceBounds) : nil
-            updateViewport()
+            if tool != .crop { cropAspect = nil }
+            cropDraft = tool == .crop ? CropGeometry.applyingAspect(cropAspect, to: document.state.crop ?? sourceBounds, within: sourceBounds) : nil
+            viewportMayHaveChanged()
+            selectionChanged?()
         }
     }
     var selected = Set<UUID>() { didSet { if selected != oldValue { needsDisplay = true; selectionChanged?(); updateAccessibility() } } }
     private(set) var zoom: CGFloat = 0.5
+    /// True after `fit()` until an explicit zoom; while true, window resizes and crop changes refit.
+    private(set) var isFitting = true
+    /// Called after every zoom change, including fitting and pinch.
+    var zoomChanged: (() -> Void)?
+    private var clipObserver: NSObjectProtocol?
+    private var fittedViewport: CGRect?
     var nextCounter = 1
     var cropDraft: CGRect? { didSet { needsDisplay = true } }
-    var cropAspect: CGFloat?
+    private(set) var cropAspect: CGFloat?
 
     private enum Gesture {
         case draw(UUID)
@@ -95,9 +104,15 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
             if case .counter(_, let number, _) = annotation.content { number } else { nil }
         }.reduce(0, max)
         setAccessibilityRole(.group); setAccessibilityLabel("Image annotation canvas")
+        // AppKit no longer clips views by default; drawing never extends past the canvas.
+        clipsToBounds = true
         updateAccessibility()
     }
     required init?(coder: NSCoder) { nil }
+
+    isolated deinit {
+        if let clipObserver { NotificationCenter.default.removeObserver(clipObserver) }
+    }
 
     /// Window key loss does not necessarily change its first responder, so the window controller
     /// also calls this when resigning key. A later mouse-up cannot commit the cancelled draft.
@@ -127,19 +142,22 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         stylePreview = nil
         if gesture != nil { cancelGesture(restoreSelection: false) }
         selected.formIntersection(Set(state.annotations.map(\.id)))
-        updateViewport(); updatePreview(); needsDisplay = true; updateAccessibility()
+        viewportMayHaveChanged(); updatePreview(); needsDisplay = true; updateAccessibility()
     }
 
     // MARK: Coordinates and zoom
 
+    /// Room outside the image for edge handles and focus, in view points, independent of zoom.
+    static let margin: CGFloat = 12
+
     private func viewPoint(_ image: CGPoint) -> CGPoint {
-        CGPoint(x: (image.x - viewport.minX) * zoom, y: (image.y - viewport.minY) * zoom)
+        CGPoint(x: (image.x - viewport.minX) * zoom + Self.margin, y: (image.y - viewport.minY) * zoom + Self.margin)
     }
     private func viewRect(_ image: CGRect) -> CGRect {
         CGRect(origin: viewPoint(image.origin), size: CGSize(width: image.width * zoom, height: image.height * zoom))
     }
     private func imagePoint(fromView point: CGPoint) -> CGPoint {
-        CGPoint(x: point.x / zoom + viewport.minX, y: point.y / zoom + viewport.minY)
+        CGPoint(x: (point.x - Self.margin) / zoom + viewport.minX, y: (point.y - Self.margin) / zoom + viewport.minY)
     }
     /// Pointer in image pixels, clamped to the editable area so no geometry leaves the image.
     private func imagePoint(window point: CGPoint) -> CGPoint {
@@ -147,29 +165,71 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
     }
 
     private func updateViewport() {
-        let size = NSSize(width: viewport.width * zoom, height: viewport.height * zoom)
+        let size = NSSize(width: viewport.width * zoom + 2 * Self.margin, height: viewport.height * zoom + 2 * Self.margin)
         if frame.size != size { setFrameSize(size) }
         repositionTextView()
         needsDisplay = true
     }
 
+    /// An explicit zoom level, keeping the image point under `point` (or the view center) fixed.
     func setZoom(_ factor: CGFloat, preserving point: CGPoint? = nil) {
+        isFitting = false
+        applyZoom(factor, preserving: point)
+    }
+
+    private func applyZoom(_ factor: CGFloat, preserving point: CGPoint?) {
         finishText()
         guard let scroll = enclosingScrollView else { return }
         let clip = scroll.contentView
         let viewAnchor = point ?? CGPoint(x: clip.bounds.midX, y: clip.bounds.midY)
         let image = imagePoint(fromView: viewAnchor)
         let offset = CGPoint(x: viewAnchor.x - clip.bounds.minX, y: viewAnchor.y - clip.bounds.minY)
-        zoom = min(8, max(0.025, factor))
+        // Fit can be below the manual minimum. A subsequent zoom-out must never zoom in.
+        let minimum = min(0.025, zoom)
+        zoom = min(8, isFitting ? factor : max(minimum, factor))
         updateViewport()
         let moved = viewPoint(image)
         clip.scroll(to: clip.constrainBoundsRect(CGRect(origin: CGPoint(x: moved.x - offset.x, y: moved.y - offset.y),
                                                          size: clip.bounds.size)).origin)
         scroll.reflectScrolledClipView(clip)
+        zoomChanged?()
     }
+
+    /// Fits the visible image to the scroll view and keeps fitting until an explicit zoom.
     func fit() {
+        guard let scroll = enclosingScrollView, scroll.contentSize.width > 0, scroll.contentSize.height > 0 else { return }
+        isFitting = true
+        fittedViewport = viewport
+        let available = CGSize(width: max(1, scroll.contentSize.width - 2 * Self.margin),
+                               height: max(1, scroll.contentSize.height - 2 * Self.margin))
+        applyZoom(min(available.width / viewport.width, available.height / viewport.height), preserving: nil)
+    }
+
+    /// Crop mode and committed crops change the visible image; a fitted view refits to it.
+    private func viewportMayHaveChanged() {
+        updateViewport()
+        if isFitting, fittedViewport != viewport { fit() }
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        if let clipObserver { NotificationCenter.default.removeObserver(clipObserver) }
+        clipObserver = nil
+        guard let clip = superview as? NSClipView else { return }
+        clip.postsFrameChangedNotifications = true
+        clipObserver = NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: clip,
+                                                              queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.clipResized() }
+        }
+    }
+
+    /// Window resizes refit only in fit mode; otherwise the clip view re-centers an undersized image.
+    private func clipResized() {
+        if isFitting { fit(); return }
         guard let scroll = enclosingScrollView else { return }
-        setZoom(min(scroll.contentSize.width / viewport.width, scroll.contentSize.height / viewport.height))
+        let clip = scroll.contentView
+        clip.scroll(to: clip.constrainBoundsRect(clip.bounds).origin)
+        scroll.reflectScrolledClipView(clip)
     }
 
     // MARK: Drawing
@@ -178,9 +238,14 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         NSColor.controlBackgroundColor.setFill(); dirtyRect.fill()
         context.saveGState()
+        context.translateBy(x: Self.margin, y: Self.margin)
         context.scaleBy(x: zoom, y: zoom)
         context.translateBy(x: -viewport.minX, y: -viewport.minY)
+        // Pixels outside the visible image, such as source beyond a committed crop, never show.
+        context.saveGState()
+        context.clip(to: viewport)
         drawContent(in: context)
+        context.restoreGState()
         if let crop = cropDraft ?? (tool == .crop ? document.state.crop : nil) {
             let path = CGMutablePath(); path.addRect(sourceBounds); path.addRect(crop)
             context.setFillColor(NSColor.black.withAlphaComponent(0.45).cgColor)
@@ -381,24 +446,9 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
             scroll.reflectScrolledClipView(scroll.contentView)
             return
         case .crop(let edges, let start, let moving):
-            var crop: CGRect
-            if moving {
-                let offset = EditorGeometry.clampedOffset(CGSize(width: delta.dx, height: delta.dy), moving: start, within: sourceBounds)
-                crop = start.offsetBy(dx: offset.width, dy: offset.height)
-            } else if let edges {
-                crop = SelectionGeometry.resize(start, edges: edges, by: delta)
-            } else {
-                crop = SelectionGeometry.rectangle(from: anchor, to: point, square: false, centered: false)
-            }
-            if let cropAspect, cropAspect > 0, !moving { crop.size.height = crop.width / cropAspect }
-            if !modifiers.contains(.command) {
-                let snap = 6 / zoom
-                if crop.minX - sourceBounds.minX < snap { crop.size.width += crop.minX; crop.origin.x = 0 }
-                if crop.minY - sourceBounds.minY < snap { crop.size.height += crop.minY; crop.origin.y = 0 }
-                if sourceBounds.maxX - crop.maxX < snap { crop.size.width = sourceBounds.maxX - crop.minX }
-                if sourceBounds.maxY - crop.maxY < snap { crop.size.height = sourceBounds.maxY - crop.minY }
-            }
-            cropDraft = crop.intersection(sourceBounds).integral
+            cropDraft = CropGeometry.dragged(start, edges: edges, moving: moving, from: anchor, to: point,
+                                             aspect: cropAspect, within: sourceBounds,
+                                             snap: modifiers.contains(.command) ? 0 : 6 / zoom)
             selectionChanged?()
             return
         }
@@ -534,6 +584,16 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
               annotation.tool == .text else { return }
         beginText(point: annotation.bounds.origin, existing: annotation)
     }
+    func setCropAspect(_ aspect: CGFloat?) {
+        cropAspect = aspect
+        if let cropDraft { self.cropDraft = CropGeometry.applyingAspect(aspect, to: cropDraft, within: sourceBounds) }
+        selectionChanged?()
+    }
+    func setCropSize(width: CGFloat? = nil, height: CGFloat? = nil) {
+        guard let cropDraft else { return }
+        self.cropDraft = CropGeometry.resized(cropDraft, width: width, height: height, aspect: cropAspect, within: sourceBounds)
+        selectionChanged?()
+    }
     func applyCrop() {
         if let cropDraft, cropDraft.width >= 1, cropDraft.height >= 1 {
             var state = document.state
@@ -629,7 +689,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         return super.resignFirstResponder()
     }
     override func magnify(with event: NSEvent) {
-        setZoom(zoom * (1 + event.magnification), preserving: convert(event.locationInWindow, from: nil)); selectionChanged?()
+        setZoom(zoom * (1 + event.magnification), preserving: convert(event.locationInWindow, from: nil))
     }
     override func selectAll(_ sender: Any?) { selected = Set(document.state.annotations.map(\.id)) }
     @objc func delete(_ sender: Any?) { deleteSelected() }

@@ -16,7 +16,7 @@ struct EditorOptions: View {
     private var optionsButton: some View {
         Button("Options") { expanded.toggle() }
             .disabled([.select, .crop].contains(model.styleTool))
-            .popover(isPresented: $expanded) {
+            .popover(isPresented: $expanded, arrowEdge: .bottom) {
                 Form {
                     if model.selectedAnnotations.count > 1 {
                         Text(model.hasMixedStyles ? "Mixed styles · \(model.selectedAnnotations.count) selected objects" : "Editing \(model.selectedAnnotations.count) selected objects").foregroundStyle(.secondary)
@@ -73,6 +73,7 @@ struct EditorOptions: View {
                         }
                         Text("Solid replaces pixels. Pixelate and Blur obscure their appearance. Previously copied or saved images remain unchanged.")
                             .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     case .spotlight:
                         Picker("Shape", selection: model.binding(\.spotlight.shape)) {
                             ForEach(SpotlightShape.allCases, id: \.self) { shape in
@@ -102,7 +103,7 @@ struct EditorOptions: View {
         case .line: inlineColor(\.line.color); inlineSize("Thickness", \.line.width, 1...32)
         case .text: inlineColor(\.text.color); inlineSize("Size", \.text.size, 8...200)
         case .counter: inlineColor(\.counter.color); inlineSize("Size", \.counter.size, 12...96)
-        case .redact: redactStylePicker.labelsHidden().frame(width: 110)
+        case .redact: redactStylePicker.labelsHidden().fixedSize()
         case .spotlight: inlineSize("Dim", \.spotlight.dimPercent, 5...90)
         case .select, .crop: EmptyView()
         }

@@ -96,8 +96,8 @@ final class EditorWindowModel {
             if isStyling { styleGesture(false) }
             selectionVersion += 1
             if tool != canvas.tool { tool = canvas.tool }
-            zoomLabel = "\(Int((canvas.zoom * (canvas.window?.backingScaleFactor ?? 2) * 100).rounded()))%"
         }
+        canvas.zoomChanged = { [weak self] in self?.updateZoomLabel() }
         canvas.command = { [weak self] in self?.execute($0) }
     }
 
@@ -227,9 +227,12 @@ final class EditorWindowModel {
             self.updateStyles { $0[keyPath: keyPath] = value }
         })
     }
+    /// `value` is image pixels per display backing pixel (1 = actual pixels); nil fits the window.
     func setZoom(_ value: CGFloat?) {
         if let value { canvas.setZoom(value / (canvas.window?.backingScaleFactor ?? 2)) } else { canvas.fit() }
-        zoomLabel = value == nil ? "Fit" : "\(Int(value! * 100))%"
+    }
+    private func updateZoomLabel() {
+        zoomLabel = canvas.isFitting ? "Fit" : "\(Int((canvas.zoom * (canvas.window?.backingScaleFactor ?? 2) * 100).rounded()))%"
     }
     func execute(_ command: CommandID) {
         if let tool = command.tool { self.tool = tool; return }
@@ -317,16 +320,19 @@ private struct EditorWindowView: View {
             HStack(spacing: 5) {
                 Spacer().frame(width: 68)
                 if model.tool == .crop {
+                    // Canvas state is AppKit-owned; its callback invalidates these controls.
+                    let _ = model.selectionVersion
+                    let cropSize = model.canvas.cropDraft?.size ?? .zero
                     Text("Crop").fontWeight(.medium)
-                    TextField("Width", value: Binding(get: { Double(model.canvas.cropDraft?.width ?? 0) }, set: { model.canvas.cropDraft?.size.width = $0; model.canvas.needsDisplay = true; model.selectionVersion += 1 }), format: .number).frame(width: 70)
+                    TextField("Width", value: Binding(get: { Double(cropSize.width) }, set: { model.canvas.setCropSize(width: $0) }), format: .number).frame(width: 70)
                     Text("×")
-                    TextField("Height", value: Binding(get: { Double(model.canvas.cropDraft?.height ?? 0) }, set: { model.canvas.cropDraft?.size.height = $0; model.canvas.needsDisplay = true; model.selectionVersion += 1 }), format: .number).frame(width: 70)
-                    Menu("Aspect") {
-                        Button("Freeform") { model.canvas.cropAspect = nil }
-                        Button("Square") { model.canvas.cropAspect = 1 }
-                        Button("16:9") { model.canvas.cropAspect = 16 / 9 }
-                        Button("4:3") { model.canvas.cropAspect = 4 / 3 }
-                    }.fixedSize()
+                    TextField("Height", value: Binding(get: { Double(cropSize.height) }, set: { model.canvas.setCropSize(height: $0) }), format: .number).frame(width: 70)
+                    Picker("Aspect", selection: Binding(get: { model.canvas.cropAspect }, set: { model.canvas.setCropAspect($0) })) {
+                        Text("Freeform").tag(CGFloat?.none)
+                        Text("Square").tag(CGFloat?.some(1))
+                        Text("16:9").tag(CGFloat?.some(16 / 9))
+                        Text("4:3").tag(CGFloat?.some(4 / 3))
+                    }.pickerStyle(.menu).labelsHidden().fixedSize()
                     Spacer()
                     Button("Cancel") { model.canvas.cancelCrop(); model.tool = .select }
                     Button("Apply") { model.canvas.applyCrop(); model.tool = .select }.keyboardShortcut(.defaultAction)
@@ -341,8 +347,11 @@ private struct EditorWindowView: View {
                         .help("\(CommandID.tool(tool).title) \(model.commands.shortcut(for: .tool(tool))?.displayString ?? "")")
                         .accessibilityLabel(CommandID.tool(tool).title)
                     }
-                    Divider().frame(height: 24)
-                    EditorOptions(model: model)
+                    // Select without an editable selection has no options; hide rather than disable.
+                    if model.styleTool != .select {
+                        Divider().frame(height: 24)
+                        EditorOptions(model: model)
+                    }
                     Spacer(minLength: 4)
                     Button("Save") { model.save(asNew: NSEvent.modifierFlags.contains(.option)) }.disabled(model.busy)
                     Button("Done") { model.close?() }
@@ -359,9 +368,16 @@ private struct EditorWindowView: View {
                 Button { model.showsObjects.toggle() } label: { Image(systemName: "list.bullet") }
                     .help("Objects").accessibilityLabel("Show objects")
                     .popover(isPresented: $model.showsObjects) {
-                        List(model.document.state.annotations) { annotation in
-                            Button("\(annotation.tool.rawValue.capitalized) · \(Int(annotation.bounds.minX)), \(Int(annotation.bounds.minY))") {
-                                model.canvas.selected = [annotation.id]; model.tool = .select
+                        let _ = model.selectionVersion
+                        List(selection: Binding<UUID?>(get: {
+                            model.canvas.selected.count == 1 ? model.canvas.selected.first : nil
+                        }, set: { id in
+                            model.tool = .select
+                            model.canvas.selected = id.map { [$0] } ?? []
+                        })) {
+                            ForEach(model.document.state.annotations) { annotation in
+                                Text("\(annotation.tool.rawValue.capitalized) · \(Int(annotation.bounds.minX)), \(Int(annotation.bounds.minY))")
+                                    .tag(annotation.id)
                             }
                         }.frame(width: 260, height: 300)
                     }
@@ -378,6 +394,7 @@ private struct CanvasContainer: NSViewRepresentable {
     let canvas: EditorCanvas
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSScrollView()
+        scroll.contentView = CenteringClipView()
         scroll.hasHorizontalScroller = true; scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true; scroll.drawsBackground = true
         scroll.documentView = canvas
@@ -385,6 +402,24 @@ private struct CanvasContainer: NSViewRepresentable {
         return scroll
     }
     func updateNSView(_ nsView: NSScrollView, context: Context) { }
+}
+
+/// Centers a document smaller than the visible area instead of pinning it to the origin.
+/// Larger documents scroll normally. The document's own coordinates are unchanged.
+final class CenteringClipView: NSClipView {
+    override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
+        let constrained = super.constrainBoundsRect(proposedBounds)
+        guard let document = documentView?.frame else { return constrained }
+        return Self.centered(constrained, document: document)
+    }
+
+    /// Centers each axis on which `bounds` is larger than `document`.
+    nonisolated static func centered(_ bounds: CGRect, document: CGRect) -> CGRect {
+        var result = bounds
+        if bounds.width > document.width { result.origin.x = document.midX - bounds.width / 2 }
+        if bounds.height > document.height { result.origin.y = document.midY - bounds.height / 2 }
+        return result
+    }
 }
 
 struct ToolIcon: View {
