@@ -1,0 +1,419 @@
+import AppKit
+import Observation
+import SwiftUI
+
+@MainActor
+final class EditorWindowController: NSWindowController, NSWindowDelegate {
+    let model: EditorWindowModel
+    private var closing = false
+    var didClose: (() -> Void)?
+
+    init(record: CaptureRecord, image: CGImage, coordinator: AppCoordinator, commands: CommandRegistry) {
+        model = EditorWindowModel(record: record, image: image, coordinator: coordinator, commands: commands)
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1100, height: 780),
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        window.title = "Shotty · \(record.pixelWidth) × \(record.pixelHeight)"
+        window.titleVisibility = .hidden; window.titlebarAppearsTransparent = true
+        window.minSize = NSSize(width: 720, height: 400)
+        window.isReleasedWhenClosed = false
+        super.init(window: window)
+        window.delegate = self
+        window.contentView = NSHostingView(rootView: EditorWindowView(model: model).ignoresSafeArea())
+        window.center()
+        model.close = { [weak self] in self?.finishAndClose() }
+    }
+    required init?(coder: NSCoder) { nil }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if closing { return true }
+        let id = model.document.record.id
+        let record = model.coordinator.records.first { $0.id == id }
+        if !model.coordinator.isThumbnailRetained(id), record?.savedRevision != model.document.revision {
+            let alert = NSAlert(); alert.messageText = "Keep your edited capture?"
+            alert.addButton(withTitle: "Keep as Thumbnail"); alert.addButton(withTitle: "Save")
+            alert.addButton(withTitle: "Discard"); alert.addButton(withTitle: "Cancel")
+            switch alert.runModal() {
+            case .alertFirstButtonReturn: finishAndClose()
+            case .alertSecondButtonReturn: model.saveAndClose = true; model.save()
+            case .alertThirdButtonReturn:
+                model.coordinator.discardEditedCapture(id); closing = true; sender.close()
+            default: break
+            }
+        } else { finishAndClose() }
+        return false
+    }
+    func finishAndClose() {
+        guard !closing else { return }
+        model.canvas.finishText()
+        Task {
+            do {
+                _ = try await model.document.flush()
+                await model.coordinator.keepEditedCapture(model.document.record.id)
+                closing = true; window?.close()
+            } catch { model.coordinator.showError(error, title: "Couldn't retain edits") }
+        }
+    }
+    func windowWillClose(_ notification: Notification) { didClose?() }
+    func windowDidBecomeKey(_ notification: Notification) { model.commands.contextDidChange() }
+    func windowDidResignKey(_ notification: Notification) {
+        model.commands.contextDidChange()
+        model.canvas.cancelInteraction()
+        model.canvas.finishText()
+    }
+    func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? { model.document.undoManager }
+}
+
+@MainActor @Observable
+final class EditorWindowModel {
+    let document: EditorDocument
+    let canvas: EditorCanvas
+    let coordinator: AppCoordinator
+    let commands: CommandRegistry
+    var tool: EditorTool = .select {
+        willSet { if newValue != tool { styleGesture(false) } }
+        didSet { canvas.tool = tool }
+    }
+    var selectionVersion = 0
+    var zoomLabel = "Fit"
+    var busy = false
+    var saveAndClose = false
+    var close: (() -> Void)?
+    var showsObjects = false
+    private var styleDraft: AnnotationDocument?
+    private var defaultsDraft: EditorToolDefaults?
+    private var isStyling = false
+
+    init(record: CaptureRecord, image: CGImage, coordinator: AppCoordinator, commands: CommandRegistry) {
+        self.coordinator = coordinator; self.commands = commands
+        let document = EditorDocument(record: record, store: coordinator.store)
+        self.document = document
+        canvas = EditorCanvas(document: document, source: image, preferences: coordinator.preferences, commands: commands)
+        document.onChange = { [weak self] in
+            self?.canvas.documentChanged(); self?.selectionVersion += 1
+        }
+        canvas.selectionChanged = { [weak self] in
+            guard let self else { return }
+            if isStyling { styleGesture(false) }
+            selectionVersion += 1
+            if tool != canvas.tool { tool = canvas.tool }
+            zoomLabel = "\(Int((canvas.zoom * (canvas.window?.backingScaleFactor ?? 2) * 100).rounded()))%"
+        }
+        canvas.command = { [weak self] in self?.execute($0) }
+    }
+
+    var selectedAnnotations: [Annotation] {
+        _ = selectionVersion
+        return (styleDraft ?? document.state).annotations.filter { canvas.selected.contains($0.id) }
+    }
+    var styleTool: EditorTool { selectedAnnotations.first?.tool ?? tool }
+    var defaults: EditorToolDefaults {
+        var values = defaultsDraft ?? coordinator.preferences.editor.tools
+        guard let annotation = selectedAnnotations.first else { return values }
+        switch annotation.content {
+        case .arrow(_, _, _, let s): values.arrow = s
+        case .rectangle(_, let s): values.rectangle = s
+        case .ellipse(_, let s): values.ellipse = s
+        case .line(_, _, let s): values.line = s
+        case .text(_, _, let s): values.text = s
+        case .redact(_, let s): values.redact = s
+        case .spotlight(_, let s): values.spotlight = s
+        case .counter(_, _, let s): values.counter = s
+        }
+        return values
+    }
+
+    var hasMixedStyles: Bool {
+        guard let first = selectedAnnotations.first else { return false }
+        let baseline = values(for: first, base: coordinator.preferences.editor.tools)
+        return selectedAnnotations.dropFirst().contains {
+            $0.tool != first.tool || values(for: $0, base: coordinator.preferences.editor.tools) != baseline
+        }
+    }
+
+    func hasMixedValues<Value: Equatable>(_ key: KeyPath<EditorToolDefaults, Value>) -> Bool {
+        let selected = selectedAnnotations.filter { $0.tool == styleTool }
+        guard let first = selected.first else { return false }
+        let baseline = values(for: first, base: defaults)[keyPath: key]
+        return selected.dropFirst().contains { values(for: $0, base: defaults)[keyPath: key] != baseline }
+    }
+
+    private func values(for annotation: Annotation, base: EditorToolDefaults) -> EditorToolDefaults {
+        var values = base
+        switch annotation.content {
+        case .arrow(_, _, _, let style): values.arrow = style
+        case .rectangle(_, let style): values.rectangle = style
+        case .ellipse(_, let style): values.ellipse = style
+        case .line(_, _, let style): values.line = style
+        case .text(_, _, let style): values.text = style
+        case .redact(_, let style): values.redact = style
+        case .spotlight(_, let style): values.spotlight = style
+        case .counter(_, _, let style): values.counter = style
+        }
+        return values
+    }
+
+    /// Apply only fields changed by this control, preserving mixed values in other fields.
+    func setDefaults(_ next: EditorToolDefaults) {
+        let before = defaults
+        updateStyles { value in
+            func assign<Value: Equatable>(_ key: WritableKeyPath<EditorToolDefaults, Value>) {
+                if before[keyPath: key] != next[keyPath: key] { value[keyPath: key] = next[keyPath: key] }
+            }
+            assign(\.arrow.color); assign(\.arrow.width); assign(\.arrow.style)
+            assign(\.rectangle.strokeColor); assign(\.rectangle.width); assign(\.rectangle.fillColor); assign(\.rectangle.cornerRadius)
+            assign(\.ellipse.strokeColor); assign(\.ellipse.width); assign(\.ellipse.fillColor)
+            assign(\.line.color); assign(\.line.width)
+            assign(\.text.color); assign(\.text.size); assign(\.text.design); assign(\.text.weight); assign(\.text.treatment)
+            assign(\.redact.style); assign(\.redact.strength); assign(\.redact.solidColor)
+            assign(\.spotlight.shape); assign(\.spotlight.dimPercent)
+            assign(\.counter.color); assign(\.counter.size)
+        }
+    }
+
+    private func updateStyles(_ transform: (inout EditorToolDefaults) -> Void) {
+        guard !selectedAnnotations.isEmpty else {
+            var values = defaultsDraft ?? coordinator.preferences.editor.tools; transform(&values)
+            if isStyling { defaultsDraft = values } else { coordinator.preferences.editor.tools = values }
+            return
+        }
+        var state = styleDraft ?? document.state
+        let selected = canvas.selected
+        var changed = defaults; transform(&changed)
+        let dimChanged = changed.spotlight.dimPercent != defaults.spotlight.dimPercent
+        for i in state.annotations.indices {
+            let annotation = state.annotations[i]
+            guard selected.contains(annotation.id) else {
+                if dimChanged, case .spotlight(let rect, var style) = annotation.content {
+                    style.dimPercent = changed.spotlight.dimPercent
+                    state.annotations[i].content = .spotlight(rect: rect, style: style)
+                }
+                continue
+            }
+            var values = values(for: annotation, base: coordinator.preferences.editor.tools); transform(&values)
+            switch annotation.content {
+            case .arrow(let a, let b, let bend, _):
+                let control = values.arrow.style == .curved ? (bend ?? EditorGeometry.defaultBend(start: a, end: b)) : nil
+                state.annotations[i].content = .arrow(start: a, end: b, bend: control, style: values.arrow)
+            case .rectangle(let rect, _): state.annotations[i].content = .rectangle(rect: rect, style: values.rectangle)
+            case .ellipse(let rect, _): state.annotations[i].content = .ellipse(rect: rect, style: values.ellipse)
+            case .line(let a, let b, _): state.annotations[i].content = .line(start: a, end: b, style: values.line)
+            case .text(let rect, let text, _): state.annotations[i].content = .text(rect: rect, text: text, style: values.text)
+            case .redact(let rect, _): state.annotations[i].content = .redact(rect: rect, style: values.redact)
+            case .spotlight(let rect, _): state.annotations[i].content = .spotlight(rect: rect, style: values.spotlight)
+            case .counter(let center, let n, _): state.annotations[i].content = .counter(center: center, number: n, style: values.counter)
+            }
+        }
+        if isStyling { styleDraft = state; canvas.setStylePreview(state); selectionVersion += 1 }
+        else { document.commit(state, actionName: "Change Style") }
+    }
+
+    func styleGesture(_ editing: Bool) {
+        isStyling = editing
+        if !editing, let values = defaultsDraft {
+            defaultsDraft = nil
+            coordinator.preferences.editor.tools = values
+        }
+        if !editing, let state = styleDraft {
+            styleDraft = nil; canvas.setStylePreview(nil)
+            document.commit(state, actionName: "Change Style")
+        }
+    }
+    func binding<Value>(_ keyPath: WritableKeyPath<EditorToolDefaults, Value>) -> Binding<Value> {
+        Binding(get: { self.defaults[keyPath: keyPath] }, set: { value in self.updateStyles { $0[keyPath: keyPath] = value } })
+    }
+    func colorBinding(_ keyPath: WritableKeyPath<EditorToolDefaults, RGBAColor>) -> Binding<Color> {
+        Binding(get: { Color(cgColor: self.defaults[keyPath: keyPath].cgColor) }, set: { color in
+            guard let value = RGBAColor(NSColor(color).cgColor) else { return }
+            self.updateStyles { $0[keyPath: keyPath] = value }
+        })
+    }
+    func setZoom(_ value: CGFloat?) {
+        if let value { canvas.setZoom(value / (canvas.window?.backingScaleFactor ?? 2)) } else { canvas.fit() }
+        zoomLabel = value == nil ? "Fit" : "\(Int(value! * 100))%"
+    }
+    func execute(_ command: CommandID) {
+        if let tool = command.tool { self.tool = tool; return }
+        switch command {
+        case .copyImage: copy()
+        case .save: save(asNew: NSEvent.modifierFlags.contains(.option))
+        case .saveAs: save(asNew: true)
+        case .done:
+            if canvas.isEditingText { canvas.finishText() }
+            else if tool == .crop { canvas.applyCrop(); tool = .select }
+            else { close?() }
+        case .duplicate: canvas.duplicateSelected()
+        case .zoomIn: canvas.setZoom(canvas.zoom * 1.25)
+        case .zoomOut: canvas.setZoom(canvas.zoom / 1.25)
+        case .zoomToFit: setZoom(nil)
+        case .actualSize: setZoom(1)
+        default: break
+        }
+    }
+    func copy() {
+        canvas.finishText()
+        let ticket = coordinator.clipboard.begin()
+        let shouldClose = coordinator.preferences.editor.closesAfterCopy != NSEvent.modifierFlags.contains(.option)
+        let options = coordinator.preferences.snapshot(for: document.record.kind).exportOptions
+        coordinator.retain(document.record.id)
+        Task {
+            defer { coordinator.release(document.record.id) }
+            do {
+                let snapshot = try await document.flush()
+                var png = options; png.format = .png
+                let data = try await coordinator.exporter.encodedData(snapshot, options: png)
+                if coordinator.clipboard.write(data, type: .png, ticket: ticket) {
+                    try await coordinator.store.markCopied(snapshot); await coordinator.refreshRecords()
+                    if shouldClose { close?() }
+                }
+            } catch { coordinator.showError(error, title: "Couldn't copy image") }
+        }
+    }
+    func save(asNew: Bool = false) {
+        guard !busy else { return }
+        canvas.finishText(); busy = true
+        coordinator.retain(document.record.id)
+        Task {
+            defer { busy = false; saveAndClose = false; coordinator.release(document.record.id) }
+            do {
+                let snapshot = try await document.flush()
+                let settings = coordinator.preferences.snapshot(for: snapshot.kind)
+                let associated = await coordinator.store.records().first { $0.id == snapshot.captureID }?.outputFile
+                if asNew { guard await coordinator.saveAs(snapshot.captureID, snapshot: snapshot) else { return } }
+                else if let associated {
+                    var options = settings.exportOptions
+                    options.format = ["jpg", "jpeg"].contains(associated.url.pathExtension.lowercased()) ? .jpeg : .png
+                    do {
+                        let receipt = try await coordinator.exporter.save(snapshot, to: associated.url, options: options, replacing: associated.fingerprint)
+                        try await coordinator.store.markSaved(receipt)
+                    } catch ExportService.Failure.externallyModified {
+                        let alert = NSAlert(); alert.messageText = "The saved image changed outside Shotty"
+                        alert.informativeText = "Replace that file with this revision, or save another copy."
+                        alert.addButton(withTitle: "Save As…"); alert.addButton(withTitle: "Replace"); alert.addButton(withTitle: "Cancel")
+                        switch alert.runModal() {
+                        case .alertFirstButtonReturn: guard await coordinator.saveAs(snapshot.captureID, snapshot: snapshot) else { return }
+                        case .alertSecondButtonReturn:
+                            let fingerprint = try await coordinator.exporter.fingerprint(at: associated.url)
+                            let receipt = try await coordinator.exporter.save(snapshot, to: associated.url, options: options, replacing: fingerprint)
+                            try await coordinator.store.markSaved(receipt)
+                        default: return
+                        }
+                    }
+                } else {
+                    let receipt = try await coordinator.exporter.export(snapshot, to: settings.saveDirectory, options: settings.exportOptions,
+                                                                        filenameTemplate: settings.capture.filenameTemplate)
+                    try await coordinator.store.markSaved(receipt)
+                }
+                await coordinator.refreshRecords()
+                if coordinator.preferences.editor.closesAfterSave || saveAndClose { close?() }
+            } catch { coordinator.showError(error, title: "Couldn't save image") }
+        }
+    }
+}
+
+private struct EditorWindowView: View {
+    @Bindable var model: EditorWindowModel
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 5) {
+                Spacer().frame(width: 68)
+                if model.tool == .crop {
+                    Text("Crop").fontWeight(.medium)
+                    TextField("Width", value: Binding(get: { Double(model.canvas.cropDraft?.width ?? 0) }, set: { model.canvas.cropDraft?.size.width = $0; model.canvas.needsDisplay = true; model.selectionVersion += 1 }), format: .number).frame(width: 70)
+                    Text("×")
+                    TextField("Height", value: Binding(get: { Double(model.canvas.cropDraft?.height ?? 0) }, set: { model.canvas.cropDraft?.size.height = $0; model.canvas.needsDisplay = true; model.selectionVersion += 1 }), format: .number).frame(width: 70)
+                    Menu("Aspect") {
+                        Button("Freeform") { model.canvas.cropAspect = nil }
+                        Button("Square") { model.canvas.cropAspect = 1 }
+                        Button("16:9") { model.canvas.cropAspect = 16 / 9 }
+                        Button("4:3") { model.canvas.cropAspect = 4 / 3 }
+                    }.fixedSize()
+                    Spacer()
+                    Button("Cancel") { model.canvas.cancelCrop(); model.tool = .select }
+                    Button("Apply") { model.canvas.applyCrop(); model.tool = .select }.keyboardShortcut(.defaultAction)
+                } else {
+                    ForEach(EditorTool.allCases, id: \.self) { tool in
+                        Button { model.tool = tool } label: {
+                            ToolIcon(tool: tool).frame(width: 23, height: 25)
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(model.tool == tool ? Color.accentColor : .primary)
+                        .background(model.tool == tool ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 4))
+                        .help("\(CommandID.tool(tool).title) \(model.commands.shortcut(for: .tool(tool))?.displayString ?? "")")
+                        .accessibilityLabel(CommandID.tool(tool).title)
+                    }
+                    Divider().frame(height: 24)
+                    EditorOptions(model: model)
+                    Spacer(minLength: 4)
+                    Button("Save") { model.save(asNew: NSEvent.modifierFlags.contains(.option)) }.disabled(model.busy)
+                    Button("Done") { model.close?() }
+                }
+            }.padding(.horizontal, 10).frame(height: 52)
+            Divider()
+            CanvasContainer(canvas: model.canvas)
+            Divider()
+            HStack {
+                Menu(model.zoomLabel) {
+                    Button("Fit") { model.setZoom(nil) }
+                    ForEach([25, 50, 100, 200, 400], id: \.self) { value in Button("\(value)%") { model.setZoom(CGFloat(value) / 100) } }
+                }.frame(width: 90)
+                Button { model.showsObjects.toggle() } label: { Image(systemName: "list.bullet") }
+                    .help("Objects").accessibilityLabel("Show objects")
+                    .popover(isPresented: $model.showsObjects) {
+                        List(model.document.state.annotations) { annotation in
+                            Button("\(annotation.tool.rawValue.capitalized) · \(Int(annotation.bounds.minX)), \(Int(annotation.bounds.minY))") {
+                                model.canvas.selected = [annotation.id]; model.tool = .select
+                            }
+                        }.frame(width: 260, height: 300)
+                    }
+                Spacer()
+                EditorDragHandle(model: model).frame(width: 110, height: 28)
+                Spacer()
+                Button("Copy Image") { model.copy() }
+            }.padding(.horizontal, 12).frame(height: 36)
+        }
+    }
+}
+
+private struct CanvasContainer: NSViewRepresentable {
+    let canvas: EditorCanvas
+    func makeNSView(context: Context) -> NSScrollView {
+        let scroll = NSScrollView()
+        scroll.hasHorizontalScroller = true; scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true; scroll.drawsBackground = true
+        scroll.documentView = canvas
+        DispatchQueue.main.async { canvas.fit(); canvas.window?.makeFirstResponder(canvas); canvas.updatePreview() }
+        return scroll
+    }
+    func updateNSView(_ nsView: NSScrollView, context: Context) { }
+}
+
+struct ToolIcon: View {
+    let tool: EditorTool
+    var body: some View {
+        switch tool {
+        case .redact:
+            Canvas { context, size in
+                for x in 0..<3 { for y in 0..<3 {
+                    context.fill(Path(CGRect(x: CGFloat(x) * size.width / 3 + 1, y: CGFloat(y) * size.height / 3 + 1,
+                                             width: size.width / 3 - 2, height: size.height / 3 - 2)), with: .foreground)
+                } }
+            }.frame(width: 16, height: 16)
+        case .spotlight:
+            ZStack { RoundedRectangle(cornerRadius: 2).fill(.primary.opacity(0.3)); Circle().fill(.background).padding(4) }.frame(width: 18, height: 16)
+        default: Image(systemName: symbol)
+        }
+    }
+    private var symbol: String {
+        switch tool {
+        case .select: "cursorarrow"
+        case .arrow: "arrow.up.right"
+        case .rectangle: "rectangle"
+        case .ellipse: "circle"
+        case .line: "line.diagonal"
+        case .text: "textformat"
+        case .counter: "1.circle"
+        case .crop: "crop"
+        case .redact, .spotlight: "square"
+        }
+    }
+}

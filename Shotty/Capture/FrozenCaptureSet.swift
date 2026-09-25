@@ -183,7 +183,7 @@ actor FrozenCaptureSet {
     /// budgets. Large rasters fall back to sequential capture when necessary.
     /// Fixture IDs deliberately bypass own-process exclusion, but still must be on
     /// screen, normal-layer windows. Nil means the full eligible set, not a shortlist.
-    static func acquire(shadow: Bool, includeAlternateShadow: Bool = false,
+    static func acquire(shadow: Bool, includeAlternateShadow: Bool = false, showsCursor: Bool = false,
                         displayIDs: Set<CGDirectDisplayID>? = nil,
                         fixtureWindowIDs: Set<CGWindowID>? = nil,
                         excludingProcessID: pid_t = ProcessInfo.processInfo.processIdentifier,
@@ -209,7 +209,8 @@ actor FrozenCaptureSet {
             throw CaptureFailure.targetUnavailable
         }
         guard selectedWindows.count <= limits.maximumWindows else { throw FrozenCaptureFailure.resourceLimit }
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Shotty-freeze-" + UUID().uuidString, isDirectory: true)
+        try CaptureScratchSpace.prepare()
+        let directory = CaptureScratchSpace.directory.appendingPathComponent("Shotty-freeze-" + UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
                                                 attributes: [.posixPermissions: 0o700])
         do {
@@ -251,7 +252,7 @@ actor FrozenCaptureSet {
                     let job = requests[reservation.index]
                     var availableLimits = limits
                     availableLimits.maximumResidentBytes = reservation.residentBytes
-                    return try await capture(filter: job.filter, shadow: job.shadow, directory: directory,
+                    return try await capture(filter: job.filter, shadow: job.shadow, showsCursor: showsCursor, directory: directory,
                                              remainingDiskBytes: reservation.rasterBytes, limits: availableLimits)
                 }
                 for (reservation, raster) in zip(batch.reservations, rasters) {
@@ -328,14 +329,14 @@ actor FrozenCaptureSet {
         let target: Target
     }
 
-    private static func capture(filter: SCContentFilter, shadow: Bool, directory: URL,
+    private static func capture(filter: SCContentFilter, shadow: Bool, showsCursor: Bool, directory: URL,
                                 remainingDiskBytes: Int, limits: FrozenCaptureLimits) async throws -> FrozenRasterDescriptor {
         try Task.checkCancellation()
         let estimatedBytes = try limits.validateSDRCapture(pointSize: filter.contentRect.size,
                                                            scale: Double(filter.pointPixelScale), shadow: shadow)
         guard estimatedBytes <= remainingDiskBytes else { throw FrozenCaptureFailure.diskLimit }
         let configuration = SCScreenshotConfiguration()
-        configuration.showsCursor = false
+        configuration.showsCursor = showsCursor
         configuration.ignoreShadows = !shadow
         configuration.includeChildWindows = true
         configuration.dynamicRange = .sdr

@@ -18,7 +18,7 @@ enum CaptureFailure: LocalizedError {
 actor StillCaptureService {
     private let budget = RasterBudget()
 
-    func window(id: CGWindowID, shadow: Bool) async throws -> CGImage {
+    func window(id: CGWindowID, shadow: Bool, showsCursor: Bool = false) async throws -> CGImage {
         try preflight()
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
         guard let window = content.windows.first(where: { $0.windowID == id }) else {
@@ -26,7 +26,7 @@ actor StillCaptureService {
         }
         let filter = SCContentFilter(desktopIndependentWindow: window)
         let configuration = SCScreenshotConfiguration()
-        configuration.showsCursor = false
+        configuration.showsCursor = showsCursor
         configuration.ignoreShadows = !shadow
         configuration.includeChildWindows = true
         configuration.dynamicRange = .sdr
@@ -42,7 +42,7 @@ actor StillCaptureService {
         return image
     }
 
-    func display(id: CGDirectDisplayID, excluding processID: pid_t) async throws -> CGImage {
+    func display(id: CGDirectDisplayID, excluding processID: pid_t, showsCursor: Bool = false) async throws -> CGImage {
         try preflight()
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
         guard let display = content.displays.first(where: { $0.displayID == id }) else {
@@ -51,7 +51,7 @@ actor StillCaptureService {
         let ownApplications = content.applications.filter { $0.processID == processID }
         let filter = SCContentFilter(display: display, excludingApplications: ownApplications, exceptingWindows: [])
         let configuration = SCScreenshotConfiguration()
-        configuration.showsCursor = false
+        configuration.showsCursor = showsCursor
         configuration.dynamicRange = .sdr
         configuration.width = Int(CGFloat(display.width) * CGFloat(filter.pointPixelScale))
         configuration.height = Int(CGFloat(display.height) * CGFloat(filter.pointPixelScale))

@@ -40,6 +40,21 @@ final class ScrollAccumulatorTests: XCTestCase {
         }
     }
 
+    func testConfiguredLengthCapPausesWithItsReasonAndKeepsTheResult() async throws {
+        let accumulator = ScrollAccumulator(axis: .vertical, limits: ScrollLimits(maximumAxisPixels: 120))
+        for offset in [100, 120] {
+            let progress = try await accumulator.accept(image(try frame(axis: .vertical, offset: offset)))
+            XCTAssertNil(progress.rejection)
+        }
+        let capped = try await accumulator.accept(image(try frame(axis: .vertical, offset: 130)))
+        XCTAssertTrue(capped.paused)
+        XCTAssertEqual(capped.rejection, .lengthLimit)
+        XCTAssertEqual(capped.dimensions, try size(axis: .vertical, extent: 116))
+        let rendered = try await accumulator.renderImage()
+        XCTAssertEqual(rendered.height, 116)
+        await accumulator.discard()
+    }
+
     private func assertOutput(of accumulator: ScrollAccumulator, axis: ScrollAxis, from minimum: Int, to maximum: Int,
                               file: StaticString = #filePath, line: UInt = #line) async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("shotty-accumulator-\(UUID()).png")

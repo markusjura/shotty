@@ -264,11 +264,12 @@ final class FoundationHarness {
                 guard target.frame.contains(region), !region.isEmpty else { throw CaptureFailure.targetUnavailable }
                 let captureTarget = ScrollAutomationDriver.Target(windowID: target.id, processID: target.processID, globalRegion: region)
                 automaticTarget = captureTarget
-                scrollTargetWatch = Task { [weak self, weak driver] in
+                // The enclosing operation already holds self and driver; its defer cancels this watch.
+                scrollTargetWatch = Task {
                     // Watch even when ScreenCaptureKit has no new pixels to publish.
                     while !Task.isCancelled {
                         do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
-                        guard let self, let driver, self.automation === driver, self.isScrolling else { return }
+                        guard self.automation === driver, self.isScrolling else { return }
                         if let reason = self.targetFailure(captureTarget, originalBounds: target.frame) {
                             self.scrollStatus = "\(reason.rawValue) Accepted pixels are retained for inspection."
                             self.stopScrolling()

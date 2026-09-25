@@ -78,13 +78,17 @@ actor ScrollTileStore {
     private static let chunkBytes = 8 * 1_024 * 1_024
 
     /// Creates a private directory inside `parentDirectory` holding the first frame as output.
+    /// The default parent is the launch-swept capture scratch space.
     /// `colorSpace` must be the source frames' space; it is attached to every image unchanged.
     init(firstFrame: ScrollFrame, colorSpace: CGColorSpace,
-         in parentDirectory: URL = FileManager.default.temporaryDirectory, limits: ScrollLimits = .init()) async throws {
+         in parentDirectory: URL = CaptureScratchSpace.directory, limits: ScrollLimits = .init()) async throws {
         guard max(firstFrame.width, firstFrame.height) <= limits.maximumAxisPixels else {
             throw ScrollCaptureError.resourceLimit
         }
         _ = try Self.byteCount(width: firstFrame.width, height: firstFrame.height, limits: limits)
+        // The shared scratch parent is private and swept at launch; create it on first use.
+        try FileManager.default.createDirectory(at: parentDirectory, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
         let directory = parentDirectory.appendingPathComponent("scroll-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
                                                 attributes: [.posixPermissions: 0o700])

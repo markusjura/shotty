@@ -10,6 +10,10 @@ actor ScrollAccumulator {
         let paused: Bool
         let acceptedFrames: Int
         let didMove: Bool
+        /// Why a paused result stopped; limits are terminal, alignment pauses can recover.
+        let rejection: ScrollRejection?
+        /// The capture axis: requested up front, or inferred from the first accepted movement.
+        let axis: ScrollAxis?
     }
 
     private var session: ScrollStitchSession?
@@ -19,8 +23,12 @@ actor ScrollAccumulator {
     private var previewIsDirty = true
     private var generation = 0
     private let requestedAxis: ScrollAxis?
+    private let limits: ScrollLimits
 
-    init(axis: ScrollAxis? = nil) { requestedAxis = axis }
+    init(axis: ScrollAxis? = nil, limits: ScrollLimits = .init()) {
+        requestedAxis = axis
+        self.limits = limits
+    }
 
     func accept(_ image: CGImage) async throws -> Progress {
         try Task.checkCancellation()
@@ -29,8 +37,8 @@ actor ScrollAccumulator {
         let frame = try ScrollFrame(image: image)
         if session == nil {
             guard let colorSpace = image.colorSpace else { throw CaptureFailure.noImage }
-            let initial = try ScrollStitchSession(firstFrame: frame, axis: requestedAxis, startedAt: now)
-            let initialTiles = try await ScrollTileStore(firstFrame: frame, colorSpace: colorSpace)
+            let initial = try ScrollStitchSession(firstFrame: frame, axis: requestedAxis, startedAt: now, limits: limits)
+            let initialTiles = try await ScrollTileStore(firstFrame: frame, colorSpace: colorSpace, limits: limits)
             guard request == generation, !Task.isCancelled else {
                 await initialTiles.discard()
                 throw CancellationError()
@@ -79,6 +87,12 @@ actor ScrollAccumulator {
         return try await tiles.preview(maxDimension: 800)
     }
 
+    /// Full-resolution output backed by a mapped file; it stays valid after `discard()`.
+    func renderImage() async throws -> CGImage {
+        guard let tiles else { throw CaptureFailure.noImage }
+        return try await tiles.renderImage()
+    }
+
     func exportPNG(to url: URL) async throws {
         guard let tiles else { throw CaptureFailure.noImage }
         try await tiles.exportPNG(to: url)
@@ -96,15 +110,18 @@ actor ScrollAccumulator {
     }
 
     private func paused(_ reason: ScrollRejection) async throws -> Progress {
-        try await progress(message: "Paused: \(reason.rawValue). The accepted partial result is retained.", paused: true, refreshPreview: true)
+        try await progress(message: "Paused: \(reason.rawValue). The accepted partial result is retained.", paused: true,
+                           refreshPreview: true, rejection: reason)
     }
 
-    private func progress(message: String, paused: Bool, refreshPreview: Bool, didMove: Bool = false) async throws -> Progress {
+    private func progress(message: String, paused: Bool, refreshPreview: Bool, didMove: Bool = false,
+                          rejection: ScrollRejection? = nil) async throws -> Progress {
         guard let tiles else { throw CaptureFailure.noImage }
         let dimensions = await tiles.dimensions
         return Progress(dimensions: CGSize(width: dimensions.width, height: dimensions.height),
                         preview: try await refreshedPreview(if: refreshPreview),
-                        message: message, paused: paused, acceptedFrames: acceptedFrames, didMove: didMove)
+                        message: message, paused: paused, acceptedFrames: acceptedFrames, didMove: didMove, rejection: rejection,
+                        axis: session?.axis)
     }
 
     private func refreshedPreview(if requested: Bool) async throws -> CGImage? {

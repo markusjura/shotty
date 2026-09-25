@@ -63,14 +63,18 @@ final class ScrollAutomationDriver {
     private(set) var pauseReason: PauseReason?
     var onStateChange: (() -> Void)?
     private let environment: Environment
-    private let axis: ScrollAxis
+    /// Injection direction. Fixed once automation starts; see `startAutomatic(target:axis:)`.
+    private var axis: ScrollAxis
+    private let stepFraction: CGFloat
     private var target: Target?
     private var originalWindowBounds: CGRect?
     private var focusObservation: FocusObservation?
     private var stepDeadline: Task<Void, Never>?
 
-    init(axis: ScrollAxis = .vertical, environment: Environment = .live) {
+    /// `stepFraction` is the requested progress per step as a fraction of the region's axis extent.
+    init(axis: ScrollAxis = .vertical, stepFraction: CGFloat = 0.2, environment: Environment = .live) {
         self.axis = axis
+        self.stepFraction = stepFraction.isFinite ? min(max(stepFraction, 0), 0.5) : 0.2
         self.environment = environment
         focusObservation = FocusObservation { [weak self] in self?.validateTarget() }
     }
@@ -80,7 +84,8 @@ final class ScrollAutomationDriver {
     /// Call only from explicit Auto Scroll activation, after the initial frame exists.
     /// Starting arms the driver; it does not inject input or activate another app.
     @discardableResult
-    func startAutomatic(target: Target) -> Bool {
+    /// `axis` replaces the initial direction, for a choice made after the driver was created.
+    func startAutomatic(target: Target, axis: ScrollAxis? = nil) -> Bool {
         guard !isStopped, inputState.offersAutoScroll else { return false }
         let region = target.globalRegion
         guard [region.minX, region.minY, region.width, region.height].allSatisfy(\.isFinite),
@@ -94,6 +99,7 @@ final class ScrollAutomationDriver {
         case .success(let bounds): originalWindowBounds = bounds
         }
         self.target = target
+        if let axis { self.axis = axis }
         pauseReason = nil
         inputState.handle(.startAutomatic)
         onStateChange?()
@@ -152,9 +158,8 @@ final class ScrollAutomationDriver {
         guard !isStopped, inputState.mayInjectScroll, !isAwaitingSettledFrame,
               validateTarget(), let target else { return false }
         let extent = axis == .vertical ? target.globalRegion.height : target.globalRegion.width
-        // Adaptive starts at 20% of the viewport. Never request more than half,
-        // even when rounding a very small selection to a whole pixel unit.
-        let distance = Int32(min(CGFloat(Int32.max), max(1, min(floor(extent * 0.2), floor(extent / 2)))))
+        // Never request more than half, even when rounding a very small selection to a whole pixel unit.
+        let distance = Int32(min(CGFloat(Int32.max), max(1, min(floor(extent * stepFraction), floor(extent / 2)))))
         guard let source = CGEventSource(stateID: .privateState) else { fail(.eventCreationFailed); return false }
         // Preserve physical input so manual takeover is not suppressed after posting.
         source.localEventsSuppressionInterval = 0

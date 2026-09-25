@@ -31,6 +31,17 @@ final class ScrollAutomationDriverTests: XCTestCase {
         XCTAssertEqual(rig.events.count, 2)
     }
 
+    /// The Auto Scroll direction can be chosen after the driver exists, until automation starts.
+    func testDirectionChosenAtStartControlsInjectedAxis() throws {
+        let rig = Rig()
+        let driver = ScrollAutomationDriver(axis: .vertical, environment: rig.environment)
+        XCTAssertTrue(driver.startAutomatic(target: target, axis: .horizontal))
+        XCTAssertTrue(driver.injectNextStepIfReady())
+        let event = try XCTUnwrap(rig.events.first)
+        XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1), 0)
+        XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis2), -80, "20% of the 400-point width")
+    }
+
     func testPhysicalTakeoverCannotResumeEvenAfterAlignment() {
         let rig = Rig()
         let driver = ScrollAutomationDriver(environment: rig.environment)
@@ -175,6 +186,17 @@ final class ScrollAutomationDriverTests: XCTestCase {
         let event = try XCTUnwrap(rig.events.first)
         XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1), 0)
         XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis2), -80)
+    }
+
+    func testPaceSetsStepSizeButNeverExceedsHalfTheRegion() throws {
+        for (fraction, expected) in [(0.1, -60), (0.3, -180), (0.9, -300)] as [(CGFloat, Int64)] {
+            let rig = Rig()
+            let driver = ScrollAutomationDriver(stepFraction: fraction, environment: rig.environment)
+            XCTAssertTrue(driver.startAutomatic(target: target))
+            XCTAssertTrue(driver.injectNextStepIfReady())
+            XCTAssertEqual(try XCTUnwrap(rig.events.first).getIntegerValueField(.scrollWheelEventPointDeltaAxis1), expected)
+            driver.stop()
+        }
     }
 
     private final class Rig {
