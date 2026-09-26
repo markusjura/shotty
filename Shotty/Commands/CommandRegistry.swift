@@ -1,5 +1,5 @@
+import AppKit
 import Carbon.HIToolbox
-import Foundation
 import Observation
 
 /// Where a command's shortcut is active. Only `.global` commands register system-wide.
@@ -114,15 +114,11 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         allCases.first { $0.tool == tool }!
     }
 
-    /// Fresh-install bindings. Thumbnail commands stay unassigned.
+    /// Fresh-install bindings. Capture commands start unassigned, so Shotty never claims keys that
+    /// macOS or another screenshot app owns; thumbnail commands have no shortcuts at all.
     var defaultShortcut: Shortcut? {
-        let capture: Shortcut.Modifiers = [.control, .option, .command]
         switch self {
-        case .captureFullscreen: return Shortcut(kVK_ANSI_3, capture)
-        case .captureArea: return Shortcut(kVK_ANSI_4, capture)
-        case .captureWindow: return Shortcut(kVK_ANSI_W, capture)
-        case .captureScrolling: return Shortcut(kVK_ANSI_5, capture)
-        case .captureText: return Shortcut(kVK_ANSI_T, capture)
+        case .captureArea, .captureWindow, .captureFullscreen, .captureScrolling, .captureText: return nil
         case .showThumbnails, .hideThumbnails, .openLatest, .saveAll, .dismissAll: return nil
         case .toolSelect: return Shortcut(kVK_ANSI_V)
         case .toolArrow: return Shortcut(kVK_ANSI_A)
@@ -175,6 +171,7 @@ final class CommandRegistry {
     static let storageKey = "commands.v1.shortcuts"
 
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let systemShortcuts: () -> Set<Shortcut>
     private(set) var bindings: [CommandID: Shortcut]
     private(set) var unavailable: Set<CommandID> = []
     /// Global commands whose last registration failed, typically because another app owns the key.
@@ -186,8 +183,10 @@ final class CommandRegistry {
     private(set) var keyboardLayoutVersion = 0
     private var contextVersion = 0
 
-    init(defaults: UserDefaults = .standard) {
+    /// `systemShortcuts` returns the macOS screenshot shortcuts that are currently turned on.
+    init(defaults: UserDefaults = .standard, systemShortcuts: @escaping () -> Set<Shortcut> = { MacScreenshotShortcuts.current }) {
         self.defaults = defaults
+        self.systemShortcuts = systemShortcuts
         bindings = Self.load(from: defaults)
     }
 
@@ -224,9 +223,6 @@ final class CommandRegistry {
         return nil
     }
 
-    @discardableResult
-    func restoreDefault(_ id: CommandID) -> ShortcutProblem? { assign(id.defaultShortcut, to: id) }
-
     /// Clears the group first so bindings swapped within it restore cleanly.
     @discardableResult
     func restoreDefaults(in group: CommandGroup) -> [CommandID: ShortcutProblem] {
@@ -240,12 +236,11 @@ final class CommandRegistry {
         return problems
     }
 
-    /// Non-blocking guidance about external owners Shotty cannot detect reliably.
+    /// Non-blocking guidance when a global shortcut is also one of macOS's screenshot shortcuts
+    /// and that shortcut is still turned on in Keyboard Settings.
     func advisory(for id: CommandID) -> String? {
-        guard id.scope == .global, let shortcut = bindings[id],
-              shortcut.modifiers == [.shift, .command],
-              [kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5].contains(Int(shortcut.keyCode)) else { return nil }
-        return "macOS uses this for its own screenshots unless you turn it off in Keyboard Settings."
+        guard id.scope == .global, let shortcut = bindings[id], systemShortcuts().contains(shortcut) else { return nil }
+        return "macOS uses this for its own screenshots. Turn it off in Keyboard Settings to use it here."
     }
 
     func setAvailable(_ available: Bool, for id: CommandID) {
@@ -354,5 +349,32 @@ final class CommandRegistry {
             }
         }
         return result
+    }
+}
+
+/// macOS's screenshot shortcuts (⇧⌘3, ⌃⇧⌘3, ⇧⌘4, ⌃⇧⌘4, and ⇧⌘5 by default) as set in Keyboard Settings.
+enum MacScreenshotShortcuts {
+    /// Symbolic hot key IDs with their factory bindings. An ID missing from the preferences has
+    /// never been changed, so it is on with its factory binding.
+    private static let factory: [String: Shortcut] = [
+        "28": Shortcut(kVK_ANSI_3, [.shift, .command]), "29": Shortcut(kVK_ANSI_3, [.control, .shift, .command]),
+        "30": Shortcut(kVK_ANSI_4, [.shift, .command]), "31": Shortcut(kVK_ANSI_4, [.control, .shift, .command]),
+        "184": Shortcut(kVK_ANSI_5, [.shift, .command]),
+    ]
+
+    static var current: Set<Shortcut> {
+        enabled(in: UserDefaults(suiteName: "com.apple.symbolichotkeys")?.dictionary(forKey: "AppleSymbolicHotKeys"))
+    }
+
+    /// `hotKeys` is the `AppleSymbolicHotKeys` dictionary. Each entry stores `enabled` and
+    /// `value.parameters` as [character, key code, NSEvent modifier flags].
+    static func enabled(in hotKeys: [String: Any]?) -> Set<Shortcut> {
+        Set(factory.compactMap { id, fallback in
+            guard let entry = hotKeys?[id] as? [String: Any] else { return fallback }
+            guard entry["enabled"] as? Bool ?? true else { return nil }
+            guard let parameters = (entry["value"] as? [String: Any])?["parameters"] as? [Int], parameters.count == 3,
+                  let keyCode = UInt16(exactly: parameters[1]) else { return fallback }
+            return Shortcut(keyCode: keyCode, flags: NSEvent.ModifierFlags(rawValue: UInt(parameters[2])))
+        })
     }
 }

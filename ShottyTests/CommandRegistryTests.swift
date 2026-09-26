@@ -23,7 +23,7 @@ final class CommandRegistryTests: XCTestCase {
             XCTAssertEqual(registry.shortcut(for: id), id.defaultShortcut, id.rawValue)
             if let shortcut = id.defaultShortcut { XCTAssertNil(registry.problem(assigning: shortcut, to: id), id.rawValue) }
         }
-        XCTAssertTrue(CommandGroup.thumbnails.commands.allSatisfy { $0.defaultShortcut == nil && $0.scope == .global })
+        XCTAssertTrue((CommandGroup.capture.commands + CommandGroup.thumbnails.commands).allSatisfy { $0.defaultShortcut == nil && $0.scope == .global })
     }
 
     func testRejectedAssignmentsExplainWhyAndChangeNothing() {
@@ -40,18 +40,21 @@ final class CommandRegistryTests: XCTestCase {
 
     func testCustomBindingsPersistIncludingClearedAndMovedKeys() {
         let registry = CommandRegistry(defaults: defaults)
-        let fullscreen = CommandID.captureFullscreen.defaultShortcut!
-        XCTAssertNil(registry.assign(nil, to: .captureFullscreen))
-        XCTAssertNil(registry.assign(fullscreen, to: .captureArea))
+        let area = Shortcut(kVK_ANSI_4, [.shift, .command])
+        let arrow = CommandID.toolArrow.defaultShortcut!
+        XCTAssertNil(registry.assign(area, to: .captureArea))
+        XCTAssertNil(registry.assign(nil, to: .toolArrow))
+        XCTAssertNil(registry.assign(arrow, to: .toolCrop))
         XCTAssertNil(registry.assign(nil, to: .toolText))
         XCTAssertNil(registry.assign(Shortcut(kVK_ANSI_O, [.control, .command]), to: .duplicate))
 
         let reloaded = CommandRegistry(defaults: defaults)
-        XCTAssertNil(reloaded.shortcut(for: .captureFullscreen), "A cleared default stays cleared")
-        XCTAssertEqual(reloaded.shortcut(for: .captureArea), fullscreen, "A moved key wins over its old default owner")
+        XCTAssertEqual(reloaded.shortcut(for: .captureArea), area)
+        XCTAssertNil(reloaded.shortcut(for: .captureWindow), "Capture commands start unassigned")
+        XCTAssertNil(reloaded.shortcut(for: .toolArrow), "A cleared default stays cleared")
+        XCTAssertEqual(reloaded.shortcut(for: .toolCrop), arrow, "A moved key wins over its old default owner")
         XCTAssertNil(reloaded.shortcut(for: .toolText))
         XCTAssertEqual(reloaded.shortcut(for: .duplicate), Shortcut(kVK_ANSI_O, [.control, .command]))
-        XCTAssertEqual(reloaded.shortcut(for: .captureWindow), CommandID.captureWindow.defaultShortcut)
     }
 
     func testCorruptStoredDuplicatesKeepOneOwnerAndFallBackToDefaults() throws {
@@ -65,7 +68,7 @@ final class CommandRegistryTests: XCTestCase {
         XCTAssertEqual(registry.shortcut(for: .zoomIn), CommandID.zoomIn.defaultShortcut, "Rule-breaking stored keys fall back")
     }
 
-    func testGroupRestoreHandlesSwappedKeysAndSingleRestoreReportsConflicts() {
+    func testGroupRestoreHandlesSwappedKeysAndReportsConflicts() {
         let registry = CommandRegistry(defaults: defaults)
         let arrow = CommandID.toolArrow.defaultShortcut!, rectangle = CommandID.toolRectangle.defaultShortcut!
         registry.assign(nil, to: .toolArrow)
@@ -76,16 +79,32 @@ final class CommandRegistryTests: XCTestCase {
         XCTAssertEqual(registry.shortcut(for: .toolRectangle), rectangle)
 
         registry.assign(nil, to: .save)
-        registry.assign(Shortcut(kVK_ANSI_S, .command), to: .saveAs)
-        XCTAssertEqual(registry.restoreDefault(.save), .conflict(.saveAs))
+        registry.assign(Shortcut(kVK_ANSI_S, .command), to: .captureText)
+        XCTAssertEqual(registry.restoreDefaults(in: .editor), [.save: .conflict(.captureText)])
         XCTAssertNil(registry.shortcut(for: .save))
     }
 
-    func testAdvisoryFlagsMacOSScreenshotKeys() {
-        let registry = CommandRegistry(defaults: defaults)
-        XCTAssertNil(registry.assign(Shortcut(kVK_ANSI_3, [.shift, .command]), to: .captureFullscreen))
-        XCTAssertNotNil(registry.advisory(for: .captureFullscreen), "macOS's own screenshot keys are an external owner")
+    func testAdvisoryFlagsOnlyMacOSScreenshotKeysThatAreStillOn() {
+        let key = Shortcut(kVK_ANSI_3, [.shift, .command])
+        var systemOn: Set<Shortcut> = [key]
+        let registry = CommandRegistry(defaults: defaults, systemShortcuts: { systemOn })
+        XCTAssertNil(registry.assign(key, to: .captureFullscreen))
+        XCTAssertNotNil(registry.advisory(for: .captureFullscreen))
         XCTAssertNil(registry.advisory(for: .captureWindow))
+        systemOn = []
+        XCTAssertNil(registry.advisory(for: .captureFullscreen), "Turned off in Keyboard Settings")
+    }
+
+    func testMacScreenshotShortcutsReadKeyboardSettings() {
+        let hotKeys: [String: Any] = [
+            "28": ["enabled": false, "value": ["type": "standard", "parameters": [51, 20, 1_179_648]]],
+            "30": ["enabled": true, "value": ["type": "standard", "parameters": [52, 21, 1_441_792]]],
+            "29": ["enabled": false], "31": ["enabled": false],
+        ]
+        XCTAssertEqual(MacScreenshotShortcuts.enabled(in: hotKeys), [
+            Shortcut(kVK_ANSI_4, [.control, .shift, .command]),  // 30, remapped
+            Shortcut(kVK_ANSI_5, [.shift, .command]),  // 184, never changed
+        ])
     }
 
     func testStoredThumbnailBindingsAreIgnored() throws {
@@ -99,8 +118,10 @@ final class CommandRegistryTests: XCTestCase {
         let local: Set<CommandScope> = [.editorTool, .editor]
         XCTAssertEqual(registry.command(matching: Shortcut(kVK_ANSI_T), in: local), .toolText)
         XCTAssertEqual(registry.command(matching: Shortcut(kVK_ANSI_C, [.shift, .command]), in: local), .copyImage)
-        XCTAssertNil(registry.command(matching: CommandID.captureText.defaultShortcut!, in: local))
-        XCTAssertEqual(registry.command(matching: CommandID.captureText.defaultShortcut!, in: [.global]), .captureText)
+        let captureText = Shortcut(kVK_ANSI_T, [.control, .option, .command])
+        XCTAssertNil(registry.assign(captureText, to: .captureText))
+        XCTAssertNil(registry.command(matching: captureText, in: local))
+        XCTAssertEqual(registry.command(matching: captureText, in: [.global]), .captureText)
     }
 
     func testRecordedEventsIgnoreModifierOnlyKeys() throws {
