@@ -193,7 +193,7 @@ enum ThumbnailAutoClose: String, Codable, CaseIterable, Sendable {
 struct ThumbnailPreferences: Codable, Equatable, Sendable {
     static let autoCloseDelayRange = 3...60
 
-    var placement = ThumbnailPlacement.leftCenter
+    var placement = ThumbnailPlacement.bottomLeft
     var size = ThumbnailSize.medium
     var display = ThumbnailDisplayPolicy.followPointer
     var autoClose = ThumbnailAutoClose.never

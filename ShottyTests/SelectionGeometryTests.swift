@@ -114,4 +114,21 @@ final class SelectionGeometryTests: XCTestCase {
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
             provider: CGDataProvider(data: data as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
     }
+
+    /// Controls attach below the region, move above it near the bottom of the screen, and only
+    /// then fall back to other clear positions.
+    func testAttachedControlAvoidsRegionAndStaysVisible() {
+        let visible = CGRect(x: 0, y: 0, width: 1_000, height: 800)
+        let size = CGSize(width: 200, height: 40)
+        func origin(for region: CGRect) -> CGPoint? {
+            SelectionGeometry.firstClearOrigin(SelectionGeometry.attachedOrigins(size: size, to: region, within: visible, gap: 4),
+                                               size: size, avoiding: [region], within: visible)
+        }
+        XCTAssertEqual(origin(for: CGRect(x: 400, y: 300, width: 200, height: 200)), CGPoint(x: 400, y: 256))
+        XCTAssertEqual(origin(for: CGRect(x: 0, y: 10, width: 100, height: 300)), CGPoint(x: 0, y: 314))
+        XCTAssertNil(origin(for: visible.insetBy(dx: 0, dy: 20)))
+        let inside = SelectionGeometry.firstClearOrigin(
+            SelectionGeometry.attachedOrigins(size: size, to: visible, within: visible, gap: 4), size: size, avoiding: [], within: visible)
+        XCTAssertEqual(inside, CGPoint(x: 400, y: 4))
+    }
 }

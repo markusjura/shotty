@@ -2,6 +2,12 @@
 
 Revised 25 September 2026 after Markus's review of the first preview. This document defines the intended native behavior. It takes precedence over the first preview and over older conflicting UX details in the implementation plan.
 
+## UI refinement confirmed on 26 September 2026
+
+Markus supplied native CleanShot reference images and asked for matching thumbnail and scrolling chrome within Shotty's existing feature scope. These instructions supersede the earlier permanent thumbnail action-row requirement: previews fill rounded, subtly bordered cards edge to edge; Close, Edit, Copy, and Save appear in a hover or keyboard-focus overlay. Pin and cloud actions remain outside scope. Copy success transitions to a checkmark inside Copy and stays for that card; it must not add a success strip over the image. Medium cards are 220 × 160 points. Newest is nearest the bottom-left anchor by default; removing a card closes the gap with a brief slide, respecting Reduce Motion. Existing placement choices, successful-drop dismissal, Option-to-keep, failure retention, and dismissal Undo remain.
+
+Scrolling selection uses an instruction pill, white corner/edge handles, and Start Capture below the selection. Active capture uses compact Auto Scroll/Pause/Resume, Cancel, and Done capsules and an adjacent stitched preview. Keyboard, physical takeover, recovery, and export behavior remain unchanged. Settings should be narrower with a centered title in a standard compact titlebar, concise helper text, and no clipped controls.
+
 ## Product standard
 
 Keep only the capture, annotation, output, and settings features Markus needs, then finish those features to a high standard. Small scope does not mean crude tools, unfinished input handling, generic icons, or missing configuration. Do not expand scope to compensate for weak execution.

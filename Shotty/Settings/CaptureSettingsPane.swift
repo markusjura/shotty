@@ -28,7 +28,7 @@ struct CaptureSettingsPane: View {
                     .disabled(preferences.capture.outputs == [output])
             }
             if preferences.capture.outputs.count == 1 {
-                Text("Keep at least one action so every capture has somewhere to go.")
+                Text("At least one action must stay on.")
                     .font(.callout).foregroundStyle(.secondary)
             }
         }
@@ -57,7 +57,7 @@ struct CaptureSettingsPane: View {
                 TextField("File name", text: $preferences.capture.filenameTemplate, prompt: Text(ExportService.defaultFilenameTemplate))
                 Text("Example: \(ExportService.filenameStem(template: preferences.capture.filenameTemplate, date: .now, kind: .area)).\(preferences.capture.format == .png ? "png" : "jpg")")
                     .font(.callout).foregroundStyle(.secondary)
-                Text("{date}, {time}, and {type} are replaced. Existing files get -2, -3, and so on.")
+                Text("Use {date}, {time}, or {type}. Duplicates are numbered.")
                     .font(.callout).foregroundStyle(.secondary)
                 if preferences.capture.filenameTemplate != ExportService.defaultFilenameTemplate {
                     Button("Restore Default Name") { preferences.capture.filenameTemplate = ExportService.defaultFilenameTemplate }
@@ -126,7 +126,7 @@ struct CaptureSettingsPane: View {
                     .disabled(preferences.text.outputs == [output])
             }
             if preferences.text.outputs.contains(.saveText) {
-                Text("Text files are saved as UTF-8 in the save location above.").font(.callout).foregroundStyle(.secondary)
+                Text("Saved as UTF-8 in the save location above.").font(.callout).foregroundStyle(.secondary)
             }
             Toggle("Keep line breaks", isOn: $preferences.text.preservesLineBreaks)
             Toggle("Detect languages automatically", isOn: $preferences.text.detectsLanguageAutomatically)
@@ -189,7 +189,7 @@ struct CaptureSettingsPane: View {
             Stepper(value: $preferences.scrolling.maximumDurationSeconds, in: ScrollingPreferences.durationRange, step: 10) {
                 Text("Maximum duration: \(preferences.scrolling.maximumDurationSeconds) seconds")
             }
-            Text("Auto Scroll starts only from its button. Scrolling by hand first keeps that capture manual.")
+            Text("Scrolling by hand first turns off Auto Scroll for that capture.")
                 .font(.callout).foregroundStyle(.secondary)
         }
     }

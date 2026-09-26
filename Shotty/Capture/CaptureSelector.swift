@@ -448,6 +448,7 @@ final class CaptureSelector {
             $0.contentView?.needsDisplay = true
             ($0.contentView as? SelectionView)?.updateAccessibility()
         }
+        positionStartCapture()
     }
 
     var accessibleWindowTitle: String? { windows.first { $0.id == selectedWindowID }?.title }
@@ -477,10 +478,11 @@ final class CaptureSelector {
 
     private func showAdjustment() {
         guard adjustmentPanel == nil, let selection else { return }
+        if kind == .scrolling { return showStartCapture() }
         let panel = SelectionPanel(contentRect: .zero, styleMask: [.titled, .nonactivatingPanel],
                                    backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false
-        panel.title = kind == .scrolling ? "Scrolling Region" : "Adjust Selection"
+        panel.title = "Adjust Selection"
         panel.level = .screenSaver
         panel.contentView = NSHostingView(rootView: SelectionAdjustment(selector: self))
         panel.setContentSize(NSSize(width: 430, height: 70))
@@ -489,6 +491,39 @@ final class CaptureSelector {
                                      y: max(visible.minY, selection.minY - 100)))
         adjustmentPanel = panel
         panel.orderFrontRegardless()
+    }
+
+    /// Scrolling confirms with a single Start Capture control that follows the region's bottom edge.
+    /// Return and Escape still reach the key selection surface.
+    private func showStartCapture() {
+        let panel = StartCapturePanel(contentRect: CGRect(x: 0, y: 0, width: 170, height: 46),
+                                   styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        // Clicking a selection panel brings it to the front of its level, so stay one level above.
+        panel.level = NSWindow.Level(NSWindow.Level.screenSaver.rawValue + 1)
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.contentView = NSHostingView(rootView: Button { [weak self] in self?.confirm() } label: {
+            Label("Start Capture", systemImage: "arrow.down")
+        }
+        .buttonStyle(.overlayCapsule)
+        .help("Drag the edges to exclude fixed headers or footers. Arrow keys move the region; Option-arrow keys resize it.")
+        .frame(maxWidth: .infinity, maxHeight: .infinity))
+        adjustmentPanel = panel
+        positionStartCapture()
+        panel.orderFrontRegardless()
+    }
+
+    private func positionStartCapture() {
+        guard kind == .scrolling, let panel = adjustmentPanel, let selection else { return }
+        let center = CGPoint(x: selection.midX, y: selection.midY)
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }) else { return }
+        let candidates = SelectionGeometry.attachedOrigins(size: panel.frame.size, to: selection, within: screen.frame, gap: 2)
+        guard let origin = SelectionGeometry.firstClearOrigin(candidates, size: panel.frame.size, avoiding: [], within: screen.frame),
+              panel.frame.origin != origin else { return }
+        panel.setFrameOrigin(origin)
     }
 
     var pixelDimensions: CGSize {
@@ -518,13 +553,10 @@ private struct SelectionAdjustment: View {
             TextField("Height in pixels", value: Binding(get: { Double(selector.pixelDimensions.height) },
                 set: { selector.setDimension(width: nil, height: $0) }), format: .number).frame(width: 66)
             Button("Cancel") { selector.cancel() }.keyboardShortcut(.cancelAction)
-            // For scrolling, Start both confirms the region and begins acquisition.
-            Button(selector.kind == .scrolling ? "Start" : "Capture") { selector.confirm() }.keyboardShortcut(.defaultAction)
+            Button("Capture") { selector.confirm() }.keyboardShortcut(.defaultAction)
         }
         .padding(12)
-        .help(selector.kind == .scrolling
-              ? "Drag the edges to exclude fixed headers or footers. Arrow keys move the region; Option-arrow keys resize it."
-              : "Drag the edges or use the arrow keys to adjust. Option-arrow keys resize.")
+        .help("Drag the edges or use the arrow keys to adjust. Option-arrow keys resize.")
     }
 }
 
@@ -548,7 +580,9 @@ private final class SelectionView: NSView {
         super.init(frame: CGRect(origin: .zero, size: display.frame.size))
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Capture selection. Drag to select. Arrow keys adjust. Return captures. Escape cancels.")
+        setAccessibilityLabel(selector.kind == .scrolling
+            ? "Scrolling capture. \(Self.scrollingInstruction) Arrow keys adjust. Return starts. Escape cancels."
+            : "Capture selection. Drag to select. Arrow keys adjust. Return captures. Escape cancels.")
     }
     required init?(coder: NSCoder) { nil }
     override var acceptsFirstResponder: Bool { true }
@@ -598,18 +632,16 @@ private final class SelectionView: NSView {
                 let symbol = NSImage(systemSymbolName: "camera.fill", accessibilityDescription: "Capture window")
                 symbol?.draw(in: CGRect(x: rect.midX - 18, y: rect.midY - 15, width: 36, height: 30))
             }
-            NSColor.systemBlue.setStroke()
-            let path = NSBezierPath(rect: rect)
-            path.lineWidth = 1
-            path.stroke()
             if selector.drawsHandles {
-                NSColor.white.setFill()
-                for x in [rect.minX, rect.maxX] {
-                    for y in [rect.minY, rect.maxY] {
-                        NSBezierPath(ovalIn: CGRect(x: x - 4, y: y - 4, width: 8, height: 8)).fill()
-                    }
-                }
+                drawHandles(around: rect)
+            } else {
+                NSColor.systemBlue.setStroke()
+                let path = NSBezierPath(rect: rect)
+                path.lineWidth = 1
+                path.stroke()
             }
+        } else if selector.kind == .scrolling {
+            drawInstruction()
         }
         let point = CGPoint(x: selector.pointer.x - display.frame.minX, y: selector.pointer.y - display.frame.minY)
         guard bounds.contains(point) else { return }
@@ -646,6 +678,66 @@ private final class SelectionView: NSView {
         }
     }
 
+    static let scrollingInstruction = "Drag to capture the scrolling part of the screen."
+
+    /// White corner brackets and edge bars drawn just outside the region, clear of its pixels.
+    private func drawHandles(around rect: CGRect) {
+        let width: CGFloat = 4
+        let edge = rect.insetBy(dx: -width / 2, dy: -width / 2)
+        let arm = min(18, edge.width / 2, edge.height / 2)
+        let path = NSBezierPath()
+        for (x, dx) in [(edge.minX, arm), (edge.maxX, -arm)] {
+            for (y, dy) in [(edge.minY, arm), (edge.maxY, -arm)] {
+                path.move(to: CGPoint(x: x + dx, y: y))
+                path.line(to: CGPoint(x: x, y: y))
+                path.line(to: CGPoint(x: x, y: y + dy))
+            }
+        }
+        let bar: CGFloat = 9
+        if edge.width > 4 * arm {
+            for y in [edge.minY, edge.maxY] {
+                path.move(to: CGPoint(x: edge.midX - bar, y: y))
+                path.line(to: CGPoint(x: edge.midX + bar, y: y))
+            }
+        }
+        if edge.height > 4 * arm {
+            for x in [edge.minX, edge.maxX] {
+                path.move(to: CGPoint(x: x, y: edge.midY - bar))
+                path.line(to: CGPoint(x: x, y: edge.midY + bar))
+            }
+        }
+        path.lineWidth = width
+        path.lineJoinStyle = .miter
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowColor = .black.withAlphaComponent(0.45)
+        shadow.shadowBlurRadius = 2
+        shadow.set()
+        NSColor.white.setStroke()
+        path.stroke()
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    /// The scrolling prompt, centered on each display until a region is drawn.
+    private func drawInstruction() {
+        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 17),
+                                                         .foregroundColor: NSColor.black.withAlphaComponent(0.85)]
+        let text = Self.scrollingInstruction as NSString
+        let size = text.size(withAttributes: attributes)
+        let pill = CGRect(x: bounds.midX - size.width / 2 - 28, y: bounds.midY - size.height / 2 - 16,
+                          width: size.width + 56, height: size.height + 32)
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowColor = .black.withAlphaComponent(0.3)
+        shadow.shadowBlurRadius = 10
+        shadow.shadowOffset = CGSize(width: 0, height: -2)
+        shadow.set()
+        NSColor(white: 0.9, alpha: 0.96).setFill()
+        NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
+        NSGraphicsContext.restoreGraphicsState()
+        text.draw(at: CGPoint(x: pill.minX + 28, y: pill.minY + 16), withAttributes: attributes)
+    }
+
     private func point(_ event: NSEvent) -> CGPoint { window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation }
     override func mouseMoved(with event: NSEvent) { selector.mouseMoved(at: point(event), modifiers: event.modifierFlags) }
     override func mouseDown(with event: NSEvent) { selector.mouseDown(at: point(event), modifiers: event.modifierFlags) }
@@ -654,4 +746,10 @@ private final class SelectionView: NSView {
     override func flagsChanged(with event: NSEvent) { selector.modifiersChanged(event.modifierFlags) }
     override func keyDown(with event: NSEvent) { selector.keyDown(event) }
     override func keyUp(with event: NSEvent) { selector.keyUp(event) }
+}
+
+/// Clicking Start must leave selection keys on the overlay if validation rejects the region.
+private final class StartCapturePanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
 }

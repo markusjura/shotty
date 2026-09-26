@@ -5,18 +5,20 @@ import Foundation
 /// newest card nearest the anchor, and an "N more" row instead of offscreen cards.
 enum ThumbnailLayout {
     static let gap: CGFloat = 8
-    static let actionRowHeight: CGFloat = 36
-    static let statusHeight: CGFloat = 20
     static let overflowRowHeight: CGFloat = 28
     static let undoRowHeight: CGFloat = 30
 
-    static func previewHeight(width: CGFloat, imageSize: CGSize) -> CGFloat {
-        guard imageSize.width > 0, imageSize.height > 0 else { return 56 }
-        return min(ThumbnailSize.maximumPreviewHeight, max(56, width * imageSize.height / imageSize.width))
+    static func previewHeight(width: CGFloat) -> CGFloat {
+        // A stable card ratio gives hover controls breathing room and keeps the stack calm.
+        min(ThumbnailSize.maximumPreviewHeight, max(140, (width * 8 / 11).rounded()))
     }
 
-    static func cardHeight(width: CGFloat, imageSize: CGSize, hasStatus: Bool) -> CGFloat {
-        previewHeight(width: width, imageSize: imageSize) + actionRowHeight + (hasStatus ? statusHeight : 0)
+    /// Fill the card edge to edge, without distorting the source or adding letterboxing.
+    static func imageRect(imageSize: CGSize, bounds: CGRect) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0 else { return bounds }
+        let scale = max(bounds.width / imageSize.width, bounds.height / imageSize.height)
+        let size = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        return CGRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2, width: size.width, height: size.height)
     }
 
     /// `heights` is newest first. Returns how many of the newest cards fit in `available`

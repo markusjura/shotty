@@ -15,11 +15,22 @@ final class ThumbnailLayoutTests: XCTestCase {
     }
 
     func testPreviewHeightIsBoundedAndNewestSitsNearestTheAnchor() {
-        XCTAssertEqual(ThumbnailLayout.previewHeight(width: 220, imageSize: CGSize(width: 1000, height: 5000)), 160)
-        XCTAssertEqual(ThumbnailLayout.previewHeight(width: 220, imageSize: CGSize(width: 2200, height: 100)), 56)
+        XCTAssertEqual(ThumbnailLayout.previewHeight(width: 220), 160)
+        XCTAssertEqual(ThumbnailLayout.previewHeight(width: 180), 140)
         XCTAssertEqual(ThumbnailLayout.displayOrder([1, 2, 3], placement: .topRight), [1, 2, 3])
         XCTAssertEqual(ThumbnailLayout.displayOrder([1, 2, 3], placement: .leftCenter), [1, 2, 3])
         XCTAssertEqual(ThumbnailLayout.displayOrder([1, 2, 3], placement: .bottomLeft), [3, 2, 1])
+    }
+
+    func testImageFillsCardWithoutDistortion() {
+        let bounds = CGRect(x: 0, y: 0, width: 220, height: 160)
+        let tall = ThumbnailLayout.imageRect(imageSize: CGSize(width: 100, height: 1000), bounds: bounds)
+        XCTAssertEqual(tall.minX, 0, accuracy: 0.001)
+        XCTAssertEqual(tall.minY, -1020, accuracy: 0.001)
+        XCTAssertEqual(tall.width, 220, accuracy: 0.001)
+        XCTAssertEqual(tall.height, 2200, accuracy: 0.001)
+        let wide = ThumbnailLayout.imageRect(imageSize: CGSize(width: 1000, height: 100), bounds: bounds)
+        XCTAssertEqual(wide, CGRect(x: -690, y: 0, width: 1600, height: 160))
     }
 
     func testSwipeAccumulatesTowardTheAnchoredEdgeWithHorizontalIntent() {

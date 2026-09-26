@@ -36,13 +36,13 @@ struct SettingsView: View {
     @State private var pane: SettingsPane? = .general
 
     var body: some View {
-        NavigationSplitView(columnVisibility: .constant(.all)) {
+        HStack(spacing: 0) {
             List(SettingsPane.allCases, selection: $pane) { pane in
                 Label(pane.title, systemImage: pane.symbol)
             }
-            .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 240)
-            .toolbar(removing: .sidebarToggle)
-        } detail: {
+            .listStyle(.sidebar)
+            .frame(width: 180)
+            Divider()
             let selected = pane ?? .general
             Group {
                 switch selected {
@@ -56,8 +56,33 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
             .id(selected)
-            .navigationTitle(selected.title)
         }
-        .frame(minWidth: 720, minHeight: 520)
+        .navigationTitle((pane ?? .general).title)
+        .background(CompactSettingsToolbar().frame(width: 0, height: 0))
+        .toolbar(removing: .title)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text((pane ?? .general).title).font(.headline)
+            }
+            .sharedBackgroundVisibility(.hidden)
+        }
+        .frame(width: 660)
+        .frame(minHeight: 520)
+    }
+}
+
+/// Settings scenes do not consistently apply the scene toolbar style on macOS.
+private struct CompactSettingsToolbar: NSViewRepresentable {
+    func makeNSView(context: Context) -> ToolbarView { ToolbarView() }
+    func updateNSView(_ view: ToolbarView, context: Context) {}
+
+    final class ToolbarView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window else { return }
+            DispatchQueue.main.async { [weak window] in
+                window?.toolbarStyle = .unifiedCompact
+            }
+        }
     }
 }

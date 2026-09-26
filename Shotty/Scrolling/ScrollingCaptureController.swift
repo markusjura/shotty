@@ -82,8 +82,9 @@ final class ScrollingCaptureController {
     @ObservationIgnored private var watchdog: Task<Void, Never>?
     @ObservationIgnored private var timeLimit: Task<Void, Never>?
     @ObservationIgnored private var screenObserver: NSObjectProtocol?
-    @ObservationIgnored private var boundaryPanel: NSPanel?
+    @ObservationIgnored private var shadePanel: NSPanel?
     @ObservationIgnored private var controlsPanel: NSPanel?
+    @ObservationIgnored private var previewPanel: NSPanel?
     @ObservationIgnored private var outputTask: Task<Bool, Never>?
     /// Invalidates follow-up work from an ended session.
     @ObservationIgnored private var sessionID = UUID()
@@ -482,10 +483,10 @@ final class ScrollingCaptureController {
         await accumulator?.discard()
         accumulator = nil
         session = nil
-        boundaryPanel?.orderOut(nil)
-        controlsPanel?.orderOut(nil)
-        boundaryPanel = nil
+        for panel in [shadePanel, controlsPanel, previewPanel] { panel?.orderOut(nil) }
+        shadePanel = nil
         controlsPanel = nil
+        previewPanel = nil
         preview = nil
         phase = nil
     }
@@ -506,144 +507,181 @@ final class ScrollingCaptureController {
         }
     }
 
+    /// Dims the display around the region and attaches the controls below it and the preview beside
+    /// it when space permits. Near-fullscreen regions use a corner fallback; Shotty's
+    /// windows are always excluded from the capture stream.
     private func showPanels(around region: CGRect, on screen: NSScreen, targetProcess pid: pid_t) {
-        let boundary = NSPanel(contentRect: region.insetBy(dx: -3, dy: -3), styleMask: [.borderless, .nonactivatingPanel],
-                               backing: .buffered, defer: false)
-        boundary.ignoresMouseEvents = true
-        boundary.isOpaque = false
-        boundary.backgroundColor = .clear
-        boundary.hasShadow = false
-        boundary.level = .floating
-        boundary.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        boundary.contentView = BoundaryView()
-        boundary.orderFrontRegardless()
-        boundaryPanel = boundary
+        let hole = region.offsetBy(dx: -screen.frame.minX, dy: -screen.frame.minY)
+        let shade = Self.overlayPanel(frame: screen.frame, content: ShadeView(hole: hole))
+        shade.ignoresMouseEvents = true
+        shadePanel = shade
 
-        let size = CGSize(width: 320, height: 420)
-        let panel = NSPanel(contentRect: CGRect(origin: controlsOrigin(size: size, avoiding: region, on: screen), size: size),
-                            styleMask: [.titled, .nonactivatingPanel, .utilityWindow], backing: .buffered, defer: false)
-        panel.title = "Scrolling Capture"
-        panel.isFloatingPanel = true
-        panel.level = .floating
-        panel.hidesOnDeactivate = false
-        panel.isReleasedWhenClosed = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.contentView = NSHostingView(rootView: ScrollingCaptureControls(controller: self))
-        panel.becomesKeyOnlyIfNeeded = false
-        panel.orderFrontRegardless()
-        controlsPanel = panel
+        let visible = screen.visibleFrame.insetBy(dx: 8, dy: 8)
+        let barSize = CGSize(width: 460, height: 50)
+        let barOrigin = SelectionGeometry.firstClearOrigin(
+            SelectionGeometry.attachedOrigins(size: barSize, to: region, within: visible, gap: 4) + Self.corners(of: visible, size: barSize),
+            size: barSize, avoiding: [region], within: visible) ?? CGPoint(x: visible.midX - barSize.width / 2, y: visible.minY)
+        let bar = Self.overlayPanel(frame: CGRect(origin: barOrigin, size: barSize),
+                                    content: NSHostingView(rootView: ScrollingCaptureBar(controller: self)))
+        bar.becomesKeyOnlyIfNeeded = false
+        controlsPanel = bar
+
+        let previewSize = CGSize(width: 208, height: min(max(region.height, 260), 440))
+        let top = min(region.maxY, visible.maxY) - previewSize.height
+        let besideRegion = [CGPoint(x: region.maxX + 12, y: top), CGPoint(x: region.minX - 12 - previewSize.width, y: top)]
+        let previewOrigin = SelectionGeometry.firstClearOrigin(besideRegion + Self.corners(of: visible, size: previewSize),
+                                                               size: previewSize, avoiding: [region, bar.frame], within: visible)
+            ?? CGPoint(x: visible.maxX - previewSize.width, y: visible.maxY - previewSize.height)
+        let preview = Self.overlayPanel(frame: CGRect(origin: previewOrigin, size: previewSize),
+                                        content: NSHostingView(rootView: ScrollingCapturePreview(controller: self)))
+        preview.ignoresMouseEvents = true
+        previewPanel = preview
+
+        for panel in [shade, preview, bar] { panel.orderFrontRegardless() }
         makeControlsKey(after: pid)
     }
 
-    /// Beside the region when there is room, otherwise the first visible corner that avoids it.
-    private func controlsOrigin(size: CGSize, avoiding region: CGRect, on screen: NSScreen) -> CGPoint {
-        let visible = screen.visibleFrame.insetBy(dx: 12, dy: 12)
-        let gap: CGFloat = 16
-        let top = min(region.maxY, visible.maxY) - size.height
-        let candidates = [
-            CGPoint(x: region.maxX + gap, y: top), CGPoint(x: region.minX - gap - size.width, y: top),
-            CGPoint(x: visible.maxX - size.width, y: visible.maxY - size.height), CGPoint(x: visible.minX, y: visible.maxY - size.height),
-            CGPoint(x: visible.maxX - size.width, y: visible.minY), CGPoint(x: visible.minX, y: visible.minY),
-        ].map { CGPoint(x: $0.x, y: max(visible.minY, $0.y)) }
-        return candidates.first { point in
-            let frame = CGRect(origin: point, size: size)
-            return visible.contains(frame) && !frame.intersects(region.insetBy(dx: -4, dy: -4))
-        } ?? CGPoint(x: visible.maxX - size.width, y: visible.minY)
+    private static func corners(of visible: CGRect, size: CGSize) -> [CGPoint] {
+        [CGPoint(x: visible.maxX - size.width, y: visible.maxY - size.height), CGPoint(x: visible.minX, y: visible.maxY - size.height),
+         CGPoint(x: visible.maxX - size.width, y: visible.minY), CGPoint(x: visible.minX, y: visible.minY)]
+    }
+
+    /// A transparent, nonactivating floating panel; fully transparent areas pass clicks through.
+    private static func overlayPanel(frame: CGRect, content: NSView) -> NSPanel {
+        let panel = SelectionPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.contentView = content
+        return panel
     }
 }
 
-/// Draws the capture boundary just outside the region, so it never covers captured pixels.
-private final class BoundaryView: NSView {
+/// Dims the display outside the captured region and outlines it just outside its edge.
+private final class ShadeView: NSView {
+    private let hole: CGRect
+
+    init(hole: CGRect) {
+        self.hole = hole
+        super.init(frame: .zero)
+    }
+    required init?(coder: NSCoder) { nil }
+
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.controlAccentColor.setStroke()
-        let path = NSBezierPath(rect: bounds.insetBy(dx: 1, dy: 1))
-        path.lineWidth = 2
-        path.stroke()
+        let shade = NSBezierPath(rect: bounds)
+        shade.appendRect(hole)
+        shade.windingRule = .evenOdd
+        NSColor.black.withAlphaComponent(0.35).setFill()
+        shade.fill()
+        NSColor.white.withAlphaComponent(0.7).setStroke()
+        let outline = NSBezierPath(rect: hole.insetBy(dx: -1, dy: -1))
+        outline.lineWidth = 1
+        outline.stroke()
     }
 }
 
-private struct ScrollingCaptureControls: View {
+/// Compact capsule controls attached below the region. Return, Escape, and Space keep working
+/// because this panel is key.
+private struct ScrollingCaptureBar: View {
     let controller: ScrollingCaptureController
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if let preview = controller.preview {
-                Image(nsImage: preview)
-                    .resizable().scaledToFit()
-                    .frame(maxWidth: .infinity, maxHeight: 240)
-                    .accessibilityLabel("Stitched preview")
-            }
-            if controller.pixelSize != .zero {
-                HStack {
-                    Text("\(Int(controller.pixelSize.width)) × \(Int(controller.pixelSize.height)) pixels").monospacedDigit()
-                    if let axis = controller.establishedAxis {
-                        Spacer()
-                        Label(axis == .vertical ? "Vertical" : "Horizontal",
-                              systemImage: axis == .vertical ? "arrow.up.and.down" : "arrow.left.and.right")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .font(.callout)
-            }
-            Text(controller.status).font(.callout).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-            controls
-        }
-        .padding(16)
-        .frame(width: 320, height: 420, alignment: .topLeading)
+        HStack(spacing: 8) { controls }
+            .buttonStyle(.overlayCapsule)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
     private var controls: some View {
         switch controller.phase {
         case .ready:
-            actions {
-                Button("Cancel", action: controller.cancel).keyboardShortcut(.cancelAction)
-                Button("Start", action: controller.beginCapture).keyboardShortcut(.defaultAction)
-            }
+            cancelButton
+            Button("Start", systemImage: "arrow.down", action: controller.beginCapture)
+                .keyboardShortcut(.defaultAction).buttonStyle(.overlayCapsuleProminent)
         case .capturing:
             if controller.offersAxisChoice {
                 Picker("Auto Scroll direction", selection: Bindable(controller).autoScrollAxis) {
-                    Text("Vertical").tag(ScrollAxis.vertical)
-                    Text("Horizontal").tag(ScrollAxis.horizontal)
+                    Label("Vertical", systemImage: "arrow.up.and.down").tag(ScrollAxis.vertical)
+                    Label("Horizontal", systemImage: "arrow.left.and.right").tag(ScrollAxis.horizontal)
                 }
-                .pickerStyle(.segmented)
+                .pickerStyle(.segmented).labelStyle(.iconOnly).labelsHidden().fixedSize()
+                .help("Auto Scroll direction")
+                .padding(.horizontal, 4).frame(height: 30)
+                .background(Color(white: 0.9).opacity(0.96), in: Capsule())
+                .environment(\.colorScheme, .light)
             }
             switch controller.automaticMode {
             case .undecided:
-                Button("Auto Scroll", action: controller.startAutoScroll).disabled(!controller.hasAcceptedFrame)
+                Button("Auto Scroll", systemImage: "arrow.down.circle.fill", action: controller.startAutoScroll)
+                    .disabled(!controller.hasAcceptedFrame)
             case .automaticRunning:
-                Button("Pause", action: controller.toggleAutoScrollPause).keyboardShortcut(.space, modifiers: [])
+                Button("Pause", systemImage: "pause.fill", action: controller.toggleAutoScrollPause).keyboardShortcut(.space, modifiers: [])
             case .automaticPaused:
-                Button("Resume", action: controller.toggleAutoScrollPause).keyboardShortcut(.space, modifiers: [])
+                Button("Resume", systemImage: "play.fill", action: controller.toggleAutoScrollPause).keyboardShortcut(.space, modifiers: [])
             case .manualOnly:
-                Text("Manual capture. Auto Scroll is off for this capture.").font(.callout).foregroundStyle(.secondary)
+                EmptyView()
             }
-            actions {
-                Button("Cancel", action: controller.cancel).keyboardShortcut(.cancelAction)
-                Button("Done", action: controller.done).keyboardShortcut(.defaultAction)
-            }
+            cancelButton
+            doneButton
         case .interrupted(_, let canContinue):
-            actions {
-                Button("Cancel", action: controller.cancel).keyboardShortcut(.cancelAction)
-                if canContinue { Button("Continue", action: controller.continueCapture) }
-                Button("Done", action: controller.done).keyboardShortcut(.defaultAction).disabled(!controller.hasAcceptedFrame)
-            }
+            cancelButton
+            if canContinue { Button("Continue", systemImage: "play.fill", action: controller.continueCapture) }
+            doneButton.disabled(!controller.hasAcceptedFrame)
         case .review:
-            actions {
-                Button("Discard", action: controller.cancel).keyboardShortcut(.cancelAction)
-                Button(controller.incompleteReason == nil ? "Keep" : "Keep Partial Capture", action: controller.keep)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(controller.preview == nil || controller.isKeeping)
-            }
+            Button("Discard", systemImage: "xmark", action: controller.cancel).keyboardShortcut(.cancelAction)
+            Button(controller.incompleteReason == nil ? "Keep" : "Keep Partial Capture", systemImage: "checkmark", action: controller.keep)
+                .keyboardShortcut(.defaultAction).buttonStyle(.overlayCapsuleProminent)
+                .disabled(controller.preview == nil || controller.isKeeping)
         case nil:
             EmptyView()
         }
     }
 
-    private func actions(@ViewBuilder _ content: () -> some View) -> some View {
-        HStack { Spacer(); content() }
+    private var cancelButton: some View {
+        Button("Cancel", systemImage: "xmark", action: controller.cancel).keyboardShortcut(.cancelAction)
+    }
+
+    private var doneButton: some View {
+        Button("Done", systemImage: "checkmark", action: controller.done)
+            .keyboardShortcut(.defaultAction).buttonStyle(.overlayCapsuleProminent)
+    }
+}
+
+/// The stitched result beside the region, with its size and the current status.
+private struct ScrollingCapturePreview: View {
+    let controller: ScrollingCaptureController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let preview = controller.preview {
+                Image(nsImage: preview)
+                    .resizable().scaledToFit()
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .frame(maxWidth: .infinity)
+                    .accessibilityLabel("Stitched preview")
+            }
+            if controller.pixelSize != .zero {
+                HStack(spacing: 6) {
+                    Text("\(Int(controller.pixelSize.width)) × \(Int(controller.pixelSize.height)) px").monospacedDigit()
+                    if let axis = controller.establishedAxis {
+                        Image(systemName: axis == .vertical ? "arrow.up.and.down" : "arrow.left.and.right")
+                            .accessibilityLabel(axis == .vertical ? "Vertical" : "Horizontal")
+                    }
+                }
+                .font(.caption.weight(.medium))
+            }
+            Text(controller.status)
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .frame(width: 208, alignment: .topLeading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 }
 

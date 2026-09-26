@@ -9,7 +9,7 @@ struct EditorSettingsPane: View {
             Section("Copy and save") {
                 Toggle("Close editor after copying", isOn: $preferences.editor.closesAfterCopy)
                 Toggle("Close editor after saving", isOn: $preferences.editor.closesAfterSave)
-                Text("Option-click Copy to invert its close behavior once. Option-click Save to choose a file name and location.").font(.callout).foregroundStyle(.secondary)
+                Text("Option-click Copy to invert closing, or Save to choose a location.").font(.callout).foregroundStyle(.secondary)
             }
             toolSection(.arrow) {
                 color("Color", \.arrow.color)
@@ -69,7 +69,7 @@ struct EditorSettingsPane: View {
                     Slider(value: $preferences.editor.tools.redact.strength, in: 0...1) { Text("Strength") }
                         .frame(maxWidth: 260)
                 }
-                Text("Pixelate and Blur obscure content visually. Solid replaces it completely.")
+                Text("Only Solid fully removes the covered content.")
                     .font(.callout).foregroundStyle(.secondary)
             }
             toolSection(.spotlight) {

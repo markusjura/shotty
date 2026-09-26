@@ -239,11 +239,11 @@ final class AppCoordinator {
             let data = try await exporter.encodedData(snapshot, options: png)
             if clipboard.write(data, type: .png, ticket: ticket) {
                 try await store.markCopied(snapshot)
-                thumbnails.update(id, status: "Copied")
+                thumbnails.update(id, feedback: .copied)
                 await refreshRecords()
             } else {
                 // Something else was copied meanwhile; never overwrite it.
-                thumbnails.update(id, status: "Not copied: the clipboard changed. Use Copy.")
+                thumbnails.update(id, feedback: .message("Not copied: the clipboard changed. Use Copy."))
                 if !thumbnails.cards.contains(where: { $0.id == id }) { await showThumbnail(id) }
             }
         } catch { outputFailed(id, error: error, action: "copy", automatic: automatic) }
@@ -251,7 +251,7 @@ final class AppCoordinator {
 
     func save(_ id: UUID, settings: CaptureOutputSnapshot, dismissAfter: Bool, automatic: Bool = false) async {
         retain(id); defer { release(id) }
-        thumbnails.update(id, status: "Saving…")
+        thumbnails.update(id, feedback: .saving)
         do {
             let snapshot = try await store.snapshot(for: id)
             let receipt = try await exporter.export(snapshot, to: settings.saveDirectory, options: settings.exportOptions,
@@ -259,7 +259,7 @@ final class AppCoordinator {
             try await store.markSaved(receipt)
             outputFailures.remove(id)
             await refreshRecords()
-            if dismissAfter { dismiss(id) } else { thumbnails.update(id, status: "Saved") }
+            if dismissAfter { dismiss(id) } else { thumbnails.update(id, feedback: .saved) }
         } catch { outputFailed(id, error: error, action: "save", automatic: automatic) }
     }
 
@@ -269,7 +269,7 @@ final class AppCoordinator {
         let settings = preferences.snapshot(for: .area)
         let ids = records.map(\.id).filter { !dismissed.contains($0) }
         // Holding every capture up front keeps Quit from starting between saves.
-        for id in ids { retain(id); thumbnails.update(id, status: "Waiting to save…") }
+        for id in ids { retain(id); thumbnails.update(id, feedback: .waitingToSave) }
         saveAllTask = Task {
             defer { for id in ids { release(id) }; saveAllTask = nil }
             for id in ids { await save(id, settings: settings, dismissAfter: false, automatic: true) }
@@ -294,35 +294,35 @@ final class AppCoordinator {
             guard await panel.begin() == .OK, let destination = panel.url else { return false }
             var options = settings.exportOptions
             options.format = ["jpg", "jpeg"].contains(destination.pathExtension.lowercased()) ? .jpeg : .png
-            thumbnails.update(id, status: "Saving…")
+            thumbnails.update(id, feedback: .saving)
             let expected = try? await exporter.fingerprint(at: destination)
             let receipt = try await exporter.save(snapshot, to: destination, options: options, replacing: expected)
             try await store.markSaved(receipt)
             outputFailures.remove(id)
             await refreshRecords()
-            if preferences.thumbnails.dismissesAfterSave { dismiss(id) } else { thumbnails.update(id, status: "Saved") }
+            if preferences.thumbnails.dismissesAfterSave { dismiss(id) } else { thumbnails.update(id, feedback: .saved) }
             return true
         } catch { outputFailed(id, error: error, action: "save"); return false }
     }
 
     private func outputFailed(_ id: UUID, error: Error, action: String, automatic: Bool = false) {
         outputFailures.insert(id)
-        thumbnails.update(id, status: "Couldn't \(action): \(error.localizedDescription) Retry or choose Save As.")
+        thumbnails.update(id, feedback: .message("Couldn't \(action): \(error.localizedDescription) Retry or choose Save As."))
         Task { if !thumbnails.cards.contains(where: { $0.id == id }) { await showThumbnail(id) } }
         if !automatic { showError(error, title: "Couldn't \(action) capture") }
     }
 
     private func dismiss(_ id: UUID) {
         dismissed.insert(id)
-        thumbnails.remove(id)
         if !undoDismissed.contains(id) { undoDismissed.append(id) }
-        thumbnails.undoAvailable = true; thumbnails.refresh()
+        thumbnails.undoAvailable = true
+        thumbnails.remove(id)
         undoTask?.cancel()
         undoTask = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(5)) } catch { return }
             guard let self else { return }
             let expired = undoDismissed; undoDismissed = []
-            thumbnails.undoAvailable = false; thumbnails.refresh()
+            thumbnails.undoAvailable = false; thumbnails.refresh(animated: true)
             for id in expired { removeIfUnreferenced(id) }
         }
     }

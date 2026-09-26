@@ -11,6 +11,11 @@ final class ThumbnailCoordinator {
         let id: UUID
         var image: NSImage
         var status: String?
+        var copied = false
+        var saved = false
+    }
+    enum Feedback {
+        case copied, saved, saving, waitingToSave, message(String)
     }
     enum Action {
         case open, copy, save, saveAs, dismiss
@@ -88,7 +93,7 @@ final class ThumbnailCoordinator {
     var placement: ThumbnailPlacement { preferences.thumbnails.placement }
     var width: CGFloat { preferences.thumbnails.size.width }
 
-    func refresh() {
+    func refresh(animated: Bool = false) {
         guard !hidden, !cards.isEmpty || undoAvailable else {
             stopTracking()
             showingOverflow = false
@@ -97,7 +102,7 @@ final class ThumbnailCoordinator {
         }
         if panel == nil { panel = makePanel() }
         startTracking()
-        place()
+        place(animated: animated)
         panel?.orderFrontRegardless()
     }
 
@@ -108,13 +113,20 @@ final class ThumbnailCoordinator {
         let settings = preferences.thumbnails
         if settings.autoClose != .never { countdown.start(id, seconds: TimeInterval(settings.autoCloseDelaySeconds)) }
         runCountdown()
-        refresh()
+        refresh(animated: true)
     }
 
-    func update(_ id: UUID, image: CGImage? = nil, status: String? = nil) {
+    func update(_ id: UUID, image: CGImage? = nil, feedback: Feedback? = nil) {
         guard let index = cards.firstIndex(where: { $0.id == id }) else { return }
         if let image { cards[index].image = NSImage(cgImage: image, size: .zero) }
-        cards[index].status = status
+        switch feedback {
+        case .copied: cards[index].copied = true; cards[index].status = nil
+        case .saved: cards[index].saved = true; cards[index].status = nil
+        case .saving: cards[index].status = "Saving…"
+        case .waitingToSave: cards[index].status = "Waiting to save…"
+        case .message(let message): cards[index].status = message
+        case nil: cards[index].status = nil
+        }
         place()
     }
 
@@ -122,7 +134,7 @@ final class ThumbnailCoordinator {
         countdown.cancel(id)
         cards.removeAll { $0.id == id }
         if focusRequest == id { focusRequest = nil }
-        refresh()
+        refresh(animated: true)
     }
 
     /// Counted lock for app-owned interactions such as a Save As panel.
@@ -262,13 +274,13 @@ final class ThumbnailCoordinator {
         }
     }
 
-    private func place() {
+    private func place(animated: Bool = false) {
         guard let panel, let screen = resolveScreen() else { return }
         targetDisplay = screen.displayID
         // visibleFrame excludes the menu bar, notch area, and Dock; 12 pt edge margin.
         let frame = screen.visibleFrame.insetBy(dx: 12, dy: 12)
         let width = min(self.width, frame.width)
-        let heights = cards.map { ThumbnailLayout.cardHeight(width: width, imageSize: $0.image.size, hasStatus: $0.status != nil) }
+        let heights = Array(repeating: ThumbnailLayout.previewHeight(width: width), count: cards.count)
         visibleCount = ThumbnailLayout.visibleCount(heights: heights, available: frame.height, hasUndo: undoAvailable)
         if visibleCount == cards.count { showingOverflow = false }
         var rows = heights.prefix(visibleCount).map { $0 }
@@ -281,7 +293,15 @@ final class ThumbnailCoordinator {
         case .bottomLeft, .bottomRight: frame.minY
         }
         let x = ThumbnailLayout.anchoredLeft(placement) ? frame.minX : frame.maxX - width
-        panel.setFrame(CGRect(x: x, y: y, width: width, height: height), display: true)
+        let destination = CGRect(x: x, y: y, width: width, height: height)
+        if animated, panel.isVisible, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.2
+                panel.animator().setFrame(destination, display: true)
+            }
+        } else {
+            panel.setFrame(destination, display: true)
+        }
     }
 }
 
@@ -307,20 +327,20 @@ final class ThumbnailPanel: NSPanel {
 /// Top-to-bottom rows: the newest card and Undo sit nearest the anchor; "N more" is farthest.
 private struct ThumbnailStack: View {
     @Bindable var coordinator: ThumbnailCoordinator
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let visible = Array(coordinator.cards.prefix(coordinator.visibleCount))
         let bottom = [.bottomLeft, .bottomRight].contains(coordinator.placement)
         VStack(spacing: ThumbnailLayout.gap) {
-            if bottom { overflow }
-            if !bottom { undo }
+            if bottom { overflow; undo }
             ForEach(ThumbnailLayout.displayOrder(visible, placement: coordinator.placement)) { card in
                 ThumbnailCard(card: card, coordinator: coordinator)
             }
-            if bottom { undo }
-            if !bottom { overflow }
+            if !bottom { undo; overflow }
         }
         .frame(width: coordinator.width)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: coordinator.cards.map(\.id))
         .onHover { coordinator.setHovering($0) }
     }
 
@@ -347,184 +367,5 @@ private struct ThumbnailStack: View {
                     .frame(width: coordinator.width + 2 * ThumbnailLayout.gap, height: 420)
                 }
         }
-    }
-}
-
-private struct ThumbnailCard: View {
-    let card: ThumbnailCoordinator.Card
-    let coordinator: ThumbnailCoordinator
-
-    var body: some View {
-        VStack(spacing: 0) {
-            ThumbnailImage(card: card, coordinator: coordinator)
-                .frame(height: ThumbnailLayout.previewHeight(width: coordinator.width, imageSize: card.image.size))
-            HStack(spacing: 12) {
-                Button { coordinator.perform?(card.id, .dismiss) } label: { Image(systemName: "xmark") }
-                    .help("Dismiss").accessibilityLabel("Dismiss capture")
-                Spacer(minLength: 0)
-                Button { coordinator.perform?(card.id, .copy) } label: { Image(systemName: "doc.on.doc") }
-                    .help("Copy Image").accessibilityLabel("Copy image")
-                Button {
-                    coordinator.perform?(card.id, NSEvent.modifierFlags.contains(.option) ? .saveAs : .save)
-                } label: { Image(systemName: "square.and.arrow.down") }
-                    .help("Save to Folder (Option: Save As…)").accessibilityLabel("Save to folder")
-            }
-            .buttonStyle(.borderless)
-            .padding(.horizontal, 8)
-            .frame(height: ThumbnailLayout.actionRowHeight)
-            if let status = card.status {
-                Text(status).font(.caption).lineLimit(1).frame(height: ThumbnailLayout.statusHeight)
-            }
-        }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-}
-
-private struct ThumbnailImage: NSViewRepresentable {
-    let card: ThumbnailCoordinator.Card
-    let coordinator: ThumbnailCoordinator
-    func makeNSView(context: Context) -> ThumbnailImageView { ThumbnailImageView() }
-    func updateNSView(_ view: ThumbnailImageView, context: Context) {
-        view.image = card.image
-        view.captureID = card.id
-        view.coordinator = coordinator
-        if coordinator.focusRequest == card.id, view.window?.firstResponder !== view {
-            view.window?.makeFirstResponder(view)
-        }
-    }
-}
-
-private final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
-    var image: NSImage? { didSet { needsDisplay = true } }
-    var captureID: UUID?
-    weak var coordinator: ThumbnailCoordinator?
-    private var press: CGPoint?
-    private var dragging = false
-    private var swipe = ThumbnailSwipe()
-
-    override var acceptsFirstResponder: Bool { true }
-    override var focusRingMaskBounds: NSRect { bounds }
-    override func drawFocusRingMask() { bounds.fill() }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        setAccessibilityElement(true)
-        setAccessibilityRole(.button)
-        setAccessibilityLabel("Open capture in editor")
-    }
-    required init?(coder: NSCoder) { nil }
-
-    override func draw(_ dirtyRect: NSRect) {
-        guard let image, image.size.width > 0, image.size.height > 0 else { return }
-        let scale = min(bounds.width / image.size.width, bounds.height / image.size.height)
-        let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
-        image.draw(in: NSRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2, width: size.width, height: size.height))
-    }
-
-    override func mouseDown(with event: NSEvent) { press = event.locationInWindow; dragging = false }
-    override func mouseDragged(with event: NSEvent) {
-        guard !dragging, let press, hypot(event.locationInWindow.x - press.x, event.locationInWindow.y - press.y) > 5,
-              let captureID, let provider = coordinator?.makePromise?(captureID) else { return }
-        dragging = true
-        coordinator?.setInteraction(.drag, true)
-        let item = NSDraggingItem(pasteboardWriter: provider)
-        item.setDraggingFrame(bounds, contents: image)
-        beginDraggingSession(with: [item], event: event, source: self)
-    }
-    override func mouseUp(with event: NSEvent) {
-        if !dragging, press != nil, let captureID { coordinator?.perform?(captureID, .open) }
-        press = nil
-    }
-    override func accessibilityPerformPress() -> Bool {
-        guard let captureID else { return false }
-        coordinator?.perform?(captureID, .open)
-        return true
-    }
-
-    override func keyDown(with event: NSEvent) {
-        guard let captureID, let coordinator else { return super.keyDown(with: event) }
-        if let shortcut = Shortcut(event: event), let action = coordinator.cardAction(for: shortcut) {
-            coordinator.perform?(captureID, action)
-            return
-        }
-        let plain = event.modifierFlags.isDisjoint(with: [.command, .control, .option])
-        switch (event.keyCode, plain) {
-        case (36, true), (49, true), (76, true): coordinator.perform?(captureID, .open)
-        case (51, true), (117, true): coordinator.perform?(captureID, .dismiss)
-        case (53, true): window?.makeFirstResponder(nil)
-        default: super.keyDown(with: event)
-        }
-    }
-
-    /// Command-key equivalents reach a focused card before the main menu handles them.
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard window?.firstResponder === self, let captureID, let coordinator, let shortcut = Shortcut(event: event),
-              let action = coordinator.cardAction(for: shortcut) else { return super.performKeyEquivalent(with: event) }
-        coordinator.perform?(captureID, action)
-        return true
-    }
-
-    /// Accumulates one trackpad gesture; momentum and mouse wheels never dismiss.
-    override func scrollWheel(with event: NSEvent) {
-        guard event.hasPreciseScrollingDeltas, event.momentumPhase.isEmpty, let captureID, let coordinator else {
-            return super.scrollWheel(with: event)
-        }
-        if event.phase.contains(.began) { swipe.reset() }
-        // Physical finger movement: natural scrolling already reports it, classic scrolling inverts it.
-        let direction: CGFloat = event.isDirectionInvertedFromDevice ? 1 : -1
-        swipe.add(dx: direction * event.scrollingDeltaX, dy: direction * event.scrollingDeltaY)
-        if event.phase.contains(.ended) {
-            if swipe.dismisses(anchoredLeft: ThumbnailLayout.anchoredLeft(coordinator.placement)) {
-                coordinator.perform?(captureID, .dismiss)
-            }
-            swipe.reset()
-        } else if event.phase.contains(.cancelled) { swipe.reset() }
-    }
-
-    override func menu(for event: NSEvent) -> NSMenu? {
-        let menu = NSMenu()
-        menu.delegate = self
-        let items: [(String, ThumbnailCoordinator.Action)] = [("Open Editor", .open), ("Copy Image", .copy),
-            ("Save to Folder", .save), ("Save As…", .saveAs), ("Dismiss", .dismiss)]
-        for (tag, (title, action)) in items.enumerated() {
-            let item = NSMenuItem(title: title, action: #selector(menuAction(_:)), keyEquivalent: "")
-            if let shortcut = coordinator?.shortcut(for: action), let key = shortcut.keyboardShortcut {
-                item.keyEquivalent = String(key.key.character)
-                item.keyEquivalentModifierMask = shortcut.modifierFlags
-            }
-            item.target = self
-            item.tag = tag
-            menu.addItem(item)
-            if tag == 0 || tag == 3 { menu.addItem(.separator()) }
-        }
-        return menu
-    }
-    func menuWillOpen(_ menu: NSMenu) { coordinator?.setInteraction(.menu, true) }
-    func menuDidClose(_ menu: NSMenu) { coordinator?.setInteraction(.menu, false) }
-    @objc private func menuAction(_ sender: NSMenuItem) {
-        guard let captureID else { return }
-        coordinator?.perform?(captureID, [.open, .copy, .save, .saveAs, .dismiss][sender.tag])
-    }
-
-    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { .copy }
-    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        let keepCard = NSEvent.modifierFlags.contains(.option)
-        coordinator?.setInteraction(.drag, false)
-        coordinator?.setInteraction(.press, false)
-        if let captureID { coordinator?.dragFinished?(captureID, operation.contains(.copy), keepCard) }
-        dragging = false
-        press = nil
-    }
-}
-
-private extension Shortcut {
-    var modifierFlags: NSEvent.ModifierFlags {
-        var flags: NSEvent.ModifierFlags = []
-        if modifiers.contains(.control) { flags.insert(.control) }
-        if modifiers.contains(.option) { flags.insert(.option) }
-        if modifiers.contains(.shift) { flags.insert(.shift) }
-        if modifiers.contains(.command) { flags.insert(.command) }
-        return flags
     }
 }

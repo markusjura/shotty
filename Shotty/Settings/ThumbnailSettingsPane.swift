@@ -34,7 +34,7 @@ struct ThumbnailSettingsPane: View {
                     }
                 }
                 if case .display(let uuid, _) = preferences.thumbnails.display, !screens.contains(where: { $0.uuid == uuid }) {
-                    Text("Thumbnails use the main display until this display reconnects.").font(.callout).foregroundStyle(.secondary)
+                    Text("Uses the main display until this one reconnects.").font(.callout).foregroundStyle(.secondary)
                 } else if preferences.thumbnails.display == .followPointer {
                     Text("The whole stack moves to the display under the pointer.").font(.callout).foregroundStyle(.secondary)
                 }
@@ -50,8 +50,8 @@ struct ThumbnailSettingsPane: View {
                         LabeledContent("After", value: "\(preferences.thumbnails.autoCloseDelaySeconds) seconds")
                     }
                     Text(preferences.thumbnails.autoClose == .dismiss
-                         ? "Unsaved captures are discarded when they close. Hovering, editing, or a failed save pauses the timer."
-                         : "Captures are saved to the save location first; a failed save keeps the thumbnail.")
+                         ? "Discards unsaved captures. Hovering, editing, or a failed save pauses it."
+                         : "Saves first. A failed save keeps the thumbnail.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Toggle("Dismiss after saving", isOn: $preferences.thumbnails.dismissesAfterSave)

@@ -26,14 +26,14 @@ struct PermissionSettingsPane: View {
                         Button("Open System Settings") { SystemSettingsLink.open(SystemSettingsLink.screenRecording) }
                     }
                     if screenRecordingRequested {
-                        Text("Turn Shotty on in System Settings. macOS may ask you to reopen Shotty afterwards.")
+                        Text("Turn Shotty on in System Settings, then reopen it if asked.")
                             .font(.callout).foregroundStyle(.secondary)
                     }
                 }
             }
             Section("Accessibility") {
                 status(accessibility, granted: "Allowed", missing: "Not allowed")
-                Text("Only Auto Scroll needs this, to post scroll events to the selected window. Manual scrolling capture works without it.")
+                Text("Only Auto Scroll needs this. Manual scrolling works without it.")
                     .font(.callout).foregroundStyle(.secondary)
                 if !accessibility {
                     Button("Open System Settings") { SystemSettingsLink.open(SystemSettingsLink.accessibility) }

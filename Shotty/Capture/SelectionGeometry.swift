@@ -47,6 +47,21 @@ enum SelectionGeometry {
         let maxY = rect.maxY + (edges.contains(.top) ? delta.dy : 0)
         return CGRect(x: min(minX, maxX), y: min(minY, maxY), width: abs(maxX - minX), height: abs(maxY - minY))
     }
+
+    /// Origins for a control of `size` centered below `region`, then above it, then just inside
+    /// its bottom edge, each clamped horizontally into `visible`.
+    static func attachedOrigins(size: CGSize, to region: CGRect, within visible: CGRect, gap: CGFloat) -> [CGPoint] {
+        let x = min(max(region.midX - size.width / 2, visible.minX), visible.maxX - size.width)
+        return [region.minY - gap - size.height, region.maxY + gap, region.minY + gap].map { CGPoint(x: x, y: $0) }
+    }
+
+    /// The first origin whose frame lies inside `visible` without touching any `avoiding` rectangle.
+    static func firstClearOrigin(_ candidates: [CGPoint], size: CGSize, avoiding: [CGRect], within visible: CGRect) -> CGPoint? {
+        candidates.first { origin in
+            let frame = CGRect(origin: origin, size: size)
+            return visible.contains(frame) && !avoiding.contains { $0.intersects(frame) }
+        }
+    }
 }
 
 /// Rectangle edges in AppKit orientation, where top has the larger y.

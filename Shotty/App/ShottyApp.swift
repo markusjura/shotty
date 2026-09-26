@@ -9,6 +9,7 @@ struct ShottyApp: App {
             SettingsView(preferences: delegate.coordinator.preferences, commands: delegate.commands)
                 .onAppear { delegate.settingsOpened() }
         }
+        .windowToolbarStyle(.unifiedCompact)
         .commands {
             SwiftUI.CommandGroup(after: .appInfo) {
                 ForEach(CommandID.allCases.filter { $0.group == .capture }, id: \.self) { command in

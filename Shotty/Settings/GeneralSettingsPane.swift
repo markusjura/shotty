@@ -20,7 +20,7 @@ struct GeneralSettingsPane: View {
                 Toggle("Show in menu bar", isOn: $preferences.general.showsMenuBarIcon)
                 Toggle("Show in Dock", isOn: $preferences.general.showsDockIcon)
                 if !preferences.general.showsMenuBarIcon && !preferences.general.showsDockIcon {
-                    Text("Shotty keeps running without an icon. Open Shotty from Finder or Spotlight to return to Settings; capture shortcuts keep working.")
+                    Text("Shortcuts still work. Open Shotty again to return here.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Toggle("Open at login", isOn: Binding(get: { loginStatus == .enabled || loginStatus == .requiresApproval }, set: setLogin))

@@ -7,12 +7,14 @@ struct ShortcutSettingsPane: View {
     var body: some View {
         Form {
             Section {
-                Text("Capture and thumbnail shortcuts work in every app. Tool and editor shortcuts work in the focused editor. Every command is also in the menus.")
+                Text("Capture and thumbnail shortcuts work in every app.")
                     .font(.callout).foregroundStyle(.secondary)
-                LabeledContent("CleanShot keys") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("CleanShot keys")
                     VStack(alignment: .leading, spacing: 6) {
                         Button("Use ⇧⌘3, ⇧⌘4, and ⇧⌘5") { report(commands.applyCleanShotPreset(), for: CommandID.cleanShotPreset.map(\.0)) }
-                        Text("Fullscreen, Area, and Scrolling take these keys. Turn off the matching macOS and CleanShot shortcuts first; Shotty does not change other apps' settings.")
+                            .help("Assign Fullscreen, Area, and Scrolling respectively.")
+                        Text("Disable matching macOS and CleanShot shortcuts first.")
                             .font(.callout).foregroundStyle(.secondary)
                         Button("Open Keyboard Settings") { SystemSettingsLink.open(SystemSettingsLink.keyboardShortcuts) }
                     }
