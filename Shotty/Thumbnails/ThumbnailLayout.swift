@@ -6,7 +6,6 @@ import Foundation
 enum ThumbnailLayout {
     static let gap: CGFloat = 8
     static let overflowRowHeight: CGFloat = 32
-    static let undoRowHeight: CGFloat = 32
 
     static func previewHeight(width: CGFloat) -> CGFloat {
         // A stable card ratio gives hover controls breathing room and keeps the stack calm.
@@ -22,10 +21,10 @@ enum ThumbnailLayout {
     }
 
     /// `heights` is newest first. Returns how many of the newest cards fit in `available`
-    /// together with the undo row and, when some remain, the overflow row. At least one card
+    /// together with, when some remain, the overflow row. At least one card
     /// stays visible so a very short display still offers the newest capture.
-    static func visibleCount(heights: [CGFloat], available: CGFloat, hasUndo: Bool) -> Int {
-        var used = hasUndo ? undoRowHeight + gap : 0
+    static func visibleCount(heights: [CGFloat], available: CGFloat) -> Int {
+        var used: CGFloat = 0
         for (index, height) in heights.enumerated() {
             let remaining = heights.count - index - 1
             let next = used + height + (index > 0 ? gap : 0)

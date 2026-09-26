@@ -5,14 +5,11 @@ final class ThumbnailLayoutTests: XCTestCase {
     func testOverflowKeepsNewestCardsAndReservesTheMoreRow() {
         let heights: [CGFloat] = [196, 196, 196, 196]
         // Four cards with three gaps need exactly 808.
-        XCTAssertEqual(ThumbnailLayout.visibleCount(heights: heights, available: 808, hasUndo: false), 4)
+        XCTAssertEqual(ThumbnailLayout.visibleCount(heights: heights, available: 808), 4)
         // With one card hidden, 3 cards plus the overflow row need 644.
-        XCTAssertEqual(ThumbnailLayout.visibleCount(heights: heights, available: 644, hasUndo: false), 3)
-        XCTAssertEqual(ThumbnailLayout.visibleCount(heights: heights, available: 643, hasUndo: false), 2)
-        // The Undo row takes 40 more, so 3 cards need 684.
-        XCTAssertEqual(ThumbnailLayout.visibleCount(heights: heights, available: 684, hasUndo: true), 3)
-        XCTAssertEqual(ThumbnailLayout.visibleCount(heights: heights, available: 683, hasUndo: true), 2)
-        XCTAssertEqual(ThumbnailLayout.visibleCount(heights: heights, available: 50, hasUndo: true), 1,
+        XCTAssertEqual(ThumbnailLayout.visibleCount(heights: heights, available: 644), 3)
+        XCTAssertEqual(ThumbnailLayout.visibleCount(heights: heights, available: 643), 2)
+        XCTAssertEqual(ThumbnailLayout.visibleCount(heights: heights, available: 50), 1,
                        "A tiny display still shows the newest capture")
     }
 

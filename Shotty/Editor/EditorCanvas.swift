@@ -236,9 +236,15 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        NSColor.controlBackgroundColor.setFill(); dirtyRect.fill()
+        NSColor.underPageBackgroundColor.setFill(); dirtyRect.fill()
         context.saveGState()
         context.translateBy(x: Self.margin, y: Self.margin)
+        // A soft page shadow separates the capture from the canvas; only the rectangle casts it.
+        context.saveGState()
+        context.setShadow(offset: CGSize(width: 0, height: -1), blur: 6, color: NSColor.black.withAlphaComponent(0.35).cgColor)
+        context.setFillColor(NSColor.black.cgColor)
+        context.fill(CGRect(x: 0, y: 0, width: viewport.width * zoom, height: viewport.height * zoom))
+        context.restoreGState()
         context.scaleBy(x: zoom, y: zoom)
         context.translateBy(x: -viewport.minX, y: -viewport.minY)
         // Pixels outside the visible image, such as source beyond a committed crop, never show.

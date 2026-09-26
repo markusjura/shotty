@@ -20,8 +20,6 @@ enum Chrome {
     static let controlLabelDisabled = NSColor(white: 0.14, alpha: 0.4)
     /// Dims everything outside a selected capture region.
     static let scrim = NSColor.black.withAlphaComponent(0.3)
-    /// Darkens the thumbnail hover blur so light pills stay distinct over bright captures.
-    static let hoverTint = NSColor.black.withAlphaComponent(0.28)
     /// Small dark readouts such as selection dimensions.
     static let readoutFill = NSColor.black.withAlphaComponent(0.78)
 
@@ -37,8 +35,11 @@ enum Chrome {
     static let cardRadius: CGFloat = 13
     static let panelRadius: CGFloat = 12
     static let pillHeight: CGFloat = 28
+    static let cardPillSize = CGSize(width: 52, height: 27)
     static let iconButtonDiameter: CGFloat = 22
     static let controlFont = NSFont.systemFont(ofSize: 13, weight: .medium)
+    /// Copy and Save on thumbnail cards: smaller and heavier, matching CleanShot's pills.
+    static let cardPillFont = NSFont.systemFont(ofSize: 12, weight: .semibold)
 
     // MARK: Motion
 

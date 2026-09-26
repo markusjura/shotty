@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Owns the non-activating thumbnail panel: newest-first cards, display following,
 /// interaction locks, overflow, swipe dismissal, and auto-close countdowns.
-/// Commands go through `perform`; the app owns documents, outputs, and dismissal Undo.
+/// Commands go through `perform`; the app owns documents, outputs, and dismissal.
 @MainActor @Observable
 final class ThumbnailCoordinator {
     struct Card: Identifiable {
@@ -40,11 +40,9 @@ final class ThumbnailCoordinator {
     /// Newest first.
     private(set) var cards: [Card] = []
     var hidden = false
-    var undoAvailable = false
     var perform: ((UUID, Action) -> Void)?
     /// Supplies current command bindings; nil falls back to the registry defaults.
     var commands: CommandRegistry?
-    var undo: (() -> Void)?
     var makePromise: ((UUID) -> NSFilePromiseProvider?)?
     /// Reports the drag outcome; `keepCard` is true when Option was held at the drop.
     var dragFinished: ((UUID, _ accepted: Bool, _ keepCard: Bool) -> Void)?
@@ -94,7 +92,7 @@ final class ThumbnailCoordinator {
     var width: CGFloat { preferences.thumbnails.size.width }
 
     func refresh(animated: Bool = false) {
-        guard !hidden, !cards.isEmpty || undoAvailable else {
+        guard !hidden, !cards.isEmpty else {
             stopTracking()
             showingOverflow = false
             panel?.orderOut(nil)
@@ -281,10 +279,9 @@ final class ThumbnailCoordinator {
         let frame = screen.visibleFrame.insetBy(dx: 12, dy: 12)
         let width = min(self.width, frame.width)
         let heights = Array(repeating: ThumbnailLayout.previewHeight(width: width), count: cards.count)
-        visibleCount = ThumbnailLayout.visibleCount(heights: heights, available: frame.height, hasUndo: undoAvailable)
+        visibleCount = ThumbnailLayout.visibleCount(heights: heights, available: frame.height)
         if visibleCount == cards.count { showingOverflow = false }
         var rows = heights.prefix(visibleCount).map { $0 }
-        if undoAvailable { rows.append(ThumbnailLayout.undoRowHeight) }
         if visibleCount < cards.count { rows.append(ThumbnailLayout.overflowRowHeight) }
         let height = min(frame.height, max(1, rows.reduce(0, +) + ThumbnailLayout.gap * CGFloat(max(0, rows.count - 1))))
         let y: CGFloat = switch placement {
@@ -324,7 +321,7 @@ final class ThumbnailPanel: NSPanel {
     }
 }
 
-/// Top-to-bottom rows: the newest card and Undo sit nearest the anchor; "N more" is farthest.
+/// Top-to-bottom rows: the newest card sits nearest the anchor; "N more" is farthest.
 private struct ThumbnailStack: View {
     @Bindable var coordinator: ThumbnailCoordinator
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -333,24 +330,15 @@ private struct ThumbnailStack: View {
         let visible = Array(coordinator.cards.prefix(coordinator.visibleCount))
         let bottom = [.bottomLeft, .bottomRight].contains(coordinator.placement)
         VStack(spacing: ThumbnailLayout.gap) {
-            if bottom { overflow; undo }
+            if bottom { overflow }
             ForEach(ThumbnailLayout.displayOrder(visible, placement: coordinator.placement)) { card in
                 ThumbnailCard(card: card, coordinator: coordinator)
             }
-            if !bottom { undo; overflow }
+            if !bottom { overflow }
         }
         .frame(width: coordinator.width)
         .animation(reduceMotion ? nil : .easeInOut(duration: Chrome.moveDuration), value: coordinator.cards.map(\.id))
         .onHover { coordinator.setHovering($0) }
-    }
-
-    @ViewBuilder private var undo: some View {
-        if coordinator.undoAvailable {
-            Button("Undo Dismiss", systemImage: "arrow.uturn.backward") { coordinator.undo?() }
-                .keyboardShortcut("z")
-                .buttonStyle(.overlayCapsule)
-                .frame(height: ThumbnailLayout.undoRowHeight)
-        }
     }
 
     @ViewBuilder private var overflow: some View {

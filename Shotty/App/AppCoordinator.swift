@@ -28,8 +28,6 @@ final class AppCoordinator {
     private var captureTask: Task<Void, Never>?
     private var holds: [UUID: Int] = [:]
     private var dismissed = Set<UUID>()
-    private var undoDismissed: [UUID] = []
-    private var undoTask: Task<Void, Never>?
     /// One promised drag. The capture stays held until `finishDrag` runs exactly once.
     private struct DragOutcome {
         let captureID: UUID
@@ -46,7 +44,6 @@ final class AppCoordinator {
 
     func launch() async {
         thumbnails.perform = { [weak self] id, action in self?.perform(id, action: action) }
-        thumbnails.undo = { [weak self] in self?.undoDismissal() }
         thumbnails.makePromise = { [weak self] id in self?.filePromise(id) }
         thumbnails.dragFinished = { [weak self] id, accepted, keepCard in
             guard let self, let token = activeDrag.removeValue(forKey: id), dragOutcomes[token] != nil else { return }
@@ -182,7 +179,7 @@ final class AppCoordinator {
     }
     func hideThumbnails() { thumbnails.hidden = true; thumbnails.refresh() }
     /// Dismisses every card. When some hold work that was neither saved nor copied at its current
-    /// revision, confirms first with that count; Undo remains available afterwards either way.
+    /// revision, confirms first with that count, because dismissal is final.
     func dismissAllThumbnails() {
         let ids = thumbnails.cards.map(\.id)
         guard !ids.isEmpty else { return }
@@ -190,8 +187,8 @@ final class AppCoordinator {
         if unexported > 0 {
             let alert = NSAlert()
             alert.messageText = ids.count == 1 ? "Dismiss this capture?" : "Dismiss all \(ids.count) captures?"
-            alert.informativeText = (unexported == 1 ? "1 capture hasn't" : "\(unexported) captures haven't")
-                + " been saved or copied since its last change. You can undo for 5 seconds; after that, unsaved work is removed."
+            alert.informativeText = unexported == 1 ? "1 capture hasn't been saved or copied."
+                                                    : "\(unexported) captures haven't been saved or copied."
             alert.addButton(withTitle: "Dismiss All"); alert.addButton(withTitle: "Cancel")
             thumbnails.lock(true)
             NSApp.activate()
@@ -312,29 +309,11 @@ final class AppCoordinator {
         if !automatic { showError(error, title: "Couldn't \(action) capture") }
     }
 
+    /// Removes the card at once; the capture is deleted as soon as no editor or drag still holds it.
     private func dismiss(_ id: UUID) {
         dismissed.insert(id)
-        if !undoDismissed.contains(id) { undoDismissed.append(id) }
-        thumbnails.undoAvailable = true
         thumbnails.remove(id)
-        undoTask?.cancel()
-        undoTask = Task { [weak self] in
-            do { try await Task.sleep(for: .seconds(5)) } catch { return }
-            guard let self else { return }
-            let expired = undoDismissed; undoDismissed = []
-            thumbnails.undoAvailable = false; thumbnails.refresh(animated: true)
-            for id in expired { removeIfUnreferenced(id) }
-        }
-    }
-
-    private func undoDismissal() {
-        undoTask?.cancel()
-        let restored = undoDismissed; undoDismissed = []
-        thumbnails.undoAvailable = false
-        Task {
-            for id in restored { dismissed.remove(id); await showThumbnail(id) }
-            thumbnails.refresh()
-        }
+        removeIfUnreferenced(id)
     }
 
     func retain(_ id: UUID) { holds[id, default: 0] += 1 }
@@ -344,18 +323,17 @@ final class AppCoordinator {
     }
     func keepEditedCapture(_ id: UUID) async {
         dismissed.remove(id)
-        undoDismissed.removeAll { $0 == id }
         await refreshRecords()
         await showThumbnail(id)
     }
     func isThumbnailRetained(_ id: UUID) -> Bool { !dismissed.contains(id) }
     func discardEditedCapture(_ id: UUID) {
-        dismissed.insert(id); undoDismissed.removeAll { $0 == id }; thumbnails.remove(id)
+        dismissed.insert(id); thumbnails.remove(id)
     }
     func editorClosed(_ id: UUID) { removeIfUnreferenced(id) }
     private func removeIfUnreferenced(_ id: UUID) {
         // During Quit the session decision handles removal; Cancel replays pending ones.
-        guard !isClosing, dismissed.contains(id), !undoDismissed.contains(id), holds[id] == nil, hasEditor?(id) != true else { return }
+        guard !isClosing, dismissed.contains(id), holds[id] == nil, hasEditor?(id) != true else { return }
         dismissed.remove(id)
         Task {
             do { try await store.remove(id); await refreshRecords() }
@@ -466,14 +444,14 @@ final class AppCoordinator {
         do {
             if decision == .alertSecondButtonReturn { try await store.discard() }
             else {
-                // Dismissed captures, including those still inside the Undo window, do not return next launch.
+                // Dismissed captures still held by an editor or drag do not return next launch.
                 for record in records where !retained.contains(where: { $0.id == record.id }) {
                     try await store.remove(record.id)
-                    dismissed.remove(record.id); undoDismissed.removeAll { $0 == record.id }
+                    dismissed.remove(record.id)
                 }
                 try await store.retainForNextLaunch()
             }
-            thumbnails.close(); undoTask?.cancel()
+            thumbnails.close()
             return true
         } catch { showError(error, title: "Couldn't close the capture session"); return abortQuit() }
     }
@@ -481,7 +459,7 @@ final class AppCoordinator {
     /// Restores normal operation after a cancelled or failed Quit, including deferred removals.
     private func abortQuit() -> Bool {
         isClosing = false
-        for id in dismissed where !undoDismissed.contains(id) { removeIfUnreferenced(id) }
+        for id in dismissed { removeIfUnreferenced(id) }
         return false
     }
 

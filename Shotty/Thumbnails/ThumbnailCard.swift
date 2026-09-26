@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage
 import OSLog
 import SwiftUI
 
@@ -31,7 +32,13 @@ private struct ThumbnailImage: NSViewRepresentable {
 }
 
 final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
-    var image: NSImage? { didSet { needsDisplay = true } }
+    var image: NSImage? {
+        didSet {
+            guard image !== oldValue else { return }
+            needsDisplay = true
+            hoverBackdrop.layer?.contents = nil
+        }
+    }
     var captureID: UUID?
     weak var coordinator: ThumbnailCoordinator?
     private let logger = Logger(subsystem: "local.markus.Shotty", category: "ThumbnailDrag")
@@ -41,7 +48,7 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
     private var tracking: NSTrackingArea?
     private var hovered = false
     private var controls: [NSButton] = []
-    private let hoverMaterial = ThumbnailHoverMaterial()
+    private let hoverBackdrop = ThumbnailHoverBackdrop()
     private let statusLabel = NSTextField(labelWithString: "")
     private var copied = false
     private var saved = false
@@ -70,8 +77,12 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
     override func resignFirstResponder() -> Bool { refreshFocusControls(); return true }
 
     override var acceptsFirstResponder: Bool { true }
-    override var focusRingMaskBounds: NSRect { bounds }
-    override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius).fill() }
+    /// The panel ends at the card edge, so an exterior ring must sit inside it to stay whole.
+    private var focusRingRect: NSRect { bounds.insetBy(dx: 3, dy: 3) }
+    override var focusRingMaskBounds: NSRect { focusRingRect }
+    override func drawFocusRingMask() {
+        NSBezierPath(roundedRect: focusRingRect, xRadius: cornerRadius - 3, yRadius: cornerRadius - 3).fill()
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -79,28 +90,20 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Capture thumbnail")
-        hoverMaterial.material = .hudWindow
-        hoverMaterial.blendingMode = .withinWindow
-        hoverMaterial.state = .active
-        hoverMaterial.appearance = NSAppearance(named: .darkAqua)
-        hoverMaterial.wantsLayer = true
-        hoverMaterial.layer?.cornerRadius = cornerRadius - 1
-        hoverMaterial.layer?.masksToBounds = true
-        // A light tint keeps the pills distinct over bright captures, where blur alone turns gray.
-        let tint = NSView()
-        tint.wantsLayer = true
-        tint.layer?.backgroundColor = Chrome.hoverTint.cgColor
-        hoverMaterial.addSubview(tint)
-        addSubview(hoverMaterial)
+        hoverBackdrop.wantsLayer = true
+        hoverBackdrop.layer?.contentsGravity = .resizeAspectFill
+        hoverBackdrop.layer?.cornerRadius = cornerRadius - 1
+        hoverBackdrop.layer?.masksToBounds = true
+        addSubview(hoverBackdrop)
         toolTip = "Click to edit. Drag to Finder or another app. Hold Option when dropping to keep the thumbnail."
         for (title, symbol, action) in [("Dismiss capture", "xmark", ThumbnailCoordinator.Action.dismiss),
                                          ("Open editor", "pencil", .open), ("Copy", "", .copy), ("Save", "", .save)] {
             let button = ThumbnailActionButton(title: symbol.isEmpty ? title : "", target: self, action: #selector(activateControl(_:)))
             button.tag = controls.count
             button.actionValue = action
-            button.image = symbol.isEmpty ? nil : NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+            button.image = symbol.isEmpty ? nil : ThumbnailGlyph.image(symbol)
             button.imagePosition = symbol.isEmpty ? .noImage : .imageOnly
-            button.font = Chrome.controlFont
+            button.font = Chrome.cardPillFont
             button.isBordered = false
             button.wantsLayer = true
             button.setAccessibilityLabel(title)
@@ -113,8 +116,8 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         statusLabel.alignment = .center
         statusLabel.lineBreakMode = .byTruncatingTail
         addSubview(statusLabel)
-        hoverMaterial.isHidden = true
-        hoverMaterial.alphaValue = 0
+        hoverBackdrop.isHidden = true
+        hoverBackdrop.alphaValue = 0
         controls.forEach { $0.isHidden = true; $0.alphaValue = 0 }
         updateControls()
     }
@@ -127,12 +130,11 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
 
     override func layout() {
         super.layout()
-        hoverMaterial.frame = bounds.insetBy(dx: 1, dy: 1)
-        hoverMaterial.subviews.first?.frame = hoverMaterial.bounds
+        hoverBackdrop.frame = bounds.insetBy(dx: 1, dy: 1)
         statusLabel.frame = CGRect(x: 34, y: bounds.height - 25, width: bounds.width - 40, height: 16)
         // Proportions follow CleanShot's overlay: small corner buttons, two compact centered pills.
         let inset: CGFloat = 6, diameter = Chrome.iconButtonDiameter
-        let pill = CGSize(width: 52, height: Chrome.pillHeight), gap: CGFloat = 10
+        let pill = Chrome.cardPillSize, gap: CGFloat = 10
         controls[0].frame = CGRect(x: inset, y: bounds.height - inset - diameter, width: diameter, height: diameter)
         controls[1].frame = CGRect(x: inset, y: inset, width: diameter, height: diameter)
         controls[2].frame = CGRect(x: bounds.midX - pill.width / 2, y: bounds.midY + gap / 2, width: pill.width, height: pill.height)
@@ -176,7 +178,8 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         needsDisplay = true
         guard controlsVisible != visible else { return }
         controlsVisible = visible
-        let views: [NSView] = [hoverMaterial] + controls
+        if visible, hoverBackdrop.layer?.contents == nil { hoverBackdrop.layer?.contents = makeBackdrop() }
+        let views: [NSView] = [hoverBackdrop] + controls
         for view in views { view.isHidden = false }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Chrome.duration(Chrome.fadeDuration)
@@ -184,10 +187,30 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         } completionHandler: { [weak self] in
             Task { @MainActor in
                 guard let self, !self.controlsVisible else { return }
-                self.hoverMaterial.isHidden = true
+                self.hoverBackdrop.isHidden = true
                 self.controls.forEach { $0.isHidden = true }
             }
         }
+    }
+
+    private static let ciContext = CIContext(options: [.cacheIntermediates: false])
+
+    /// Blurs and darkens the capture at card resolution, like CleanShot's hover background.
+    /// Built once per image on first reveal, so cards that are never hovered cost nothing.
+    private func makeBackdrop() -> CGImage? {
+        guard let image, let source = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              source.width > 0, source.height > 0 else { return nil }
+        let backing = window?.backingScaleFactor ?? 2
+        let pixels = CGSize(width: bounds.width * backing, height: bounds.height * backing)
+        let scale = min(1, max(pixels.width / CGFloat(source.width), pixels.height / CGFloat(source.height)))
+        let input = CIImage(cgImage: source).transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        // About 7 pt of blur hides detail but keeps light and dark areas; Core Image works in linear
+        // light, where 0.3 lowers white to roughly 58% on screen.
+        let blurred = input.clampedToExtent().applyingGaussianBlur(sigma: 7 * backing).cropped(to: input.extent)
+        let darkened = blurred.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: 0.3, y: 0, z: 0, w: 0), "inputGVector": CIVector(x: 0, y: 0.3, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: 0.3, w: 0)])
+        return Self.ciContext.createCGImage(darkened, from: input.extent)
     }
 
     /// Success belongs to the action that completed, and stays until this card is removed.
@@ -201,7 +224,7 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
                 transition.duration = Chrome.fadeDuration
                 button.layer?.add(transition, forKey: "success")
             }
-            button.image = success ? NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil) : nil
+            button.image = success ? ThumbnailGlyph.image("checkmark") : nil
             button.title = success ? "" : title
             button.setAccessibilityLabel(success ? (index == 2 ? "Copied. Copy again" : "Saved. Save again") : title)
             button.needsDisplay = true
@@ -382,24 +405,53 @@ private final class ThumbnailActionButton: NSButton {
         (isHighlighted ? Chrome.controlFillPressed : Chrome.controlFill).setFill()
         NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
         if let image {
-            // Corner glyphs stay small inside their circle; the Copy/Save checkmark reads at pill size.
-            let pointSize: CGFloat = bounds.width > bounds.height ? 12 : 10
-            let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .bold)
-                .applying(.init(paletteColors: [Chrome.controlLabel]))
-            if let symbol = image.withSymbolConfiguration(config) {
-                let size = symbol.size
-                symbol.draw(in: CGRect(x: (bounds.midX - size.width / 2).rounded(), y: (bounds.midY - size.height / 2).rounded(),
-                                       width: size.width, height: size.height))
-            }
+            // Every glyph fills the same optical box, so corner icons and the checkmark match in size.
+            let box = ThumbnailGlyph.box, scale = box / max(image.size.width, image.size.height)
+            let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+            image.draw(in: CGRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2, width: size.width, height: size.height))
         } else {
-            let attributes: [NSAttributedString.Key: Any] = [.font: font ?? Chrome.controlFont, .foregroundColor: Chrome.controlLabel]
+            let attributes: [NSAttributedString.Key: Any] = [.font: font ?? Chrome.cardPillFont, .foregroundColor: Chrome.controlLabel]
             let size = (title as NSString).size(withAttributes: attributes)
             (title as NSString).draw(at: CGPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2), withAttributes: attributes)
         }
     }
 }
 
-/// Material is visual only; presses between the controls must reach the image's drag source.
-private final class ThumbnailHoverMaterial: NSVisualEffectView {
+/// The blurred, darkened capture behind the hover controls. It is visual only; presses between
+/// the controls must reach the image's drag source.
+private final class ThumbnailHoverBackdrop: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// Heavy, dark glyphs drawn into one optical box, like CleanShot's overlay icons. SF Symbols has
+/// no solid pencil, so Edit uses a small drawn one with the same weight as the xmark.
+@MainActor
+private enum ThumbnailGlyph {
+    static let box: CGFloat = 8.5
+
+    static func image(_ name: String) -> NSImage? {
+        if name == "pencil" { return pencil }
+        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: name == "checkmark" ? .bold : .heavy)
+            .applying(.init(paletteColors: [Chrome.controlLabel]))
+        return NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config)
+    }
+
+    /// A solid pencil pointing down-left: tip, body, and a separate eraser cap.
+    private static let pencil = NSImage(size: NSSize(width: 10, height: 10), flipped: false) { rect in
+        let transform = NSAffineTransform()
+        transform.translateX(by: rect.midX, yBy: rect.midY)
+        transform.rotate(byDegrees: 45)
+        transform.concat()
+        Chrome.controlLabel.setFill()
+        let half: CGFloat = 1.6, length: CGFloat = 13.2, start = -length / 2
+        let tip = NSBezierPath()
+        tip.move(to: CGPoint(x: start, y: 0))
+        tip.line(to: CGPoint(x: start + 3, y: half))
+        tip.line(to: CGPoint(x: start + 3, y: -half))
+        tip.close()
+        tip.fill()
+        NSBezierPath(rect: CGRect(x: start + 3.5, y: -half, width: 6.4, height: 2 * half)).fill()
+        NSBezierPath(roundedRect: CGRect(x: start + 10.6, y: -half, width: 2.6, height: 2 * half), xRadius: 0.8, yRadius: 0.8).fill()
+        return true
+    }
 }

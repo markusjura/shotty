@@ -16,11 +16,23 @@ final class ExportDragView: NSView, NSDraggingSource {
         setAccessibilityElement(true); setAccessibilityRole(.image); setAccessibilityLabel("Drag image to export")
     }
     required init?(coder: NSCoder) { nil }
+    /// A bordered capsule with grip marks, so the export handle reads as something to grab.
     override func draw(_ dirtyRect: NSRect) {
+        let capsule = bounds.insetBy(dx: 0.5, dy: 2.5)
+        let path = NSBezierPath(roundedRect: capsule, xRadius: capsule.height / 2, yRadius: capsule.height / 2)
+        NSColor.quaternaryLabelColor.withAlphaComponent(0.12).setFill(); path.fill()
+        NSColor.separatorColor.setStroke(); path.stroke()
         let text = "Drag Image" as NSString
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]
+        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 12, weight: .medium),
+                                                         .foregroundColor: NSColor.secondaryLabelColor]
         let size = text.size(withAttributes: attributes)
         text.draw(at: CGPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2), withAttributes: attributes)
+        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium).applying(.init(paletteColors: [.tertiaryLabelColor]))
+        if let grip = NSImage(systemSymbolName: "line.3.horizontal", accessibilityDescription: nil)?.withSymbolConfiguration(config) {
+            for x in [capsule.minX + 10, capsule.maxX - 10 - grip.size.width] {
+                grip.draw(in: CGRect(x: x, y: bounds.midY - grip.size.height / 2, width: grip.size.width, height: grip.size.height))
+            }
+        }
     }
     override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
     override func mouseDown(with event: NSEvent) { started = false }

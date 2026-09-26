@@ -338,19 +338,23 @@ private struct EditorWindowView: View {
                     Button("Apply") { model.canvas.applyCrop(); model.tool = .select }
                         .keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
                 } else {
+                    // One grouped strip, like a segmented control: the active tool is a filled accent tile.
                     HStack(spacing: 2) {
                         ForEach(EditorTool.allCases, id: \.self) { tool in
+                            let active = model.tool == tool
                             Button { model.tool = tool } label: {
-                                ToolIcon(tool: tool).frame(width: 28, height: 28).contentShape(Rectangle())
+                                ToolIcon(tool: tool).frame(width: 30, height: 26).contentShape(Rectangle())
                             }
                             .buttonStyle(.borderless)
-                            .foregroundStyle(model.tool == tool ? Color.accentColor : .primary)
-                            .background(model.tool == tool ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                            .foregroundStyle(active ? Color.white : .primary)
+                            .background(active ? Color.accentColor : .clear, in: RoundedRectangle(cornerRadius: 6))
                             .help("\(CommandID.tool(tool).title) \(model.commands.shortcut(for: .tool(tool))?.displayString ?? "")")
                             .accessibilityLabel(CommandID.tool(tool).title)
-                            .accessibilityAddTraits(model.tool == tool ? .isSelected : [])
+                            .accessibilityAddTraits(active ? .isSelected : [])
                         }
                     }
+                    .padding(2)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
                     // Select without an editable selection has no options; hide rather than disable.
                     if model.styleTool != .select {
                         Divider().frame(height: 24)
@@ -386,7 +390,7 @@ private struct EditorWindowView: View {
                         }.frame(width: 260, height: 300)
                     }
                 Spacer()
-                EditorDragHandle(model: model).frame(width: 110, height: 28)
+                EditorDragHandle(model: model).frame(width: 150, height: 28)
                 Spacer()
                 Button("Copy Image") { model.copy() }
             }.padding(.horizontal, 12).frame(height: 36)
@@ -401,6 +405,7 @@ private struct CanvasContainer: NSViewRepresentable {
         scroll.contentView = CenteringClipView()
         scroll.hasHorizontalScroller = true; scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true; scroll.drawsBackground = true
+        scroll.backgroundColor = .underPageBackgroundColor
         scroll.documentView = canvas
         DispatchQueue.main.async { canvas.fit(); canvas.window?.makeFirstResponder(canvas); canvas.updatePreview() }
         return scroll
@@ -438,7 +443,9 @@ struct ToolIcon: View {
                 } }
             }.frame(width: 16, height: 16)
         case .spotlight:
-            ZStack { RoundedRectangle(cornerRadius: 2).fill(.primary.opacity(0.3)); Circle().fill(.background).padding(4) }.frame(width: 18, height: 16)
+            // A bright opening in a dimmed frame; both parts follow the button's foreground.
+            ZStack { RoundedRectangle(cornerRadius: 2).fill(.foreground.opacity(0.35)); Circle().fill(.foreground).padding(4) }
+                .frame(width: 18, height: 16)
         default: Image(systemName: symbol)
         }
     }

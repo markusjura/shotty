@@ -36,15 +36,15 @@ struct SettingsView: View {
     @State private var pane: SettingsPane? = .general
 
     var body: some View {
-        HStack(spacing: 0) {
+        // A native split view gives Finder's full-height translucent sidebar under the traffic lights
+        // and a toolbar that blends into the pane instead of a separate titlebar band.
+        NavigationSplitView {
             List(SettingsPane.allCases, selection: $pane) { pane in
                 Label(pane.title, systemImage: pane.symbol)
             }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
-            .background(SidebarMaterial())
-            .frame(width: 180)
-            Divider()
+            .navigationSplitViewColumnWidth(180)
+            .toolbar(removing: .sidebarToggle)
+        } detail: {
             let selected = pane ?? .general
             Group {
                 switch selected {
@@ -64,24 +64,14 @@ struct SettingsView: View {
         .toolbar(removing: .title)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Text((pane ?? .general).title).font(.headline)
+                // Finder's toolbar title: 15 pt semibold.
+                Text((pane ?? .general).title).font(.system(size: 15, weight: .semibold))
             }
             .sharedBackgroundVisibility(.hidden)
         }
         .frame(width: 660)
         .frame(minHeight: 520)
     }
-}
-
-/// The translucent sidebar material of native split views, which this plain HStack lacks.
-private struct SidebarMaterial: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = .sidebar
-        view.blendingMode = .behindWindow
-        return view
-    }
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
 /// Settings scenes do not consistently apply the scene toolbar style on macOS.

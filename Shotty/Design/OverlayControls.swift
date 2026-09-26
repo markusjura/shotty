@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Light capsule for controls floating over captured content, such as Start Capture,
-/// Auto Scroll, Cancel, Done, and Undo Dismiss. It stays legible over light and dark pixels.
+/// Auto Scroll, Cancel, Done, and "N more". It stays legible over light and dark pixels.
 struct OverlayCapsuleButtonStyle: ButtonStyle {
     var isProminent = false
 
