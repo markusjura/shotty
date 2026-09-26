@@ -61,7 +61,7 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         case .duplicate: "Duplicate"
         case .zoomIn: "Zoom In"
         case .zoomOut: "Zoom Out"
-        case .zoomToFit: "Zoom to Fit"
+        case .zoomToFit: "Fit Canvas"
         case .actualSize: "Actual Size"
         }
     }
@@ -141,8 +141,8 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         case .duplicate: return Shortcut(kVK_ANSI_D, .command)
         case .zoomIn: return Shortcut(kVK_ANSI_Equal, .command)
         case .zoomOut: return Shortcut(kVK_ANSI_Minus, .command)
-        case .zoomToFit: return Shortcut(kVK_ANSI_0, .command)
-        case .actualSize: return Shortcut(kVK_ANSI_1, .command)
+        case .zoomToFit: return Shortcut(kVK_ANSI_1, .command)
+        case .actualSize: return Shortcut(kVK_ANSI_0, .command)
         }
     }
 }

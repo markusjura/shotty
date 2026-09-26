@@ -195,14 +195,28 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         zoomChanged?()
     }
 
-    /// Fits the visible image to the scroll view and keeps fitting until an explicit zoom.
+    /// Fits the visible image to the scroll view, never beyond 100%, and keeps fitting until an
+    /// explicit zoom.
     func fit() {
         guard let scroll = enclosingScrollView, scroll.contentSize.width > 0, scroll.contentSize.height > 0 else { return }
         isFitting = true
         fittedViewport = viewport
         let available = CGSize(width: max(1, scroll.contentSize.width - 2 * Self.margin),
                                height: max(1, scroll.contentSize.height - 2 * Self.margin))
-        applyZoom(min(available.width / viewport.width, available.height / viewport.height), preserving: nil)
+        let actualSize = 1 / (window?.backingScaleFactor ?? 2)
+        applyZoom(min(available.width / viewport.width, available.height / viewport.height, actualSize), preserving: nil)
+    }
+
+    /// The visible part of the image as drawn, annotations included, scaled to fit `maxDimension`.
+    /// Cheap enough for a drag image because it reuses the view's current rendering.
+    func dragPreview(maxDimension: CGFloat) -> NSImage? {
+        let rect = viewRect(viewport).intersection(visibleRect)
+        guard rect.width > 0, rect.height > 0, let bitmap = bitmapImageRepForCachingDisplay(in: rect) else { return nil }
+        cacheDisplay(in: rect, to: bitmap)
+        let scale = min(1, maxDimension / max(rect.width, rect.height))
+        let image = NSImage(size: CGSize(width: (rect.width * scale).rounded(), height: (rect.height * scale).rounded()))
+        image.addRepresentation(bitmap)
+        return image
     }
 
     /// Crop mode and committed crops change the visible image; a fitted view refits to it.

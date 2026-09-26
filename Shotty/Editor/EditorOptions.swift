@@ -8,7 +8,7 @@ struct EditorOptions: View {
     @Bindable var model: EditorWindowModel
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: EditorBar.buttonSpacing) {
             switch model.styleTool {
             case .arrow:
                 color(\.arrow.color)
@@ -200,9 +200,9 @@ private struct OptionButton<Icon: View, Content: View>: View {
                 icon.frame(width: 18, height: 18)
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 6)
-            .frame(height: 26)
-            .contentShape(Rectangle())
+            .padding(.horizontal, 9)
+            .frame(height: EditorBar.buttonHeight)
+            .contentShape(Capsule())
         }
         .buttonStyle(OptionButtonStyle(isOpen: isPresented))
         .help(title)
@@ -211,7 +211,7 @@ private struct OptionButton<Icon: View, Content: View>: View {
     }
 }
 
-/// Borderless until hovered, pressed, or open, like CleanShot's toolbar options.
+/// A tinted capsule like CleanShot's toolbar options, darker while pressed or open.
 private struct OptionButtonStyle: ButtonStyle {
     let isOpen: Bool
 
@@ -222,13 +222,10 @@ private struct OptionButtonStyle: ButtonStyle {
     private struct StyledLabel: View {
         let configuration: Configuration
         let isOpen: Bool
-        @State private var isHovered = false
-
         var body: some View {
             configuration.label
-                .background(.quaternary.opacity(configuration.isPressed || isOpen ? 1 : isHovered ? 0.6 : 0),
-                            in: RoundedRectangle(cornerRadius: 6))
-                .onHover { isHovered = $0 }
+                .background(EditorBar.buttonFill, in: Capsule())
+                .overlay(Capsule().fill(Color.black.opacity(configuration.isPressed || isOpen ? 0.15 : 0)))
         }
     }
 }

@@ -10,10 +10,15 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
     init(record: CaptureRecord, image: CGImage, coordinator: AppCoordinator, commands: CommandRegistry) {
         model = EditorWindowModel(record: record, image: image, coordinator: coordinator, commands: commands)
-        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1100, height: 780),
+        let window = NSWindow(contentRect: Self.initialFrame(for: record),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         window.title = "Shotty · \(record.pixelWidth) × \(record.pixelHeight)"
         window.titleVisibility = .hidden; window.titlebarAppearsTransparent = true
+        // An empty unified toolbar places the traffic lights at x 19, 42, 65 and centers them in the
+        // 51 pt bar, as in CleanShot. The SwiftUI bar draws everything else beneath the titlebar.
+        window.toolbar = NSToolbar(identifier: "editor")
+        window.toolbarStyle = .unified
+        window.titlebarSeparatorStyle = .none
         window.minSize = NSSize(width: 720, height: 400)
         window.isReleasedWhenClosed = false
         super.init(window: window)
@@ -23,6 +28,19 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         model.close = { [weak self] in self?.finishAndClose() }
     }
     required init?(coder: NSCoder) { nil }
+
+    /// Like CleanShot, the window wraps the image at the zoom the canvas will fit it to: actual size
+    /// when the screen has room, otherwise scaled down to fit it.
+    private static func initialFrame(for record: CaptureRecord) -> CGRect {
+        let screen = NSScreen.main ?? NSScreen.screens.first
+        let visible = screen?.visibleFrame.insetBy(dx: 32, dy: 32) ?? CGRect(x: 0, y: 0, width: 1100, height: 780)
+        let scale = screen?.backingScaleFactor ?? 2
+        let chrome = CGSize(width: 2 * EditorCanvas.margin, height: 2 * EditorCanvas.margin + 2 * EditorBar.height + 2)
+        let image = CGSize(width: CGFloat(record.pixelWidth) / scale, height: CGFloat(record.pixelHeight) / scale)
+        let zoom = min(1, (visible.width - chrome.width) / image.width, (visible.height - chrome.height) / image.height)
+        return CGRect(x: 0, y: 0, width: max(image.width * zoom + chrome.width, 720),
+                      height: max(image.height * zoom + chrome.height, 400))
+    }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if closing { return true }
@@ -50,7 +68,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
                 _ = try await model.document.flush()
                 await model.coordinator.keepEditedCapture(model.document.record.id)
                 closing = true; window?.close()
-            } catch { model.coordinator.showError(error, title: "Couldn't retain edits") }
+            } catch {
+                window?.makeKeyAndOrderFront(nil)  // A Drag Me drop hides the window before closing.
+                model.coordinator.showError(error, title: "Couldn't retain edits")
+            }
         }
     }
     func windowWillClose(_ notification: Notification) { didClose?() }
@@ -74,7 +95,7 @@ final class EditorWindowModel {
         didSet { canvas.tool = tool }
     }
     var selectionVersion = 0
-    var zoomLabel = "Fit"
+    var zoomLabel = "100%"
     var busy = false
     var saveAndClose = false
     var close: (() -> Void)?
@@ -222,7 +243,7 @@ final class EditorWindowModel {
         if let value { canvas.setZoom(value / (canvas.window?.backingScaleFactor ?? 2)) } else { canvas.fit() }
     }
     private func updateZoomLabel() {
-        zoomLabel = canvas.isFitting ? "Fit" : "\(Int((canvas.zoom * (canvas.window?.backingScaleFactor ?? 2) * 100).rounded()))%"
+        zoomLabel = "\(Int((canvas.zoom * (canvas.window?.backingScaleFactor ?? 2) * 100).rounded()))%"
     }
     func execute(_ command: CommandID) {
         if let tool = command.tool { self.tool = tool; return }
@@ -306,62 +327,68 @@ private struct EditorWindowView: View {
     @Bindable var model: EditorWindowModel
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 5) {
-                Spacer().frame(width: 68)
+            HStack(spacing: 0) {
                 if model.tool == .crop {
-                    // Canvas state is AppKit-owned; its callback invalidates these controls.
-                    let _ = model.selectionVersion
-                    let cropSize = model.canvas.cropDraft?.size ?? .zero
-                    Text("Crop").fontWeight(.medium)
-                    TextField("Width", value: Binding(get: { Double(cropSize.width) }, set: { model.canvas.setCropSize(width: $0) }), format: .number).frame(width: 70)
-                    Text("×")
-                    TextField("Height", value: Binding(get: { Double(cropSize.height) }, set: { model.canvas.setCropSize(height: $0) }), format: .number).frame(width: 70)
-                    Picker("Aspect", selection: Binding(get: { model.canvas.cropAspect }, set: { model.canvas.setCropAspect($0) })) {
-                        Text("Freeform").tag(CGFloat?.none)
-                        Text("Square").tag(CGFloat?.some(1))
-                        Text("16:9").tag(CGFloat?.some(16 / 9))
-                        Text("4:3").tag(CGFloat?.some(4 / 3))
-                    }.pickerStyle(.menu).labelsHidden().fixedSize()
-                    Spacer()
-                    Button("Cancel") { model.canvas.cancelCrop(); model.tool = .select }
-                    Button("Apply") { model.canvas.applyCrop(); model.tool = .select }
-                        .keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
+                    cropBar
                 } else {
                     // Crop changes the whole image, so it sits apart from the drawing tools, as in CleanShot.
-                    ToolButton(model: model, tool: .crop).toolGroup()
-                    HStack(spacing: 2) {
-                        ForEach(EditorTool.allCases.filter { $0 != .crop }, id: \.self) { ToolButton(model: model, tool: $0) }
-                    }
-                    .toolGroup()
+                    ToolButton(model: model, tool: .crop, isStandalone: true)
+                    ToolStrip(model: model).padding(.leading, EditorBar.groupSpacing)
                     // Select without an editable selection has no options; hide rather than disable.
                     if model.styleTool != .select {
-                        Divider().frame(height: 24)
-                        EditorOptions(model: model)
+                        EditorOptions(model: model).padding(.leading, EditorBar.groupSpacing)
                     }
-                    Spacer(minLength: 4)
-                    Button("Copy Image", systemImage: "doc.on.doc") { model.copy() }
-                        .help(help(.copyImage))
-                    Button("Save", systemImage: "square.and.arrow.down") { model.save(asNew: NSEvent.modifierFlags.contains(.option)) }
-                        .help("\(help(.save)). Option-click to save as.")
-                        .disabled(model.busy)
-                    Button("Done") { model.close?() }.buttonStyle(.borderedProminent)
+                    Spacer(minLength: EditorBar.groupSpacing)
+                    HStack(spacing: EditorBar.buttonSpacing) {
+                        Button("Copy Image", systemImage: "doc.on.doc") { model.copy() }
+                            .help(help(.copyImage))
+                        Button("Save", systemImage: "square.and.arrow.down") { model.save(asNew: NSEvent.modifierFlags.contains(.option)) }
+                            .help("\(help(.save)). Option-click to save as.")
+                            .disabled(model.busy)
+                    }
+                    .buttonStyle(.editorBarIcon)
+                    Button("Done") { model.close?() }.buttonStyle(.editorBarProminent).padding(.leading, 10)
                 }
             }
             .labelStyle(.iconOnly)
-            .padding(.horizontal, 10).frame(height: 52)
+            .padding(.leading, EditorBar.leadingInset).padding(.trailing, EditorBar.edgeInset)
+            .frame(height: EditorBar.height)
+            .background(EditorBarBackground())
             Divider()
             CanvasContainer(canvas: model.canvas)
             Divider()
             ZStack {
                 HStack {
-                    Menu(model.zoomLabel) {
-                        Button("Fit") { model.setZoom(nil) }
-                        ForEach([25, 50, 100, 200, 400], id: \.self) { value in Button("\(value)%") { model.setZoom(CGFloat(value) / 100) } }
-                    }.frame(width: 90)
+                    ZoomMenu(model: model)
                     Spacer()
                 }
-                EditorDragHandle(model: model).frame(width: 150, height: 28)
-            }.padding(.horizontal, 12).frame(height: 36)
+                EditorDragHandle(model: model).frame(width: 115, height: 31)
+            }
+            .padding(.horizontal, EditorBar.edgeInset)
+            .frame(height: EditorBar.height)
+            .background(EditorBarBackground())
+        }
+    }
+
+    @ViewBuilder private var cropBar: some View {
+        // Canvas state is AppKit-owned; its callback invalidates these controls.
+        let _ = model.selectionVersion
+        let cropSize = model.canvas.cropDraft?.size ?? .zero
+        HStack(spacing: 6) {
+            Text("Crop").fontWeight(.medium)
+            TextField("Width", value: Binding(get: { Double(cropSize.width) }, set: { model.canvas.setCropSize(width: $0) }), format: .number).frame(width: 70)
+            Text("×")
+            TextField("Height", value: Binding(get: { Double(cropSize.height) }, set: { model.canvas.setCropSize(height: $0) }), format: .number).frame(width: 70)
+            Picker("Aspect", selection: Binding(get: { model.canvas.cropAspect }, set: { model.canvas.setCropAspect($0) })) {
+                Text("Freeform").tag(CGFloat?.none)
+                Text("Square").tag(CGFloat?.some(1))
+                Text("16:9").tag(CGFloat?.some(16 / 9))
+                Text("4:3").tag(CGFloat?.some(4 / 3))
+            }.pickerStyle(.menu).labelsHidden().fixedSize()
+            Spacer()
+            Button("Cancel") { model.canvas.cancelCrop(); model.tool = .select }.buttonStyle(.editorBar)
+            Button("Apply") { model.canvas.applyCrop(); model.tool = .select }
+                .keyboardShortcut(.defaultAction).buttonStyle(.editorBarProminent)
         }
     }
 
@@ -370,29 +397,77 @@ private struct EditorWindowView: View {
     }
 }
 
-/// One tool in the toolbar; the active tool is a filled accent tile.
+/// CleanShot's zoom control: the current percentage, even while fitting, with zoom steps,
+/// Fit Canvas, and three fixed levels.
+private struct ZoomMenu: View {
+    let model: EditorWindowModel
+    var body: some View {
+        Menu {
+            item("Zoom In", .zoomIn)
+            item("Zoom Out", .zoomOut)
+            Divider()
+            item("Fit Canvas", .zoomToFit)
+            Divider()
+            Button("50%") { model.setZoom(0.5) }
+            item("100%", .actualSize)
+            Button("200%") { model.setZoom(2) }
+        } label: {
+            Text(model.zoomLabel).font(.system(size: 13, weight: .medium)).monospacedDigit()
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .padding(.horizontal, 12)
+        .frame(width: 70, height: EditorBar.buttonHeight)
+        .background(EditorBar.buttonFill, in: Capsule())
+        .help("Zoom")
+    }
+
+    private func item(_ title: String, _ command: CommandID) -> some View {
+        Button(title) { model.execute(command) }
+            .keyboardShortcut(model.commands.shortcut(for: command)?.keyboardShortcut)
+    }
+}
+
+/// The drawing tools as one capsule strip. Thin separators divide tools, except beside the
+/// active tool, whose accent capsule fills the strip's height.
+private struct ToolStrip: View {
+    let model: EditorWindowModel
+    var body: some View {
+        let tools = EditorTool.allCases.filter { $0 != .crop }
+        HStack(spacing: 0) {
+            ForEach(Array(tools.enumerated()), id: \.element) { index, tool in
+                if index > 0 {
+                    Rectangle().fill(.primary.opacity(0.15)).frame(width: 1, height: 12)
+                        .opacity(model.tool == tool || model.tool == tools[index - 1] ? 0 : 1)
+                }
+                ToolButton(model: model, tool: tool, isStandalone: false)
+            }
+        }
+        .background(EditorBar.groupFill, in: Capsule())
+    }
+}
+
+/// One tool. The active tool is an accent capsule; Crop stands alone as a tinted capsule.
 private struct ToolButton: View {
     let model: EditorWindowModel
     let tool: EditorTool
+    let isStandalone: Bool
 
     var body: some View {
         let active = model.tool == tool
         Button { model.tool = tool } label: {
-            ToolIcon(tool: tool).frame(width: 30, height: 26).contentShape(Rectangle())
+            ToolIcon(tool: tool)
+                .font(.system(size: 14, weight: .medium))
+                .frame(width: isStandalone ? EditorBar.iconButtonWidth : EditorBar.toolWidth,
+                       height: isStandalone ? EditorBar.buttonHeight : EditorBar.toolHeight)
+                .contentShape(Capsule())
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
         .foregroundStyle(active ? Color.white : .primary)
-        .background(active ? Color.accentColor : .clear, in: RoundedRectangle(cornerRadius: 6))
+        .background(active ? Color.accentColor : isStandalone ? EditorBar.buttonFill : .clear, in: Capsule())
         .help([CommandID.tool(tool).title, model.commands.shortcut(for: .tool(tool))?.displayString].compactMap { $0 }.joined(separator: " "))
         .accessibilityLabel(CommandID.tool(tool).title)
         .accessibilityAddTraits(active ? .isSelected : [])
-    }
-}
-
-private extension View {
-    /// A grouped strip of tools, like a segmented control.
-    func toolGroup() -> some View {
-        padding(2).background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
