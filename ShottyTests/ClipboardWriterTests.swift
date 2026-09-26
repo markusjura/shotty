@@ -19,19 +19,28 @@ final class ClipboardWriterTests: XCTestCase {
         XCTAssertEqual(board.string(forType: .string), "second display")
     }
 
-    func testPasteHandlerRunsOnceWhenTheImageIsRead() async {
+    func testPasteHandlerRunsOnCommandVOnlyWhileTheImageIsOnTheClipboard() throws {
+        func key(_ characters: String, _ flags: NSEvent.ModifierFlags) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0,
+                                           context: nil, characters: characters, charactersIgnoringModifiers: characters,
+                                           isARepeat: false, keyCode: 9))
+        }
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
         let writer = ClipboardWriter(pasteboard: board)
-        let data = Data([1, 2, 3])
         var pastes = 0
-        XCTAssertTrue(writer.write(data, type: .png, ticket: writer.begin(), onPaste: { pastes += 1 }))
-        await Task.yield()
-        XCTAssertEqual(pastes, 0, "Writing alone is not a paste")
+        XCTAssertTrue(writer.write(Data([1, 2, 3]), type: .png, ticket: writer.begin(), onPaste: { pastes += 1 }))
+        XCTAssertEqual(board.data(forType: .png), Data([1, 2, 3]), "A clipboard manager reading the copy is not a paste")
+        writer.handleKeyDown(try key("v", []))
+        writer.handleKeyDown(try key("v", [.command, .shift]))
+        XCTAssertEqual(pastes, 0)
+        writer.handleKeyDown(try key("v", .command))
+        writer.handleKeyDown(try key("v", .command))
+        XCTAssertEqual(pastes, 1, "Only the first paste counts")
 
-        XCTAssertEqual(board.data(forType: .png), data)
-        XCTAssertEqual(board.data(forType: .png), data)
-        for _ in 0..<5 { await Task.yield() }
-        XCTAssertEqual(pastes, 1)
+        XCTAssertTrue(writer.write(Data([4]), type: .png, ticket: writer.begin(), onPaste: { pastes += 1 }))
+        board.clearContents(); board.setString("other", forType: .string)
+        writer.handleKeyDown(try key("v", .command))
+        XCTAssertEqual(pastes, 1, "Pasting something copied later leaves the thumbnail")
     }
 }

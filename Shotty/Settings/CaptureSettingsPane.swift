@@ -32,6 +32,9 @@ struct CaptureSettingsPane: View {
                     .secondaryNote()
             }
             Toggle("Dismiss thumbnail after pasting", isOn: $preferences.thumbnails.dismissesAfterPaste)
+            if preferences.thumbnails.dismissesAfterPaste && !AXIsProcessTrusted() {
+                Text("Needs Accessibility access to notice ⌘V in other apps.").secondaryNote()
+            }
         }
     }
 

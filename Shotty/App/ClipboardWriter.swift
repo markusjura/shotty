@@ -7,8 +7,9 @@ final class ClipboardWriter {
     private let pasteboard: NSPasteboard
     private var generation = 0
     private var expectedChangeCount = 0
-    /// The pasteboard does not own its data provider; this keeps the current one alive.
-    private var provider: PasteDetector?
+    /// The pending paste handler and the clipboard contents it belongs to.
+    private var pasteWatch: (changeCount: Int, onPaste: @MainActor () -> Void)?
+    private var keyMonitor: Any?
 
     init(pasteboard: NSPasteboard = .general) { self.pasteboard = pasteboard }
 
@@ -18,25 +19,41 @@ final class ClipboardWriter {
         return Ticket(generation: generation)
     }
 
-    /// With `onPaste`, the data is handed over only when another app reads it, which is what a
-    /// paste does, and `onPaste` runs once at that moment. Apps that read the clipboard on their
-    /// own, such as clipboard managers, count as a paste too.
+    /// `onPaste` runs once when the user presses ⌘V in another app while this image is still on
+    /// the clipboard. Clipboard managers read every copy on their own, so a read is not a paste.
+    /// Seeing keystrokes in other apps needs Accessibility access.
     @discardableResult
     func write(_ data: Data, type: NSPasteboard.PasteboardType, ticket: Ticket, onPaste: (@MainActor () -> Void)? = nil) -> Bool {
         guard ticket.generation == generation, expectedChangeCount == pasteboard.changeCount else { return false }
         pasteboard.clearContents()
-        provider = nil
-        let success: Bool
-        if let onPaste {
-            let detector = PasteDetector(data: data, onPaste: onPaste)
-            let item = NSPasteboardItem()
-            success = item.setDataProvider(detector, forTypes: [type]) && pasteboard.writeObjects([item])
-            provider = detector
-        } else {
-            success = pasteboard.setData(data, forType: type)
-        }
+        let success = pasteboard.setData(data, forType: type)
         expectedChangeCount = pasteboard.changeCount
+        pasteWatch = success ? onPaste.map { (pasteboard.changeCount, $0) } : nil
+        updateKeyMonitor()
         return success
+    }
+
+    /// A ⌘V key-down in another app. Anything copied since the write ends the watch.
+    func handleKeyDown(_ event: NSEvent) {
+        guard let watch = pasteWatch else { return }
+        guard pasteboard.changeCount == watch.changeCount else { pasteWatch = nil; updateKeyMonitor(); return }
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock) == .command,
+              event.charactersIgnoringModifiers?.lowercased() == "v" else { return }
+        pasteWatch = nil
+        updateKeyMonitor()
+        watch.onPaste()
+    }
+
+    /// The global monitor exists only while a paste is awaited.
+    private func updateKeyMonitor() {
+        if pasteWatch == nil, let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+            self.keyMonitor = nil
+        } else if pasteWatch != nil, keyMonitor == nil {
+            keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                MainActor.assumeIsolated { self?.handleKeyDown(event) }
+            }
+        }
     }
 
     @discardableResult
@@ -45,20 +62,3 @@ final class ClipboardWriter {
     }
 }
 
-/// Supplies promised clipboard data on first read and reports that read as a paste.
-private final class PasteDetector: NSObject, NSPasteboardItemDataProvider {
-    private let data: Data
-    private var onPaste: (@MainActor () -> Void)?
-
-    init(data: Data, onPaste: @escaping @MainActor () -> Void) {
-        self.data = data
-        self.onPaste = onPaste
-    }
-
-    func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
-        item.setData(data, forType: type)
-        guard let callback = onPaste else { return }
-        onPaste = nil
-        Task { @MainActor in callback() }
-    }
-}
