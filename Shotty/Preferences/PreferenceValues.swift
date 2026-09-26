@@ -175,6 +175,9 @@ struct ThumbnailPreferences: Codable, Equatable, Sendable {
     var autoCloseDelaySeconds = 10
     var dismissesAfterSave = true
     var dismissesAfterDrag = true
+    /// Hides the stack from the start of a capture until its pixels are taken, so thumbnails
+    /// never appear in screenshots. Off by default: the stack stays visible, as in CleanShot.
+    var hidesDuringCapture = false
 
     var isValid: Bool { Self.autoCloseDelayRange.contains(autoCloseDelaySeconds) }
 }

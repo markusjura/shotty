@@ -32,6 +32,7 @@ struct ThumbnailSettingsPane: View {
                         }
                     }
                 }
+                Toggle("Hide while capturing", isOn: $preferences.thumbnails.hidesDuringCapture)
                 if case .display(let uuid, _) = preferences.thumbnails.display, !screens.contains(where: { $0.uuid == uuid }) {
                     Text("Uses the main display until this one reconnects.").secondaryNote()
                 } else if preferences.thumbnails.display == .followPointer {

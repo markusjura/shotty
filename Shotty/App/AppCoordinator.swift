@@ -95,6 +95,8 @@ final class AppCoordinator {
         let settings = preferences.snapshot(for: kind)
         let ticket = clipboard.begin()
         isCapturing = true
+        // Ordered out before any pixels are taken, and back once they are, so new cards still appear.
+        thumbnails.hiddenForCapture = preferences.thumbnails.hidesDuringCapture
         if kind == .fullscreen {
             let screens = NSScreen.screens
             let targets: [NSScreen]
@@ -104,7 +106,7 @@ final class AppCoordinator {
             case .pointerDisplay: targets = screens.filter { $0.frame.contains(NSEvent.mouseLocation) }
             }
             captureTask = Task {
-                defer { isCapturing = false; captureTask = nil }
+                defer { isCapturing = false; captureTask = nil; thumbnails.hiddenForCapture = false }
                 for screen in targets {
                     guard let id = screen.displayID else { continue }
                     do {
@@ -120,6 +122,7 @@ final class AppCoordinator {
             selector.begin(kind: kind, configuration: config) { [weak self] result in
                 guard let self else { return }
                 isCapturing = false
+                thumbnails.hiddenForCapture = false
                 switch result {
                 case .success(.image(let image, let selectedKind, let scale)):
                     if selectedKind == .text { recognizeText?(image, settings, ticket) }

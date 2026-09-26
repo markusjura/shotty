@@ -40,6 +40,8 @@ final class ThumbnailCoordinator {
     /// Newest first.
     private(set) var cards: [Card] = []
     var hidden = false
+    /// Set while a capture takes its pixels, when the user hides thumbnails during capture.
+    var hiddenForCapture = false { didSet { if hiddenForCapture != oldValue { refresh() } } }
     var perform: ((UUID, Action) -> Void)?
     /// Supplies current command bindings; nil falls back to the registry defaults.
     var commands: CommandRegistry?
@@ -103,7 +105,7 @@ final class ThumbnailCoordinator {
     var width: CGFloat { preferences.thumbnails.size.width }
 
     func refresh(animated: Bool = false) {
-        guard !hidden, !cards.isEmpty else {
+        guard !hidden, !hiddenForCapture, !cards.isEmpty else {
             stopTracking()
             showingOverflow = false
             panel?.orderOut(nil)
@@ -192,7 +194,7 @@ final class ThumbnailCoordinator {
                 let elapsed = now - last
                 last = now
                 let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
-                let paused = self.hidden || self.hovering || self.isLocked
+                let paused = self.hidden || self.hiddenForCapture || self.hovering || self.isLocked
                 let expired = self.countdown.advance(by: seconds) { id in paused || self.pausesAutoClose?(id) == true }
                 let mode = self.preferences.thumbnails.autoClose
                 for id in expired where mode != .never && self.cards.contains(where: { $0.id == id }) {
