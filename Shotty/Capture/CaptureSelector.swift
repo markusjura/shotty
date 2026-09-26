@@ -614,15 +614,8 @@ private final class SelectionView: NSView {
             // Occluded parts of the frozen target become visible, exactly where the window is.
             preview.draw(in: local(selected))
         }
-        // Nothing covers the screen until a region exists. A scrolling region dims its surroundings,
-        // a drawn area gets a light tint inside a white border, and a hovered window a blue tint.
-        if let selected, selector.kind == .scrolling {
-            let shade = NSBezierPath(rect: bounds)
-            shade.appendRect(local(selected))
-            shade.windingRule = .evenOdd
-            Chrome.scrim.setFill()
-            shade.fill()
-        }
+        // Nothing covers the screen until a region exists. An area or scrolling region is outlined
+        // in white with a faint wash; a hovered window gets a blue tint.
         if let selected {
             let rect = local(selected)
             if selector.kind == .window {
@@ -630,21 +623,10 @@ private final class SelectionView: NSView {
                 rect.fill()
                 let symbol = NSImage(systemSymbolName: "camera.fill", accessibilityDescription: "Capture window")
                 symbol?.draw(in: CGRect(x: rect.midX - 18, y: rect.midY - 15, width: 36, height: 30))
-            }
-            if selector.kind != .window && selector.kind != .scrolling {
-                Chrome.selectionTint.setFill()
-                rect.fill()
-            }
-            if selector.drawsHandles {
-                drawHandles(around: rect)
-            } else if selector.kind == .scrolling {
-                NSColor.controlAccentColor.setStroke()
-                let path = NSBezierPath(rect: rect)
-                path.lineWidth = 1
-                path.stroke()
             } else {
-                drawBorder(around: rect)
+                Chrome.drawSelection(rect)
             }
+            if selector.drawsHandles { drawHandles(around: rect) }
         } else if selector.kind == .scrolling {
             drawInstruction()
         }
@@ -665,21 +647,6 @@ private final class SelectionView: NSView {
     }
 
     static let scrollingInstruction = "Drag to capture the scrolling part of the screen."
-
-    /// White one-point border just outside the region, clear of its pixels. A soft shadow keeps it
-    /// visible over white content.
-    private func drawBorder(around rect: CGRect) {
-        let path = NSBezierPath(rect: rect.insetBy(dx: -0.5, dy: -0.5))
-        path.lineWidth = 1
-        NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowColor = .black.withAlphaComponent(0.35)
-        shadow.shadowBlurRadius = 1.5
-        shadow.set()
-        NSColor.white.setStroke()
-        path.stroke()
-        NSGraphicsContext.restoreGraphicsState()
-    }
 
     /// White corner brackets and edge bars drawn just outside the region, clear of its pixels.
     private func drawHandles(around rect: CGRect) {
@@ -719,24 +686,19 @@ private final class SelectionView: NSView {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    /// The scrolling prompt, centered on each display until a region is drawn.
+    /// The scrolling prompt, centered on each display until a region is drawn. Sized like
+    /// CleanShot's: 20 pt regular text in a 59 pt pill, with no shadow.
     private func drawInstruction() {
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 15, weight: .medium),
+        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 20, weight: .regular),
                                                          .foregroundColor: Chrome.controlLabel]
         let text = Self.scrollingInstruction as NSString
         let size = text.size(withAttributes: attributes)
-        let pill = CGRect(x: bounds.midX - size.width / 2 - 22, y: bounds.midY - size.height / 2 - 12,
-                          width: size.width + 44, height: size.height + 24)
-        NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowColor = .black.withAlphaComponent(0.3)
-        shadow.shadowBlurRadius = 10
-        shadow.shadowOffset = CGSize(width: 0, height: -2)
-        shadow.set()
+        let padding = CGSize(width: 24, height: 18)
+        let pill = CGRect(x: bounds.midX - size.width / 2 - padding.width, y: bounds.midY - size.height / 2 - padding.height,
+                          width: size.width + 2 * padding.width, height: size.height + 2 * padding.height)
         Chrome.controlFill.setFill()
         NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
-        NSGraphicsContext.restoreGraphicsState()
-        text.draw(at: CGPoint(x: pill.minX + 22, y: pill.minY + 12), withAttributes: attributes)
+        text.draw(at: CGPoint(x: pill.minX + padding.width, y: pill.minY + padding.height), withAttributes: attributes)
     }
 
     private func point(_ event: NSEvent) -> CGPoint { window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation }

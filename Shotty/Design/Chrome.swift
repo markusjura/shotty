@@ -18,10 +18,10 @@ enum Chrome {
     /// Label on `controlFill`; dark gray reads softer than black at small sizes.
     static let controlLabel = NSColor(white: 0.14, alpha: 1)
     static let controlLabelDisabled = NSColor(white: 0.14, alpha: 0.4)
-    /// Dims everything outside a selected scrolling region.
-    static let scrim = NSColor.black.withAlphaComponent(0.3)
-    /// Light wash inside a drawn capture area, matching CleanShot's selection.
-    static let selectionTint = NSColor.white.withAlphaComponent(0.15)
+    /// A capture region: an opaque white border with a faint white wash inside. The screen
+    /// around it keeps its own colors.
+    static let selectionBorder = NSColor.white
+    static let selectionTint = NSColor.white.withAlphaComponent(0.1)
     /// Small dark readouts such as selection dimensions.
     static let readoutFill = NSColor.black.withAlphaComponent(0.78)
 
@@ -78,5 +78,18 @@ extension View {
     /// Secondary explanatory text under a control or message.
     func secondaryNote() -> some View {
         font(.callout).foregroundStyle(.secondary)
+    }
+}
+
+extension Chrome {
+    /// Draws a capture region in view coordinates: the wash inside it and a 1 pt border just
+    /// outside, so neither touches the pixels being captured.
+    static func drawSelection(_ rect: CGRect) {
+        selectionTint.setFill()
+        rect.fill()
+        selectionBorder.setStroke()
+        let border = NSBezierPath(rect: rect.insetBy(dx: -0.5, dy: -0.5))
+        border.lineWidth = 1
+        border.stroke()
     }
 }

@@ -204,8 +204,8 @@ final class ScrollingCaptureController {
     /// Dims the display around the region, attaches Cancel and Done below it, and places Auto Scroll
     /// inside it at the bottom. Shotty's windows are excluded from the capture stream.
     private func showPanels(around region: CGRect, on screen: NSScreen) {
-        let shade = Self.overlayPanel(frame: screen.frame, content: ShadeView(hole: region.offsetBy(dx: -screen.frame.minX, dy: -screen.frame.minY)))
-        shade.ignoresMouseEvents = true
+        let outline = Self.overlayPanel(frame: screen.frame, content: RegionView(region: region.offsetBy(dx: -screen.frame.minX, dy: -screen.frame.minY)))
+        outline.ignoresMouseEvents = true
 
         let visible = screen.visibleFrame.insetBy(dx: 8, dy: 8)
         let barSize = CGSize(width: 240, height: 50)
@@ -222,7 +222,7 @@ final class ScrollingCaptureController {
         let autoScroll = Self.overlayPanel(frame: CGRect(origin: autoOrigin, size: autoSize),
                                            content: NSHostingView(rootView: AutoScrollControl(controller: self)), canBecomeKey: false)
 
-        panels = [shade, autoScroll, bar]
+        panels = [outline, autoScroll, bar]
         panels.forEach { $0.orderFrontRegardless() }
         // Return, Escape, and Space reach the controls while the target app stays active.
         bar.makeKey()
@@ -244,27 +244,18 @@ final class ScrollingCaptureController {
     }
 }
 
-/// Dims the display outside the captured region and outlines it just outside its edge.
-private final class ShadeView: NSView {
-    private let hole: CGRect
+/// Outlines the captured region like the selector does, leaving the rest of the display as is.
+/// The capture stream excludes Shotty's windows, so the wash never appears in the image.
+private final class RegionView: NSView {
+    private let region: CGRect
 
-    init(hole: CGRect) {
-        self.hole = hole
+    init(region: CGRect) {
+        self.region = region
         super.init(frame: .zero)
     }
     required init?(coder: NSCoder) { nil }
 
-    override func draw(_ dirtyRect: NSRect) {
-        let shade = NSBezierPath(rect: bounds)
-        shade.appendRect(hole)
-        shade.windingRule = .evenOdd
-        Chrome.scrim.setFill()
-        shade.fill()
-        NSColor.white.withAlphaComponent(0.7).setStroke()
-        let outline = NSBezierPath(rect: hole.insetBy(dx: -1, dy: -1))
-        outline.lineWidth = 1
-        outline.stroke()
-    }
+    override func draw(_ dirtyRect: NSRect) { Chrome.drawSelection(region) }
 }
 
 /// Cancel and Done below the region. Return, Escape, and Space work because this panel is key.
