@@ -160,6 +160,14 @@ Scrolling selection's new white handles were inspected in build 13. Return opene
 
 The native drag source accepts the first mouse interaction, prevents window movement from consuming the gesture, and supplies a cropped drag preview with the full-resolution file promise. Computer Use reached `Starting thumbnail file-promise drag`, but did not establish a completed drop. A physical Finder drop was requested using the empty temporary folder `/tmp/shotty-drop-check.8h2zWT`; its outcome remains pending. Do not claim successful-drop dismissal or Option-to-keep until physically checked.
 
+### Design consistency pass, builds 21 to 41
+
+Signed build 41 is installed on studio. All 151 tests pass (`/tmp/shotty-design-tests.log`). Computer Use walked every user-facing surface on the installed build: thumbnail idle, hover, keyboard focus, Copy checkmark, Undo Dismiss, context menu, editor toolbar, Arrow/Rectangle/Counter options popovers, Crop mode, all six Settings panes in Dark and Light, area selection readout, scrolling instruction pill, selection handles with Start Capture, active scrolling controls with the preview, Auto Scroll running and self-pausing, Keep Partial Capture review, the Capture Text result panel, and the text review window.
+
+This pass found and fixed one crash. Option-Shift-arrow resizing of a selection aborted with a Swift exclusivity conflict because the observed selection was mutated in place; the adjustment is now computed first and assigned once, with a unit test. It also found that `.fixedSize()` on segmented pickers widened scrolling Settings panes by 11 points and shifted the sidebar. The modifier was removed and the pane now matches the others.
+
+Window-capture and frozen Capture Text runs through Computer Use still fail validation because the tool's own 126-point cursor window disappears during freezing (`FrozenCapture` log names that window). This is the known test-tool artifact. Capture Text was checked with freezing temporarily off; Freeze screen, Open Review, and System appearance were restored afterwards.
+
 ## Pending acceptance checklist
 
 Nothing below is claimed until it has run. Kinds: automated means unit or integration tests; native means the installed app operated on studio, through Computer Use where it can; physical means Markus must perform it, because tools cannot emit the input or OS change; tool limit notes where Computer Use evidence is insufficient.
