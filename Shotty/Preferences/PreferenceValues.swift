@@ -109,34 +109,27 @@ struct TextCapturePreferences: Codable, Equatable, Sendable {
 }
 
 enum ScrollPace: String, Codable, CaseIterable, Sendable {
-    case slow, adaptive, fast
+    case slow, normal, fast
 
-    /// Desired progress per settled frame as a fraction of the selected axis extent.
-    var stepFraction: Double {
+    /// Auto Scroll speed in viewports per second along the scrolling axis.
+    var viewportsPerSecond: Double {
         switch self {
-        case .slow: 0.1
-        case .adaptive: 0.2
-        case .fast: 0.3
+        case .slow: 0.6
+        case .normal: 1.2
+        case .fast: 2
         }
     }
 }
 
 struct ScrollingPreferences: Codable, Equatable, Sendable {
-    /// Upper bounds are the tested 30,000-pixel / 120-second envelope.
     static let axisPixelRange = 5_000...30_000
-    static let durationRange = 30...120
 
-    var pace = ScrollPace.adaptive
+    var pace = ScrollPace.normal
     var maximumAxisPixels = 30_000
-    var maximumDurationSeconds = 120
 
-    var isValid: Bool {
-        Self.axisPixelRange.contains(maximumAxisPixels) && Self.durationRange.contains(maximumDurationSeconds)
-    }
+    var isValid: Bool { Self.axisPixelRange.contains(maximumAxisPixels) }
 
-    var limits: ScrollLimits {
-        ScrollLimits(maximumAxisPixels: maximumAxisPixels, maximumDuration: TimeInterval(maximumDurationSeconds))
-    }
+    var limits: ScrollStitcher.Limits { ScrollStitcher.Limits(maximumExtent: maximumAxisPixels) }
 }
 
 // MARK: - Thumbnails

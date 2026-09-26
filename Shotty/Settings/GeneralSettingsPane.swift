@@ -19,10 +19,6 @@ struct GeneralSettingsPane: View {
             Section {
                 Toggle("Show in menu bar", isOn: $preferences.general.showsMenuBarIcon)
                 Toggle("Show in Dock", isOn: $preferences.general.showsDockIcon)
-                if !preferences.general.showsMenuBarIcon && !preferences.general.showsDockIcon {
-                    Text("Shortcuts still work. Open Shotty again to return here.")
-                        .secondaryNote()
-                }
                 Toggle("Open at login", isOn: Binding(get: { loginStatus == .enabled || loginStatus == .requiresApproval }, set: setLogin))
                 if loginStatus == .requiresApproval {
                     LabeledContent("Login item") {

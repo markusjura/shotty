@@ -28,7 +28,7 @@ struct CaptureSettingsPane: View {
                     .disabled(preferences.capture.outputs == [output])
             }
             if preferences.capture.outputs.count == 1 {
-                Text("At least one action must stay on.")
+                Text("At least one option must be enabled.")
                     .secondaryNote()
             }
         }
@@ -151,18 +151,13 @@ struct CaptureSettingsPane: View {
         Section("Scrolling Capture") {
             Picker("Auto Scroll pace", selection: $preferences.scrolling.pace) {
                 Text("Slow").tag(ScrollPace.slow)
-                Text("Adaptive").tag(ScrollPace.adaptive)
+                Text("Normal").tag(ScrollPace.normal)
                 Text("Fast").tag(ScrollPace.fast)
             }
             .pickerStyle(.segmented)
             Stepper(value: $preferences.scrolling.maximumAxisPixels, in: ScrollingPreferences.axisPixelRange, step: 1_000) {
                 Text("Maximum length: \(preferences.scrolling.maximumAxisPixels.formatted()) pixels")
             }
-            Stepper(value: $preferences.scrolling.maximumDurationSeconds, in: ScrollingPreferences.durationRange, step: 10) {
-                Text("Maximum duration: \(preferences.scrolling.maximumDurationSeconds) seconds")
-            }
-            Text("Scrolling by hand first turns off Auto Scroll for that capture.")
-                .secondaryNote()
         }
     }
 

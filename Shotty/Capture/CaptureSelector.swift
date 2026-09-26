@@ -35,7 +35,7 @@ struct SelectionConfiguration {
 
 enum CaptureSelection {
     case image(CGImage, kind: CaptureKind, scale: Double)
-    case scrolling(region: CGRect, windowID: CGWindowID, processID: pid_t, displayID: CGDirectDisplayID)
+    case scrolling(region: CGRect, displayID: CGDirectDisplayID)
 }
 
 /// One selection owns its snapshots and panels. Completion transfers immutable
@@ -359,14 +359,12 @@ final class CaptureSelector {
         guard let selection, selection.width >= 1, selection.height >= 1,
               displays.contains(where: { $0.frame.intersects(selection) }) else { return }
         if kind == .scrolling {
-            guard let display = displays.first(where: { $0.frame.contains(selection) }),
-                  let target = windows.first(where: { $0.frame.contains(CGPoint(x: selection.midX, y: selection.midY)) }) else {
-                errorMessage = "Select one scrollable region inside one display."
+            guard let display = displays.first(where: { $0.frame.contains(selection) }) else {
+                errorMessage = "Keep the region on one display."
                 redraw()
                 return
             }
-            finish(.success(.scrolling(region: selection, windowID: target.id,
-                                       processID: target.processID, displayID: display.id)))
+            finish(.success(.scrolling(region: selection, displayID: display.id)))
             return
         }
         let (kind, displays, freeze) = (kind, displays, configuration.freeze)
@@ -475,7 +473,7 @@ final class CaptureSelector {
     /// Scrolling confirms with a single Start Capture control that follows the region's bottom edge.
     /// Return and Escape still reach the key selection surface.
     private func showStartCapture() {
-        let panel = StartCapturePanel(contentRect: CGRect(x: 0, y: 0, width: 170, height: 46),
+        let panel = NonKeyPanel(contentRect: CGRect(x: 0, y: 0, width: 170, height: 46),
                                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false
         panel.isOpaque = false
@@ -725,8 +723,9 @@ private final class SelectionView: NSView {
     override func keyUp(with event: NSEvent) { selector.keyUp(event) }
 }
 
-/// Clicking Start must leave selection keys on the overlay if validation rejects the region.
-private final class StartCapturePanel: NSPanel {
+/// A clickable overlay control that never takes keyboard focus, so Return and Escape keep
+/// reaching the panel that handles them. Clicking Start leaves selection keys on the overlay.
+final class NonKeyPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 }

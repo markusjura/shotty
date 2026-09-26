@@ -20,7 +20,7 @@ final class AppCoordinator {
     private var saveAllTask: Task<Void, Never>?
     var openEditor: ((UUID) -> Void)?
     var recognizeText: ((CGImage, CaptureOutputSnapshot, ClipboardWriter.Ticket) -> Void)?
-    var startScrolling: ((CGRect, CGWindowID, pid_t, CGDirectDisplayID, CaptureOutputSnapshot, ClipboardWriter.Ticket) -> Void)?
+    var startScrolling: ((CGRect, CGDirectDisplayID, CaptureOutputSnapshot, ClipboardWriter.Ticket) -> Void)?
     var flushEditors: (() async throws -> Void)?
     var stopAuxiliaryCapture: (() async -> Void)?
     var auxiliaryCaptureActive: (() -> Bool)?
@@ -130,8 +130,8 @@ final class AppCoordinator {
                             self.captureTask = nil; self.isCapturing = false
                         }
                     }
-                case .success(.scrolling(let region, let window, let process, let display)):
-                    startScrolling?(region, window, process, display, settings, ticket)
+                case .success(.scrolling(let region, let display)):
+                    startScrolling?(region, display, settings, ticket)
                 case .failure(let error):
                     if !(error is CancellationError) { showError(error, title: "Couldn't capture selection") }
                 }
@@ -403,7 +403,7 @@ final class AppCoordinator {
         guard ready else { return true }
         if auxiliaryCaptureActive?() == true {
             let alert = NSAlert(); alert.messageText = "Finish your capture before quitting"
-            alert.informativeText = "A scrolling capture or text recognition is still in progress. Use Done or Keep to keep it, or Cancel to discard it, then quit Shotty."
+            alert.informativeText = "A scrolling capture or text recognition is still in progress. Use Done to keep it or Cancel to discard it, then quit Shotty."
             NSApp.activate(); alert.runModal()
             return false
         }
