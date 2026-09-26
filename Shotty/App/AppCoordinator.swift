@@ -108,7 +108,7 @@ final class AppCoordinator {
                 for screen in targets {
                     guard let id = screen.displayID else { continue }
                     do {
-                        let image = try await stillCapture.display(id: id, excluding: ProcessInfo.processInfo.processIdentifier)
+                        let image = try await stillCapture.display(id: id)
                         try Task.checkCancellation()
                         await accept(image, kind: .fullscreen, scale: screen.backingScaleFactor, settings: settings, ticket: ticket)
                     } catch is CancellationError { return }

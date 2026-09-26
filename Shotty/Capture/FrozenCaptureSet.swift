@@ -183,12 +183,13 @@ actor FrozenCaptureSet {
 
     /// At most three acquisitions run together, each with a reserved share of both
     /// budgets. Large rasters fall back to sequential capture when necessary.
-    /// Fixture IDs deliberately bypass own-process exclusion, but still must be on
-    /// screen, normal-layer windows. Nil means the full eligible set, not a shortlist.
+    /// Shotty's own windows stay visible, such as Settings and thumbnails; only the capture
+    /// overlays in `excludingWindowIDs` are left out. Fixture IDs must still be on-screen,
+    /// normal-layer windows. Nil means the full eligible set, not a shortlist.
     static func acquire(shadow: Bool, includeAlternateShadow: Bool = false,
                         displayIDs: Set<CGDirectDisplayID>? = nil,
                         fixtureWindowIDs: Set<CGWindowID>? = nil,
-                        excludingProcessID: pid_t = ProcessInfo.processInfo.processIdentifier,
+                        excludingWindowIDs: Set<CGWindowID> = [],
                         limits: FrozenCaptureLimits = .init()) async throws -> FrozenCaptureSet {
         let started = ProcessInfo.processInfo.systemUptime
         guard CGPreflightScreenCaptureAccess() else { throw CaptureFailure.permissionRequired }
@@ -205,7 +206,7 @@ actor FrozenCaptureSet {
             guard window.isOnScreen, window.windowLayer == 0, !window.frame.isEmpty,
                   selectedDisplays.contains(where: { $0.frame.intersects(window.frame) }) else { return false }
             if let fixtureWindowIDs { return fixtureWindowIDs.contains(window.windowID) }
-            return window.owningApplication.map { $0.processID != excludingProcessID } ?? false
+            return window.owningApplication != nil && !excludingWindowIDs.contains(window.windowID)
         }
         guard fixtureWindowIDs.map({ $0 == Set(selectedWindows.map(\.windowID)) }) ?? true else {
             throw CaptureFailure.targetUnavailable
@@ -232,9 +233,9 @@ actor FrozenCaptureSet {
                     jobs.append(CaptureJob(filter: filter, shadow: includesShadow, target: .window(window.windowID, window.frame)))
                 }
             }
-            let ownApplications = content.applications.filter { $0.processID == excludingProcessID }
+            let overlays = content.windows.filter { excludingWindowIDs.contains($0.windowID) }
             for display in selectedDisplays {
-                let filter = SCContentFilter(display: display, excludingApplications: ownApplications, exceptingWindows: [])
+                let filter = SCContentFilter(display: display, excludingWindows: overlays)
                 jobs.append(CaptureJob(filter: filter, shadow: false, target: .display(display.displayID, display.frame)))
             }
             let requests = jobs
@@ -292,7 +293,7 @@ actor FrozenCaptureSet {
                 guard window.isOnScreen, window.windowLayer == 0, !window.frame.isEmpty,
                       selectedDisplays.contains(where: { $0.frame.intersects(window.frame) }) else { return false }
                 if let fixtureWindowIDs { return fixtureWindowIDs.contains(window.windowID) }
-                return window.owningApplication.map { $0.processID != excludingProcessID } ?? false
+                return window.owningApplication != nil && !excludingWindowIDs.contains(window.windowID)
             }.map(\.windowID))
             let initialWindowIDs = Set(selectedWindows.map(\.windowID))
             let initialDisplayIDs = Set(selectedDisplays.map(\.displayID))

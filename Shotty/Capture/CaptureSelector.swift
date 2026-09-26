@@ -145,10 +145,10 @@ final class CaptureSelector {
                 try Task.checkCancellation()
                 let order = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? [])
                     .compactMap { $0[kCGWindowNumber as String] as? CGWindowID }
-                let ownPID = ProcessInfo.processInfo.processIdentifier
+                // Shotty's own normal windows, such as Settings, are targets too; overlays are not layer 0.
                 var targets: [WindowTarget] = content.windows.compactMap { window in
                     guard window.isOnScreen, window.windowLayer == 0,
-                          let app = window.owningApplication, app.processID != ownPID,
+                          let app = window.owningApplication,
                           let display = content.displays.first(where: { $0.frame.intersects(window.frame) }),
                           let screen = screens.first(where: { $0.displayID == display.displayID }) else { return nil }
                     let geometry = DisplayGeometry(id: display.displayID, appKitFrame: screen.frame,
@@ -160,7 +160,8 @@ final class CaptureSelector {
                                       width: window.frame.width, height: window.frame.height))
                 }.sorted { (order.firstIndex(of: $0.id) ?? .max) < (order.firstIndex(of: $1.id) ?? .max) }
                 if configuration.freeze && kind != .scrolling {
-                    let set = try await FrozenCaptureSet.acquire(shadow: configuration.shadow, includeAlternateShadow: true)
+                    let set = try await FrozenCaptureSet.acquire(shadow: configuration.shadow, includeAlternateShadow: true,
+                                                                 excludingWindowIDs: overlayWindowIDs)
                     guard requestID == request, !Task.isCancelled else { try? await set.close(); return }
                     frozen = set
                     var loaded: [SelectionDisplay] = []
@@ -198,6 +199,12 @@ final class CaptureSelector {
     var cursor: NSCursor { kind == .window || kind == .scrolling ? .arrow : .captureCrosshair }
 
     func updateCursor() { cursor.set() }
+
+    /// The selection surfaces and their controls. Captures leave these out and keep every other
+    /// Shotty window, so thumbnails and Settings stay visible while selecting.
+    private var overlayWindowIDs: Set<CGWindowID> {
+        Set((panels + [adjustmentPanel].compactMap { $0 }).map { CGWindowID($0.windowNumber) })
+    }
 
     func changeMode(_ newKind: CaptureKind) {
         guard isActive, drag == nil else { return }
@@ -368,13 +375,13 @@ final class CaptureSelector {
             finish(.success(.scrolling(region: selection, displayID: display.id)))
             return
         }
-        let (kind, displays, freeze) = (kind, displays, configuration.freeze)
+        let (kind, displays, freeze, overlays) = (kind, displays, configuration.freeze, overlayWindowIDs)
         produce { [capture, renderer] in
             var images = displays
             if !freeze {
                 images = []
                 for display in displays where display.frame.intersects(selection) {
-                    let image = try await capture.display(id: display.id, excluding: ProcessInfo.processInfo.processIdentifier)
+                    let image = try await capture.display(id: display.id, excluding: overlays)
                     images.append(SelectionDisplay(id: display.id, frame: display.frame, scale: display.scale, image: image))
                 }
             }

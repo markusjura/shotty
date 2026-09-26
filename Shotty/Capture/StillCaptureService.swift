@@ -43,14 +43,15 @@ actor StillCaptureService {
         return image
     }
 
-    func display(id: CGDirectDisplayID, excluding processID: pid_t) async throws -> CGImage {
+    /// Everything on the display, Shotty's own windows included, except `excludedWindowIDs`
+    /// (the capture overlays, when present).
+    func display(id: CGDirectDisplayID, excluding excludedWindowIDs: Set<CGWindowID> = []) async throws -> CGImage {
         try preflight()
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
         guard let display = content.displays.first(where: { $0.displayID == id }) else {
             throw CaptureFailure.targetUnavailable
         }
-        let ownApplications = content.applications.filter { $0.processID == processID }
-        let filter = SCContentFilter(display: display, excludingApplications: ownApplications, exceptingWindows: [])
+        let filter = SCContentFilter(display: display, excludingWindows: content.windows.filter { excludedWindowIDs.contains($0.windowID) })
         let configuration = SCScreenshotConfiguration()
         configuration.showsCursor = false
         configuration.dynamicRange = .sdr
