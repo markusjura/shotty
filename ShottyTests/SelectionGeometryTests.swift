@@ -25,6 +25,12 @@ final class SelectionGeometryTests: XCTestCase {
         }
     }
 
+    func testArrowKeysMoveOrResizeWithoutCollapsing() {
+        let rect = CGRect(x: 10, y: 20, width: 30, height: 2)
+        XCTAssertEqual(SelectionGeometry.nudged(rect, dx: -10, dy: 1, resizes: false), CGRect(x: 0, y: 21, width: 30, height: 2))
+        XCTAssertEqual(SelectionGeometry.nudged(rect, dx: -10, dy: -10, resizes: true), CGRect(x: 10, y: 20, width: 20, height: 1))
+    }
+
     func testReverseAndCenteredSquareSelection() {
         XCTAssertEqual(SelectionGeometry.rectangle(from: CGPoint(x: -40, y: 80), to: CGPoint(x: -60, y: 120),
             square: false, centered: false), CGRect(x: -60, y: 80, width: 20, height: 40))

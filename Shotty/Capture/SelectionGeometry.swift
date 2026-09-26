@@ -20,6 +20,13 @@ enum SelectionGeometry {
                       width: abs(dx), height: abs(dy))
     }
 
+    /// Arrow-key adjustment: moves `rect`, or with `resizes` grows or shrinks it from its origin,
+    /// never below one point.
+    static func nudged(_ rect: CGRect, dx: CGFloat, dy: CGFloat, resizes: Bool) -> CGRect {
+        guard resizes else { return rect.offsetBy(dx: dx, dy: dy) }
+        return CGRect(origin: rect.origin, size: CGSize(width: max(1, rect.width + dx), height: max(1, rect.height + dy)))
+    }
+
     static func outputScale(for selection: CGRect, displays: [SelectionDisplay]) -> CGFloat {
         displays.filter { $0.frame.intersects(selection) }.map(\.scale).max() ?? 1
     }

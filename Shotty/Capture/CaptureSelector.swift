@@ -301,10 +301,8 @@ final class CaptureSelector {
             let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
             let dx: CGFloat = event.keyCode == 123 ? -step : event.keyCode == 124 ? step : 0
             let dy: CGFloat = event.keyCode == 125 ? -step : event.keyCode == 126 ? step : 0
-            if event.modifierFlags.contains(.option) {
-                selection?.size.width = max(1, selection!.width + dx)
-                selection?.size.height = max(1, selection!.height + dy)
-            } else { selection = selection?.offsetBy(dx: dx, dy: dy) }
+            // One assignment: mutating the observed property in place conflicts with its own read.
+            selection = selection.map { SelectionGeometry.nudged($0, dx: dx, dy: dy, resizes: event.modifierFlags.contains(.option)) }
             isAdjusting = true
             showAdjustment()
             redraw()
