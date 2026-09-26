@@ -9,7 +9,7 @@ struct EditorSettingsPane: View {
             Section("Copy and save") {
                 Toggle("Close editor after copying", isOn: $preferences.editor.closesAfterCopy)
                 Toggle("Close editor after saving", isOn: $preferences.editor.closesAfterSave)
-                Text("Option-click Copy to invert closing, or Save to choose a location.").font(.callout).foregroundStyle(.secondary)
+                Text("Option-click Copy to invert closing, or Save to choose a location.").secondaryNote()
             }
             toolSection(.arrow) {
                 color("Color", \.arrow.color)
@@ -70,7 +70,7 @@ struct EditorSettingsPane: View {
                         .frame(maxWidth: 260)
                 }
                 Text("Only Solid fully removes the covered content.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .secondaryNote()
             }
             toolSection(.spotlight) {
                 Picker("Shape", selection: $preferences.editor.tools.spotlight.shape) {

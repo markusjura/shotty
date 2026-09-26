@@ -81,7 +81,7 @@ private struct TextResultView: View {
             Image(systemName: symbol).font(.title2).foregroundStyle(.tint).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 8) {
                 Text(message).font(.headline)
-                if let detail { Text(detail).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+                if let detail { Text(detail).secondaryNote().fixedSize(horizontal: false, vertical: true) }
                 HStack {
                     ForEach(actions) { action in
                         if action.isDefault {
@@ -97,7 +97,7 @@ private struct TextResultView: View {
         }
         .padding(14)
         .frame(width: 380, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .floatingSurface()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(message)
     }

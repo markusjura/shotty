@@ -17,7 +17,7 @@ struct PermissionSettingsPane: View {
         Form {
             Section("Screen Recording") {
                 status(screenRecording, granted: "Allowed", missing: screenRecordingRequested ? "Not allowed" : "Not requested")
-                Text("Required for every capture.").font(.callout).foregroundStyle(.secondary)
+                Text("Required for every capture.").secondaryNote()
                 if !screenRecording {
                     HStack {
                         if !screenRecordingRequested {
@@ -27,14 +27,14 @@ struct PermissionSettingsPane: View {
                     }
                     if screenRecordingRequested {
                         Text("Turn Shotty on in System Settings, then reopen it if asked.")
-                            .font(.callout).foregroundStyle(.secondary)
+                            .secondaryNote()
                     }
                 }
             }
             Section("Accessibility") {
                 status(accessibility, granted: "Allowed", missing: "Not allowed")
                 Text("Only Auto Scroll needs this. Manual scrolling works without it.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .secondaryNote()
                 if !accessibility {
                     Button("Open System Settings") { SystemSettingsLink.open(SystemSettingsLink.accessibility) }
                 }
@@ -43,7 +43,7 @@ struct PermissionSettingsPane: View {
                 let url = preferences.capture.destination.url
                 let folder = SaveDestinationCheck.status(of: url)
                 status(folder == .available, granted: FileManager.default.displayName(atPath: url.path), missing: "Unavailable")
-                if let message = folder.message { Text(message).font(.callout).foregroundStyle(.secondary) }
+                if let message = folder.message { Text(message).secondaryNote() }
             }
             Section("Login item") {
                 LabeledContent("Status", value: loginStatus.summary)

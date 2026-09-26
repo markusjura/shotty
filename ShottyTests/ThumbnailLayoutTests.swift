@@ -6,10 +6,12 @@ final class ThumbnailLayoutTests: XCTestCase {
         let heights: [CGFloat] = [196, 196, 196, 196]
         // Four cards with three gaps need exactly 808.
         XCTAssertEqual(ThumbnailLayout.visibleCount(heights: heights, available: 808, hasUndo: false), 4)
-        // With one card hidden, 3 cards plus the overflow row need 640.
-        XCTAssertEqual(ThumbnailLayout.visibleCount(heights: heights, available: 640, hasUndo: false), 3)
-        XCTAssertEqual(ThumbnailLayout.visibleCount(heights: heights, available: 639, hasUndo: false), 2)
-        XCTAssertEqual(ThumbnailLayout.visibleCount(heights: heights, available: 677, hasUndo: true), 2)
+        // With one card hidden, 3 cards plus the overflow row need 644.
+        XCTAssertEqual(ThumbnailLayout.visibleCount(heights: heights, available: 644, hasUndo: false), 3)
+        XCTAssertEqual(ThumbnailLayout.visibleCount(heights: heights, available: 643, hasUndo: false), 2)
+        // The Undo row takes 40 more, so 3 cards need 684.
+        XCTAssertEqual(ThumbnailLayout.visibleCount(heights: heights, available: 684, hasUndo: true), 3)
+        XCTAssertEqual(ThumbnailLayout.visibleCount(heights: heights, available: 683, hasUndo: true), 2)
         XCTAssertEqual(ThumbnailLayout.visibleCount(heights: heights, available: 50, hasUndo: true), 1,
                        "A tiny display still shows the newest capture")
     }

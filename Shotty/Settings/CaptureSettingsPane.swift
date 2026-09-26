@@ -29,7 +29,7 @@ struct CaptureSettingsPane: View {
             }
             if preferences.capture.outputs.count == 1 {
                 Text("At least one action must stay on.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .secondaryNote()
             }
         }
     }
@@ -37,33 +37,30 @@ struct CaptureSettingsPane: View {
     private var destinationSection: some View {
         Section("Save location") {
             LabeledContent("Folder") {
-                VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
                     Text(FileManager.default.displayName(atPath: preferences.capture.destination.url.path))
                         .help(preferences.capture.destination.url.path)
-                    HStack {
-                        Button("Choose…", action: chooseFolder)
-                        Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([preferences.capture.destination.url]) }
-                        if preferences.capture.destination != .downloads {
-                            Button("Use Downloads") { apply(SaveDestination.downloads) }
-                        }
-                    }
-                    if let message = destinationMessage ?? SaveDestinationCheck.status(of: preferences.capture.destination.url).message {
-                        Label(message, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.secondary)
-                    }
+                    Button("Choose…", action: chooseFolder)
                 }
-                .accessibilityElement(children: .contain)
             }
-            VStack(alignment: .leading, spacing: 8) {
-                TextField("File name", text: $preferences.capture.filenameTemplate, prompt: Text(ExportService.defaultFilenameTemplate))
+            HStack {
+                Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([preferences.capture.destination.url]) }
+                if preferences.capture.destination != .downloads {
+                    Button("Use Downloads") { apply(SaveDestination.downloads) }
+                }
+            }
+            if let message = destinationMessage ?? SaveDestinationCheck.status(of: preferences.capture.destination.url).message {
+                Label(message, systemImage: "exclamationmark.triangle").secondaryNote()
+            }
+            TextField("File name", text: $preferences.capture.filenameTemplate, prompt: Text(ExportService.defaultFilenameTemplate))
+            VStack(alignment: .leading, spacing: 4) {
                 Text("Example: \(ExportService.filenameStem(template: preferences.capture.filenameTemplate, date: .now, kind: .area)).\(preferences.capture.format == .png ? "png" : "jpg")")
-                    .font(.callout).foregroundStyle(.secondary)
                 Text("Use {date}, {time}, or {type}. Duplicates are numbered.")
-                    .font(.callout).foregroundStyle(.secondary)
-                if preferences.capture.filenameTemplate != ExportService.defaultFilenameTemplate {
-                    Button("Restore Default Name") { preferences.capture.filenameTemplate = ExportService.defaultFilenameTemplate }
-                }
             }
-            .accessibilityElement(children: .contain)
+            .secondaryNote()
+            if preferences.capture.filenameTemplate != ExportService.defaultFilenameTemplate {
+                Button("Restore Default Name") { preferences.capture.filenameTemplate = ExportService.defaultFilenameTemplate }
+            }
         }
     }
 
@@ -74,7 +71,6 @@ struct CaptureSettingsPane: View {
                 Text("JPEG").tag(ImageFormatPreference.jpeg)
             }
             .pickerStyle(.segmented)
-            .fixedSize()
             if preferences.capture.format == .jpeg {
                 LabeledContent("Quality") {
                     HStack {
@@ -90,17 +86,17 @@ struct CaptureSettingsPane: View {
                             supportsOpacity: false)
             }
             Picker("Color", selection: $preferences.capture.colorHandling) {
-                Text("Keep display color profile").tag(ColorHandlingPreference.preserveSource)
-                Text("Convert to sRGB").tag(ColorHandlingPreference.convertToSRGB)
+                Text("Display profile").tag(ColorHandlingPreference.preserveSource)
+                Text("sRGB").tag(ColorHandlingPreference.convertToSRGB)
             }
             Picker("Resolution", selection: $preferences.capture.outputScale) {
                 Text("Native pixels").tag(OutputScalePreference.native)
                 Text("1× (points)").tag(OutputScalePreference.logical)
             }
-            Picker("Fullscreen captures", selection: $preferences.capture.fullscreenTarget) {
-                Text("Display under the pointer").tag(FullscreenTarget.pointerDisplay)
+            Picker("Fullscreen", selection: $preferences.capture.fullscreenTarget) {
+                Text("Display under pointer").tag(FullscreenTarget.pointerDisplay)
                 Text("Main display").tag(FullscreenTarget.mainDisplay)
-                Text("Every display, one image each").tag(FullscreenTarget.allDisplays)
+                Text("Each display").tag(FullscreenTarget.allDisplays)
             }
         }
     }
@@ -126,7 +122,7 @@ struct CaptureSettingsPane: View {
                     .disabled(preferences.text.outputs == [output])
             }
             if preferences.text.outputs.contains(.saveText) {
-                Text("Saved as UTF-8 in the save location above.").font(.callout).foregroundStyle(.secondary)
+                Text("Saved as UTF-8 in the save location above.").secondaryNote()
             }
             Toggle("Keep line breaks", isOn: $preferences.text.preservesLineBreaks)
             Toggle("Detect languages automatically", isOn: $preferences.text.detectsLanguageAutomatically)
@@ -135,35 +131,33 @@ struct CaptureSettingsPane: View {
         }
     }
 
-    private var languageList: some View {
-        LabeledContent("Languages, in order") {
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(preferences.text.languages.enumerated()), id: \.element) { index, identifier in
-                    HStack {
-                        Text(Self.languageName(identifier))
-                        Spacer()
-                        Button("Move Up", systemImage: "arrow.up") { preferences.text.languages.swapAt(index, index - 1) }
-                            .labelStyle(.iconOnly).disabled(index == 0)
-                        Button("Remove", systemImage: "minus.circle") { preferences.text.languages.remove(at: index) }
-                            .labelStyle(.iconOnly)
-                            .disabled(preferences.text.languages.count == 1 && !preferences.text.detectsLanguageAutomatically)
-                    }
-                    .buttonStyle(.borderless)
-                }
-                Menu("Add Language") {
-                    ForEach(recognitionLanguages.filter { !preferences.text.languages.contains($0) }, id: \.self) { identifier in
-                        Button(Self.languageName(identifier)) { preferences.text.languages.append(identifier) }
-                    }
-                }
-                .fixedSize()
-                .disabled(recognitionLanguages.isEmpty)
-                if preferences.text.detectsLanguageAutomatically {
-                    Text(preferences.text.languages.isEmpty ? "Add a language to turn off automatic detection."
-                                                            : "Used when automatic detection is turned off.")
-                        .font(.callout).foregroundStyle(.secondary)
+    /// Numbered rows show the recognition order; each row moves up or is removed in place.
+    @ViewBuilder private var languageList: some View {
+        LabeledContent("Languages") {
+            Menu("Add Language") {
+                ForEach(recognitionLanguages.filter { !preferences.text.languages.contains($0) }, id: \.self) { identifier in
+                    Button(Self.languageName(identifier)) { preferences.text.languages.append(identifier) }
                 }
             }
-            .accessibilityElement(children: .contain)
+            .fixedSize()
+            .disabled(recognitionLanguages.isEmpty)
+        }
+        ForEach(Array(preferences.text.languages.enumerated()), id: \.element) { index, identifier in
+            LabeledContent("\(index + 1). \(Self.languageName(identifier))") {
+                HStack {
+                    Button("Move Up", systemImage: "arrow.up") { preferences.text.languages.swapAt(index, index - 1) }
+                        .disabled(index == 0)
+                    Button("Remove", systemImage: "minus.circle") { preferences.text.languages.remove(at: index) }
+                        .disabled(preferences.text.languages.count == 1 && !preferences.text.detectsLanguageAutomatically)
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+            }
+        }
+        if preferences.text.detectsLanguageAutomatically {
+            Text(preferences.text.languages.isEmpty ? "Add a language to turn off automatic detection."
+                                                    : "Used when automatic detection is turned off.")
+                .secondaryNote()
         }
     }
 
@@ -177,7 +171,6 @@ struct CaptureSettingsPane: View {
                 Text("Fast").tag(ScrollPace.fast)
             }
             .pickerStyle(.segmented)
-            .fixedSize()
             Picker("Direction", selection: $preferences.scrolling.axis) {
                 Text("Detect from first movement").tag(ScrollAxisPreference.automatic)
                 Text("Vertical").tag(ScrollAxisPreference.vertical)
@@ -190,7 +183,7 @@ struct CaptureSettingsPane: View {
                 Text("Maximum duration: \(preferences.scrolling.maximumDurationSeconds) seconds")
             }
             Text("Scrolling by hand first turns off Auto Scroll for that capture.")
-                .font(.callout).foregroundStyle(.secondary)
+                .secondaryNote()
         }
     }
 

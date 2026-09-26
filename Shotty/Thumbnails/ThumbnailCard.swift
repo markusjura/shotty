@@ -42,7 +42,6 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
     private var hovered = false
     private var controls: [NSButton] = []
     private let hoverMaterial = ThumbnailHoverMaterial()
-    private let hoverTint = NSView()
     private let statusLabel = NSTextField(labelWithString: "")
     private var copied = false
     private var saved = false
@@ -58,7 +57,7 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
     private var showsControls: Bool {
         hovered || (window?.isKeyWindow == true && (window?.firstResponder as? NSView)?.isDescendant(of: self) == true)
     }
-    private let cornerRadius: CGFloat = 20
+    private let cornerRadius = Chrome.cardRadius
 
     // Accept a drag on the first interaction without requiring an activation click.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -85,13 +84,14 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         hoverMaterial.state = .active
         hoverMaterial.appearance = NSAppearance(named: .darkAqua)
         hoverMaterial.wantsLayer = true
-        hoverMaterial.layer?.cornerRadius = cornerRadius
+        hoverMaterial.layer?.cornerRadius = cornerRadius - 1
         hoverMaterial.layer?.masksToBounds = true
+        // A light tint keeps the pills distinct over bright captures, where blur alone turns gray.
+        let tint = NSView()
+        tint.wantsLayer = true
+        tint.layer?.backgroundColor = Chrome.hoverTint.cgColor
+        hoverMaterial.addSubview(tint)
         addSubview(hoverMaterial)
-        hoverTint.wantsLayer = true
-        hoverTint.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.5).cgColor
-        hoverTint.layer?.cornerRadius = cornerRadius - 1
-        addSubview(hoverTint)
         toolTip = "Click to edit. Drag to Finder or another app. Hold Option when dropping to keep the thumbnail."
         for (title, symbol, action) in [("Dismiss capture", "xmark", ThumbnailCoordinator.Action.dismiss),
                                          ("Open editor", "pencil", .open), ("Copy", "", .copy), ("Save", "", .save)] {
@@ -100,7 +100,7 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
             button.actionValue = action
             button.image = symbol.isEmpty ? nil : NSImage(systemSymbolName: symbol, accessibilityDescription: title)
             button.imagePosition = symbol.isEmpty ? .noImage : .imageOnly
-            button.font = .systemFont(ofSize: 13, weight: .semibold)
+            button.font = Chrome.controlFont
             button.isBordered = false
             button.wantsLayer = true
             button.setAccessibilityLabel(title)
@@ -115,8 +115,6 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         addSubview(statusLabel)
         hoverMaterial.isHidden = true
         hoverMaterial.alphaValue = 0
-        hoverTint.isHidden = true
-        hoverTint.alphaValue = 0
         controls.forEach { $0.isHidden = true; $0.alphaValue = 0 }
         updateControls()
     }
@@ -124,19 +122,21 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
-        return hit === statusLabel || hit === hoverTint ? self : hit
+        return hit === statusLabel ? self : hit
     }
 
     override func layout() {
         super.layout()
         hoverMaterial.frame = bounds.insetBy(dx: 1, dy: 1)
-        hoverTint.frame = hoverMaterial.frame
-        statusLabel.frame = CGRect(x: 38, y: bounds.height - 26, width: bounds.width - 48, height: 16)
-        let inset: CGFloat = 7, diameter: CGFloat = 24
+        hoverMaterial.subviews.first?.frame = hoverMaterial.bounds
+        statusLabel.frame = CGRect(x: 34, y: bounds.height - 25, width: bounds.width - 40, height: 16)
+        // Proportions follow CleanShot's overlay: small corner buttons, two compact centered pills.
+        let inset: CGFloat = 6, diameter = Chrome.iconButtonDiameter
+        let pill = CGSize(width: 52, height: Chrome.pillHeight), gap: CGFloat = 10
         controls[0].frame = CGRect(x: inset, y: bounds.height - inset - diameter, width: diameter, height: diameter)
         controls[1].frame = CGRect(x: inset, y: inset, width: diameter, height: diameter)
-        controls[2].frame = CGRect(x: bounds.midX - 29, y: bounds.midY + 5, width: 58, height: 30)
-        controls[3].frame = CGRect(x: bounds.midX - 29, y: bounds.midY - 35, width: 58, height: 30)
+        controls[2].frame = CGRect(x: bounds.midX - pill.width / 2, y: bounds.midY + gap / 2, width: pill.width, height: pill.height)
+        controls[3].frame = CGRect(x: bounds.midX - pill.width / 2, y: bounds.midY - gap / 2 - pill.height, width: pill.width, height: pill.height)
     }
 
     override func viewDidMoveToWindow() {
@@ -176,16 +176,15 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         needsDisplay = true
         guard controlsVisible != visible else { return }
         controlsVisible = visible
-        let views: [NSView] = [hoverMaterial, hoverTint] + controls
+        let views: [NSView] = [hoverMaterial] + controls
         for view in views { view.isHidden = false }
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.14
+            context.duration = Chrome.duration(Chrome.fadeDuration)
             for view in views { view.animator().alphaValue = visible ? 1 : 0 }
         } completionHandler: { [weak self] in
             Task { @MainActor in
                 guard let self, !self.controlsVisible else { return }
                 self.hoverMaterial.isHidden = true
-                self.hoverTint.isHidden = true
                 self.controls.forEach { $0.isHidden = true }
             }
         }
@@ -199,7 +198,7 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
             if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
                 let transition = CATransition()
                 transition.type = .fade
-                transition.duration = 0.18
+                transition.duration = Chrome.fadeDuration
                 button.layer?.add(transition, forKey: "success")
             }
             button.image = success ? NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil) : nil
@@ -232,13 +231,13 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
             let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .medium),
                                                            .foregroundColor: NSColor.white]
             let rect = CGRect(x: 10, y: 6, width: bounds.width - 20, height: 16)
-            NSColor.black.withAlphaComponent(0.75).setFill()
+            Chrome.readoutFill.setFill()
             NSBezierPath(roundedRect: rect.insetBy(dx: -4, dy: -2), xRadius: 6, yRadius: 6).fill()
             (status as NSString).draw(with: rect, options: [.truncatesLastVisibleLine], attributes: attributes)
         }
         NSGraphicsContext.restoreGraphicsState()
-        NSColor(white: 0.6, alpha: NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast ? 1 : 0.6).setStroke()
-        outline.lineWidth = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast ? 2 : 1
+        Chrome.hairline.setStroke()
+        outline.lineWidth = Chrome.hairlineWidth
         outline.stroke()
     }
 
@@ -257,7 +256,7 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         // Snapshot the visible crop so the drag starts under the pointer without jumping
         // to the full source aspect ratio. The promise still exports the full image.
         let preview = NSImage(size: bounds.size, flipped: false) { [image, bounds] _ in
-            NSBezierPath(roundedRect: bounds, xRadius: 20, yRadius: 20).addClip()
+            NSBezierPath(roundedRect: bounds, xRadius: Chrome.cardRadius, yRadius: Chrome.cardRadius).addClip()
             if let image { image.draw(in: ThumbnailLayout.imageRect(imageSize: image.size, bounds: bounds)) }
             return true
         }
@@ -380,15 +379,20 @@ private final class ThumbnailActionButton: NSButton {
         return result
     }
     override func draw(_ dirtyRect: NSRect) {
-        let color = isHighlighted ? NSColor(white: 0.65, alpha: 1) : NSColor(white: 0.86, alpha: 1)
-        color.setFill()
+        (isHighlighted ? Chrome.controlFillPressed : Chrome.controlFill).setFill()
         NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
         if let image {
-            let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
-                .applying(.init(paletteColors: [.black]))
-            image.withSymbolConfiguration(config)?.draw(in: CGRect(x: bounds.midX - 7, y: bounds.midY - 7, width: 14, height: 14))
+            // Corner glyphs stay small inside their circle; the Copy/Save checkmark reads at pill size.
+            let pointSize: CGFloat = bounds.width > bounds.height ? 12 : 10
+            let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .bold)
+                .applying(.init(paletteColors: [Chrome.controlLabel]))
+            if let symbol = image.withSymbolConfiguration(config) {
+                let size = symbol.size
+                symbol.draw(in: CGRect(x: (bounds.midX - size.width / 2).rounded(), y: (bounds.midY - size.height / 2).rounded(),
+                                       width: size.width, height: size.height))
+            }
         } else {
-            let attributes: [NSAttributedString.Key: Any] = [.font: font ?? NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.black]
+            let attributes: [NSAttributedString.Key: Any] = [.font: font ?? Chrome.controlFont, .foregroundColor: Chrome.controlLabel]
             let size = (title as NSString).size(withAttributes: attributes)
             (title as NSString).draw(at: CGPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2), withAttributes: attributes)
         }

@@ -620,12 +620,12 @@ private final class SelectionView: NSView {
         let shade = NSBezierPath(rect: bounds)
         if let selected { shade.appendRect(local(selected)) }
         shade.windingRule = .evenOdd
-        NSColor.black.withAlphaComponent(0.28).setFill()
+        Chrome.scrim.setFill()
         shade.fill()
         if let selected {
             let rect = local(selected)
             if selector.kind == .window {
-                NSColor.systemBlue.withAlphaComponent(0.22).setFill()
+                NSColor.controlAccentColor.withAlphaComponent(0.22).setFill()
                 rect.fill()
                 let symbol = NSImage(systemSymbolName: "camera.fill", accessibilityDescription: "Capture window")
                 symbol?.draw(in: CGRect(x: rect.midX - 18, y: rect.midY - 15, width: 36, height: 30))
@@ -633,7 +633,7 @@ private final class SelectionView: NSView {
             if selector.drawsHandles {
                 drawHandles(around: rect)
             } else {
-                NSColor.systemBlue.setStroke()
+                NSColor.controlAccentColor.setStroke()
                 let path = NSBezierPath(rect: rect)
                 path.lineWidth = 1
                 path.stroke()
@@ -659,7 +659,7 @@ private final class SelectionView: NSView {
         let size = (message as NSString).size(withAttributes: attributes)
         let label = CGRect(x: min(bounds.maxX - size.width - 20, max(8, point.x + 16)),
                            y: max(8, point.y - 36), width: size.width + 12, height: size.height + 8)
-        NSColor.black.withAlphaComponent(0.82).setFill()
+        Chrome.readoutFill.setFill()
         NSBezierPath(roundedRect: label, xRadius: 5, yRadius: 5).fill()
         (message as NSString).draw(at: CGPoint(x: label.minX + 6, y: label.minY + 4), withAttributes: attributes)
         if selector.showsMagnifier, let image = display.image {
@@ -718,22 +718,22 @@ private final class SelectionView: NSView {
 
     /// The scrolling prompt, centered on each display until a region is drawn.
     private func drawInstruction() {
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 17),
-                                                         .foregroundColor: NSColor.black.withAlphaComponent(0.85)]
+        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 15, weight: .medium),
+                                                         .foregroundColor: Chrome.controlLabel]
         let text = Self.scrollingInstruction as NSString
         let size = text.size(withAttributes: attributes)
-        let pill = CGRect(x: bounds.midX - size.width / 2 - 28, y: bounds.midY - size.height / 2 - 16,
-                          width: size.width + 56, height: size.height + 32)
+        let pill = CGRect(x: bounds.midX - size.width / 2 - 22, y: bounds.midY - size.height / 2 - 12,
+                          width: size.width + 44, height: size.height + 24)
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
         shadow.shadowColor = .black.withAlphaComponent(0.3)
         shadow.shadowBlurRadius = 10
         shadow.shadowOffset = CGSize(width: 0, height: -2)
         shadow.set()
-        NSColor(white: 0.9, alpha: 0.96).setFill()
+        Chrome.controlFill.setFill()
         NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
         NSGraphicsContext.restoreGraphicsState()
-        text.draw(at: CGPoint(x: pill.minX + 28, y: pill.minY + 16), withAttributes: attributes)
+        text.draw(at: CGPoint(x: pill.minX + 22, y: pill.minY + 12), withAttributes: attributes)
     }
 
     private func point(_ event: NSEvent) -> CGPoint { window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation }

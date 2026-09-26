@@ -575,7 +575,7 @@ private final class ShadeView: NSView {
         let shade = NSBezierPath(rect: bounds)
         shade.appendRect(hole)
         shade.windingRule = .evenOdd
-        NSColor.black.withAlphaComponent(0.35).setFill()
+        Chrome.scrim.setFill()
         shade.fill()
         NSColor.white.withAlphaComponent(0.7).setStroke()
         let outline = NSBezierPath(rect: hole.insetBy(dx: -1, dy: -1))
@@ -610,8 +610,8 @@ private struct ScrollingCaptureBar: View {
                 }
                 .pickerStyle(.segmented).labelStyle(.iconOnly).labelsHidden().fixedSize()
                 .help("Auto Scroll direction")
-                .padding(.horizontal, 4).frame(height: 30)
-                .background(Color(white: 0.9).opacity(0.96), in: Capsule())
+                .padding(.horizontal, 4).frame(height: Chrome.pillHeight)
+                .overlayCapsuleBackground()
                 .environment(\.colorScheme, .light)
             }
             switch controller.automaticMode {
@@ -680,7 +680,7 @@ private struct ScrollingCapturePreview: View {
         }
         .padding(10)
         .frame(width: 208, alignment: .topLeading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .floatingSurface()
         .frame(maxHeight: .infinity, alignment: .top)
     }
 }

@@ -23,7 +23,7 @@ struct EditorOptions: View {
                     }
                     switch model.styleTool {
                     case .arrow:
-                        LabeledContent("Color") { EditorColorWell(color: model.colorBinding(\.arrow.color), model: model).frame(width: 28, height: 24) }
+                        colorRow(\.arrow.color)
                         StyleSlider(title: "Thickness", value: model.binding(\.arrow.width), range: 1...32, model: model)
                         Picker("Arrow", selection: model.binding(\.arrow.style)) {
                             ForEach(ArrowStyle.allCases, id: \.self) { style in
@@ -31,23 +31,23 @@ struct EditorOptions: View {
                             }
                         }.pickerStyle(.menu)
                     case .rectangle:
-                        LabeledContent("Color") { EditorColorWell(color: model.colorBinding(\.rectangle.strokeColor), model: model).frame(width: 28, height: 24) }
+                        colorRow(\.rectangle.strokeColor)
                         StyleSlider(title: "Thickness", value: model.binding(\.rectangle.width), range: 1...32, model: model)
                         Toggle("Fill", isOn: Binding(get: { model.defaults.rectangle.fillColor != nil }, set: { enabled in
                             var values = model.defaults; values.rectangle.fillColor = enabled ? values.rectangle.strokeColor : nil; model.setDefaults(values)
                         }))
                         StyleSlider(title: "Corner radius", value: model.binding(\.rectangle.cornerRadius), range: 0...64, model: model)
                     case .ellipse:
-                        LabeledContent("Color") { EditorColorWell(color: model.colorBinding(\.ellipse.strokeColor), model: model).frame(width: 28, height: 24) }
+                        colorRow(\.ellipse.strokeColor)
                         StyleSlider(title: "Thickness", value: model.binding(\.ellipse.width), range: 1...32, model: model)
                         Toggle("Fill", isOn: Binding(get: { model.defaults.ellipse.fillColor != nil }, set: { enabled in
                             var values = model.defaults; values.ellipse.fillColor = enabled ? values.ellipse.strokeColor : nil; model.setDefaults(values)
                         }))
                     case .line:
-                        LabeledContent("Color") { EditorColorWell(color: model.colorBinding(\.line.color), model: model).frame(width: 28, height: 24) }
+                        colorRow(\.line.color)
                         StyleSlider(title: "Thickness", value: model.binding(\.line.width), range: 1...32, model: model)
                     case .text:
-                        LabeledContent("Color") { EditorColorWell(color: model.colorBinding(\.text.color), model: model).frame(width: 28, height: 24) }
+                        colorRow(\.text.color)
                         StyleSlider(title: "Size", value: model.binding(\.text.size), range: 8...200, model: model)
                         Picker("Font", selection: model.binding(\.text.design)) {
                             Text("System").tag(TextDesign.system); Text("Monospaced").tag(TextDesign.monospaced)
@@ -63,7 +63,7 @@ struct EditorOptions: View {
                     case .redact:
                         redactStylePicker
                         if model.defaults.redact.style == .solid {
-                            LabeledContent("Color") { EditorColorWell(color: model.colorBinding(\.redact.solidColor), model: model).frame(width: 28, height: 24) }
+                            colorRow(\.redact.solidColor)
                             HStack {
                                 Button("Dark") { var values = model.defaults; values.redact.solidColor = .black; model.setDefaults(values) }
                                 Button("Light") { var values = model.defaults; values.redact.solidColor = .white; model.setDefaults(values) }
@@ -82,16 +82,19 @@ struct EditorOptions: View {
                         }.pickerStyle(.menu)
                         StyleSlider(title: "Dim amount", value: model.binding(\.spotlight.dimPercent), range: 5...90, model: model)
                     case .counter:
-                        LabeledContent("Color") { EditorColorWell(color: model.colorBinding(\.counter.color), model: model).frame(width: 28, height: 24) }
+                        colorRow(\.counter.color)
                         StyleSlider(title: "Size", value: model.binding(\.counter.size), range: 12...96, model: model)
-                        TextField("Next / starting number", value: Binding(get: { model.canvas.nextCounter }, set: { model.canvas.nextCounter = max(1, $0); model.selectionVersion += 1 }), format: .number)
+                        TextField("Next number", value: Binding(get: { model.canvas.nextCounter }, set: { model.canvas.nextCounter = max(1, $0); model.selectionVersion += 1 }), format: .number)
                         Button("Renumber") { model.canvas.renumber() }
                     case .select, .crop: EmptyView()
                     }
                     Button("Reset tool defaults") {
                         model.coordinator.preferences.resetToolDefaults(model.styleTool)
                     }
-                }.formStyle(.columns).padding(16).frame(width: 320)
+                }
+                .formStyle(.columns).padding(16).frame(width: 320)
+                // A material keeps labels legible when bright capture pixels sit behind the glass.
+                .presentationBackground(.regularMaterial)
             }
     }
 
@@ -116,6 +119,14 @@ struct EditorOptions: View {
                 StyleSampleLabel(title: style.title, sample: EditorStyleSamples.redaction[style]).tag(style)
             }
         }.pickerStyle(.menu)
+    }
+
+    /// A form row whose well sits on the label's text line.
+    private func colorRow(_ key: WritableKeyPath<EditorToolDefaults, RGBAColor>) -> some View {
+        LabeledContent("Color") {
+            EditorColorWell(color: model.colorBinding(key), model: model).frame(width: 28, height: 24)
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+        }
     }
 
     private func inlineColor(_ key: WritableKeyPath<EditorToolDefaults, RGBAColor>) -> some View {

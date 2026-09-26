@@ -22,7 +22,6 @@ struct ThumbnailSettingsPane: View {
                     Text("Large").tag(ThumbnailSize.large)
                 }
                 .pickerStyle(.segmented)
-                .fixedSize()
                 Picker("Display", selection: $preferences.thumbnails.display) {
                     Text("Follow the pointer").tag(ThumbnailDisplayPolicy.followPointer)
                     Text("Main display").tag(ThumbnailDisplayPolicy.mainDisplay)
@@ -34,9 +33,9 @@ struct ThumbnailSettingsPane: View {
                     }
                 }
                 if case .display(let uuid, _) = preferences.thumbnails.display, !screens.contains(where: { $0.uuid == uuid }) {
-                    Text("Uses the main display until this one reconnects.").font(.callout).foregroundStyle(.secondary)
+                    Text("Uses the main display until this one reconnects.").secondaryNote()
                 } else if preferences.thumbnails.display == .followPointer {
-                    Text("The whole stack moves to the display under the pointer.").font(.callout).foregroundStyle(.secondary)
+                    Text("The whole stack moves to the display under the pointer.").secondaryNote()
                 }
             }
             Section("Closing") {
@@ -52,7 +51,7 @@ struct ThumbnailSettingsPane: View {
                     Text(preferences.thumbnails.autoClose == .dismiss
                          ? "Discards unsaved captures. Hovering, editing, or a failed save pauses it."
                          : "Saves first. A failed save keeps the thumbnail.")
-                        .font(.callout).foregroundStyle(.secondary)
+                        .secondaryNote()
                 }
                 Toggle("Dismiss after saving", isOn: $preferences.thumbnails.dismissesAfterSave)
                 Toggle("Dismiss after dragging out", isOn: $preferences.thumbnails.dismissesAfterDrag)

@@ -335,17 +335,21 @@ private struct EditorWindowView: View {
                     }.pickerStyle(.menu).labelsHidden().fixedSize()
                     Spacer()
                     Button("Cancel") { model.canvas.cancelCrop(); model.tool = .select }
-                    Button("Apply") { model.canvas.applyCrop(); model.tool = .select }.keyboardShortcut(.defaultAction)
+                    Button("Apply") { model.canvas.applyCrop(); model.tool = .select }
+                        .keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
                 } else {
-                    ForEach(EditorTool.allCases, id: \.self) { tool in
-                        Button { model.tool = tool } label: {
-                            ToolIcon(tool: tool).frame(width: 23, height: 25)
+                    HStack(spacing: 2) {
+                        ForEach(EditorTool.allCases, id: \.self) { tool in
+                            Button { model.tool = tool } label: {
+                                ToolIcon(tool: tool).frame(width: 28, height: 28).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(model.tool == tool ? Color.accentColor : .primary)
+                            .background(model.tool == tool ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                            .help("\(CommandID.tool(tool).title) \(model.commands.shortcut(for: .tool(tool))?.displayString ?? "")")
+                            .accessibilityLabel(CommandID.tool(tool).title)
+                            .accessibilityAddTraits(model.tool == tool ? .isSelected : [])
                         }
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(model.tool == tool ? Color.accentColor : .primary)
-                        .background(model.tool == tool ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 4))
-                        .help("\(CommandID.tool(tool).title) \(model.commands.shortcut(for: .tool(tool))?.displayString ?? "")")
-                        .accessibilityLabel(CommandID.tool(tool).title)
                     }
                     // Select without an editable selection has no options; hide rather than disable.
                     if model.styleTool != .select {
@@ -354,7 +358,7 @@ private struct EditorWindowView: View {
                     }
                     Spacer(minLength: 4)
                     Button("Save") { model.save(asNew: NSEvent.modifierFlags.contains(.option)) }.disabled(model.busy)
-                    Button("Done") { model.close?() }
+                    Button("Done") { model.close?() }.buttonStyle(.borderedProminent)
                 }
             }.padding(.horizontal, 10).frame(height: 52)
             Divider()

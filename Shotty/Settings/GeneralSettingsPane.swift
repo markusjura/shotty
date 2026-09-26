@@ -21,7 +21,7 @@ struct GeneralSettingsPane: View {
                 Toggle("Show in Dock", isOn: $preferences.general.showsDockIcon)
                 if !preferences.general.showsMenuBarIcon && !preferences.general.showsDockIcon {
                     Text("Shortcuts still work. Open Shotty again to return here.")
-                        .font(.callout).foregroundStyle(.secondary)
+                        .secondaryNote()
                 }
                 Toggle("Open at login", isOn: Binding(get: { loginStatus == .enabled || loginStatus == .requiresApproval }, set: setLogin))
                 if loginStatus == .requiresApproval {
@@ -33,7 +33,7 @@ struct GeneralSettingsPane: View {
                     }
                 }
                 if let loginError {
-                    Text(loginError).font(.callout).foregroundStyle(.secondary)
+                    Text(loginError).secondaryNote()
                 }
             }
             Section {

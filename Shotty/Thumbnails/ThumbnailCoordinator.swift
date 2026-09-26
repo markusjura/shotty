@@ -296,7 +296,7 @@ final class ThumbnailCoordinator {
         let destination = CGRect(x: x, y: y, width: width, height: height)
         if animated, panel.isVisible, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.2
+                context.duration = Chrome.moveDuration
                 panel.animator().setFrame(destination, display: true)
             }
         } else {
@@ -340,14 +340,15 @@ private struct ThumbnailStack: View {
             if !bottom { undo; overflow }
         }
         .frame(width: coordinator.width)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: coordinator.cards.map(\.id))
+        .animation(reduceMotion ? nil : .easeInOut(duration: Chrome.moveDuration), value: coordinator.cards.map(\.id))
         .onHover { coordinator.setHovering($0) }
     }
 
     @ViewBuilder private var undo: some View {
         if coordinator.undoAvailable {
-            Button("Undo Dismiss") { coordinator.undo?() }
+            Button("Undo Dismiss", systemImage: "arrow.uturn.backward") { coordinator.undo?() }
                 .keyboardShortcut("z")
+                .buttonStyle(.overlayCapsule)
                 .frame(height: ThumbnailLayout.undoRowHeight)
         }
     }
@@ -355,7 +356,8 @@ private struct ThumbnailStack: View {
     @ViewBuilder private var overflow: some View {
         let hiddenCards = Array(coordinator.cards.dropFirst(coordinator.visibleCount))
         if !hiddenCards.isEmpty {
-            Button("\(hiddenCards.count) more") { coordinator.showingOverflow.toggle() }
+            Button("\(hiddenCards.count) more", systemImage: "square.stack") { coordinator.showingOverflow.toggle() }
+                .buttonStyle(.overlayCapsule)
                 .frame(height: ThumbnailLayout.overflowRowHeight)
                 .accessibilityLabel("Show \(hiddenCards.count) more captures")
                 .popover(isPresented: $coordinator.showingOverflow) {

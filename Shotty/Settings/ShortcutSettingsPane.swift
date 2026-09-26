@@ -8,14 +8,14 @@ struct ShortcutSettingsPane: View {
         Form {
             Section {
                 Text("Capture and thumbnail shortcuts work in every app.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .secondaryNote()
                 VStack(alignment: .leading, spacing: 8) {
                     Text("CleanShot keys")
                     VStack(alignment: .leading, spacing: 6) {
                         Button("Use ⇧⌘3, ⇧⌘4, and ⇧⌘5") { report(commands.applyCleanShotPreset(), for: CommandID.cleanShotPreset.map(\.0)) }
                             .help("Assign Fullscreen, Area, and Scrolling respectively.")
                         Text("Disable matching macOS and CleanShot shortcuts first.")
-                            .font(.callout).foregroundStyle(.secondary)
+                            .secondaryNote()
                         Button("Open Keyboard Settings") { SystemSettingsLink.open(SystemSettingsLink.keyboardShortcuts) }
                     }
                     .accessibilityElement(children: .contain)
@@ -44,12 +44,12 @@ struct ShortcutSettingsPane: View {
                     }
                 }
                 if let problem = problems[id] {
-                    Label(problem.message, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.secondary)
+                    Label(problem.message, systemImage: "exclamationmark.triangle").secondaryNote()
                 } else if commands.registrationFailures.contains(id) {
                     Label("Another app or macOS already uses this shortcut. Choose a different one.", systemImage: "exclamationmark.triangle")
-                        .font(.callout).foregroundStyle(.secondary)
+                        .secondaryNote()
                 } else if let advisory = commands.advisory(for: id) {
-                    Text(advisory).font(.callout).foregroundStyle(.secondary)
+                    Text(advisory).secondaryNote()
                 }
             }
             .accessibilityElement(children: .contain)

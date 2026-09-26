@@ -41,6 +41,8 @@ struct SettingsView: View {
                 Label(pane.title, systemImage: pane.symbol)
             }
             .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
+            .background(SidebarMaterial())
             .frame(width: 180)
             Divider()
             let selected = pane ?? .general
@@ -69,6 +71,17 @@ struct SettingsView: View {
         .frame(width: 660)
         .frame(minHeight: 520)
     }
+}
+
+/// The translucent sidebar material of native split views, which this plain HStack lacks.
+private struct SidebarMaterial: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .sidebar
+        view.blendingMode = .behindWindow
+        return view
+    }
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
 /// Settings scenes do not consistently apply the scene toolbar style on macOS.

@@ -85,21 +85,26 @@ private struct TextReviewView: View {
         VStack(alignment: .leading, spacing: 10) {
             TextEditor(text: $model.text)
                 .font(.body)
+                .scrollContentBackground(.hidden)
+                .padding(6)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(nsColor: .separatorColor)))
                 .accessibilityLabel("Recognized text")
             let uncertain = model.result.lowConfidenceLines
             if !uncertain.isEmpty {
                 Text("Check \(uncertain.count == 1 ? "this line" : "these \(uncertain.count) lines"); recognition was uncertain: "
                      + uncertain.prefix(3).map { "“\($0.text)”" }.joined(separator: ", ") + (uncertain.count > 3 ? "…" : ""))
-                    .font(.callout).foregroundStyle(.secondary).lineLimit(3)
+                    .secondaryNote().lineLimit(3)
             }
             HStack {
                 Toggle("Keep line breaks", isOn: $model.preservesLineBreaks)
                     .disabled(model.isEdited)
                     .help(model.isEdited ? "Line breaks can't change after editing." : "Join lines that wrap within a paragraph.")
-                if let status = model.status { Text(status).font(.callout).foregroundStyle(.secondary) }
+                if let status = model.status { Text(status).secondaryNote() }
                 Spacer()
                 Button("Save…", action: save)
                 Button("Copy", action: copy).keyboardShortcut("c", modifiers: [.shift, .command])
+                    .buttonStyle(.borderedProminent)
                 Button("Close", action: close).keyboardShortcut(.cancelAction)
             }
         }

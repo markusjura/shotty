@@ -5,8 +5,8 @@ import Foundation
 /// newest card nearest the anchor, and an "N more" row instead of offscreen cards.
 enum ThumbnailLayout {
     static let gap: CGFloat = 8
-    static let overflowRowHeight: CGFloat = 28
-    static let undoRowHeight: CGFloat = 30
+    static let overflowRowHeight: CGFloat = 32
+    static let undoRowHeight: CGFloat = 32
 
     static func previewHeight(width: CGFloat) -> CGFloat {
         // A stable card ratio gives hover controls breathing room and keeps the stack calm.
