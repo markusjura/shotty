@@ -168,6 +168,10 @@ This pass found and fixed one crash. Option-Shift-arrow resizing of a selection 
 
 Window-capture and frozen Capture Text runs through Computer Use still fail validation because the tool's own 126-point cursor window disappears during freezing (`FrozenCapture` log names that window). This is the known test-tool artifact. Capture Text was checked with freezing temporarily off; Freeze screen, Open Review, and System appearance were restored afterwards.
 
+### Physical drag and instant capture, build 46
+
+Markus physically dragged a thumbnail into Finder: the PNG appeared and the card was dismissed. The selection surface now appears synchronously with the crosshair cursor set immediately, without dimming the screen before a region exists and without a "Preparing capture" panel. Window targets and frozen pixels load underneath; a confirmation made before loading finishes runs as soon as it completes. Capture Text shows "Recognizing text…" only after 400 ms. Area capture through the installed build produced a thumbnail; all 151 tests pass.
+
 ## Pending acceptance checklist
 
 Nothing below is claimed until it has run. Kinds: automated means unit or integration tests; native means the installed app operated on studio, through Computer Use where it can; physical means Markus must perform it, because tools cannot emit the input or OS change; tool limit notes where Computer Use evidence is insufficient.

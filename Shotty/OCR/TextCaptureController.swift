@@ -23,12 +23,17 @@ final class TextCaptureController {
         let current = generation
         isActive = true
         let createdAt = Date()
-        panel.show(symbol: "text.viewfinder", message: "Recognizing text…",
-                   actions: [.init("Cancel") { [weak self] in self?.cancelRecognition() }], autoHide: false)
         task = Task { [weak self] in
+            // Most regions finish well under this; only slow recognition earns a progress panel.
+            let progress = Task { [weak self] in
+                guard (try? await Task.sleep(for: .milliseconds(400))) != nil, let self, current == generation else { return }
+                panel.show(symbol: "text.viewfinder", message: "Recognizing text…",
+                           actions: [.init("Cancel") { [weak self] in self?.cancelRecognition() }], autoHide: false)
+            }
             let outcome: Result<RecognizedTextResult, Error>
             do { outcome = .success(try await TextRecognizer.recognize(image, preferences: settings.text)) }
             catch { outcome = .failure(error) }
+            progress.cancel()
             guard let self, current == generation, !Task.isCancelled else { return }
             await finish(outcome, image: image, settings: settings, ticket: ticket, createdAt: createdAt, generation: current)
             if current == generation {

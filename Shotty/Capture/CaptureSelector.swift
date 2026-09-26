@@ -55,7 +55,10 @@ final class CaptureSelector {
     /// the window frame, while shadow padding has no reported offset.
     private(set) var selectedWindowPreview: NSImage?
     private(set) var selectedWindowFrame: CGRect?
-    private(set) var isPreparing = false
+    /// True until window targets and any frozen snapshot are ready. The selection surface is already
+    /// visible and interactive; a confirmation made meanwhile runs as soon as loading finishes.
+    private(set) var isLoading = false
+    private var confirmWhenLoaded = false
     var errorMessage: String?
     private var configuration = SelectionConfiguration()
     private var displays: [SelectionDisplay] = []
@@ -68,7 +71,6 @@ final class CaptureSelector {
     private var isAdjusting = false
     private var panels: [SelectionPanel] = []
     private var adjustmentPanel: NSPanel?
-    private var progressPanel: NSPanel?
     private var frozen: FrozenCaptureSet?
     private var operation: Task<Void, Never>?
     private var hoverOperation: Task<Void, Never>?
@@ -97,7 +99,8 @@ final class CaptureSelector {
         requestID = request
         pointer = NSEvent.mouseLocation
         hasPointerInteraction = false
-        isPreparing = true
+        isLoading = true
+        confirmWhenLoaded = false
         errorMessage = nil
         let screenLayout = SelectionScreenLayout.current
         // Invalidate actual topology/geometry changes, not an unrelated screen-parameter notification.
@@ -114,22 +117,40 @@ final class CaptureSelector {
                     self.finish(.failure(FrozenCaptureFailure.targetChanged))
                 }
             }
+        guard CGPreflightScreenCaptureAccess() else { return finish(.failure(CaptureFailure.permissionRequired)) }
+        let screens = NSScreen.screens
+        displays = screens.compactMap { screen in
+            screen.displayID.map { SelectionDisplay(id: $0, frame: screen.frame, scale: screen.backingScaleFactor, image: nil) }
+        }
+        // The surface appears at once over the live screen, so the crosshair is instant. Frozen pixels
+        // replace the live view underneath it a moment later; own windows are excluded from them.
+        for display in displays {
+            let panel = SelectionPanel(contentRect: display.frame, styleMask: [.borderless, .nonactivatingPanel],
+                                       backing: .buffered, defer: false)
+            panel.isReleasedWhenClosed = false
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            // Transparent areas would otherwise pass clicks through to the app underneath.
+            panel.ignoresMouseEvents = false
+            panel.level = .screenSaver
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            panel.acceptsMouseMovedEvents = true
+            let view = SelectionView(selector: self, display: display)
+            panel.contentView = view
+            panels.append(panel)
+            panel.orderFrontRegardless()
+            if display.frame.contains(pointer) { panel.makeKey(); panel.makeFirstResponder(view) }
+        }
+        updateCursor()
+        updatePointer(pointer, modifiers: [])
         operation = Task { [self] in
-            let progress = showPreparation(after: .milliseconds(100), for: request)
-            defer { progress.cancel() }
             do {
-                guard CGPreflightScreenCaptureAccess() else { throw CaptureFailure.permissionRequired }
-                let screens = NSScreen.screens
-                let metadata = screens.compactMap { screen -> SelectionDisplay? in
-                    guard let id = screen.displayID else { return nil }
-                    return SelectionDisplay(id: id, frame: screen.frame, scale: screen.backingScaleFactor, image: nil)
-                }
                 let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
                 try Task.checkCancellation()
                 let order = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? [])
                     .compactMap { $0[kCGWindowNumber as String] as? CGWindowID }
                 let ownPID = ProcessInfo.processInfo.processIdentifier
-                windows = content.windows.compactMap { window in
+                var targets: [WindowTarget] = content.windows.compactMap { window in
                     guard window.isOnScreen, window.windowLayer == 0,
                           let app = window.owningApplication, app.processID != ownPID,
                           let display = content.displays.first(where: { $0.frame.intersects(window.frame) }),
@@ -148,7 +169,7 @@ final class CaptureSelector {
                     guard requestID == request, !Task.isCancelled else { try? await set.close(); return }
                     frozen = set
                     var loaded: [SelectionDisplay] = []
-                    for display in metadata {
+                    for display in displays {
                         guard let snapshot = set.displays.first(where: { $0.displayID == display.id }) else {
                             throw CaptureFailure.targetUnavailable
                         }
@@ -156,46 +177,40 @@ final class CaptureSelector {
                                                        scale: CGFloat(snapshot.pointPixelScale),
                                                        image: try await set.image(for: snapshot.raster)))
                     }
+                    try Task.checkCancellation()
                     displays = loaded
+                    for case let view as SelectionView in panels.map(\.contentView) {
+                        if let display = loaded.first(where: { $0.id == view.displayID }) { view.show(display) }
+                    }
                     // Only windows with frozen pixels are selectable; others would export live content.
-                    windows = windows.filter { target in set.windows.contains { $0.windowID == target.id } }
-                } else {
-                    displays = metadata
+                    targets = targets.filter { target in set.windows.contains { $0.windowID == target.id } }
                 }
                 try Task.checkCancellation()
                 guard requestID == request else { return }
-                isPreparing = false
-                progressPanel?.close()
-                progressPanel = nil
-                for screen in screens {
-                    guard let display = displays.first(where: { $0.id == screen.displayID }) else { continue }
-                    let panel = SelectionPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel],
-                                               backing: .buffered, defer: false)
-                    panel.isReleasedWhenClosed = false
-                    panel.isOpaque = false
-                    panel.backgroundColor = .clear
-                    panel.level = .screenSaver
-                    panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-                    panel.acceptsMouseMovedEvents = true
-                    let view = SelectionView(selector: self, display: display)
-                    panel.contentView = view
-                    panels.append(panel)
-                    panel.orderFrontRegardless()
-                    if screen.frame.contains(pointer) { panel.makeKey(); panel.makeFirstResponder(view) }
-                }
+                windows = targets
+                isLoading = false
                 updatePointer(pointer, modifiers: [])
+                if confirmWhenLoaded { confirm() }
             } catch is CancellationError { }
             catch { if requestID == request { finish(.failure(error)) } }
         }
     }
 
+    /// Crosshair for drawing, arrow for picking a window. Set directly as well as through cursor
+    /// rects, because Shotty is not the active app and the frontmost app may otherwise keep its cursor.
+    func updateCursor() {
+        (kind == .window ? NSCursor.arrow : NSCursor.crosshair).set()
+    }
+
     func changeMode(_ newKind: CaptureKind) {
-        guard isActive, !isPreparing, drag == nil else { return }
+        guard isActive, drag == nil else { return }
         kind = newKind
         selection = nil
         isAdjusting = false
         adjustmentPanel?.close()
         adjustmentPanel = nil
+        panels.forEach { $0.invalidateCursorRects(for: $0.contentView!) }
+        updateCursor()
         updatePointer(pointer, modifiers: [])
     }
 
@@ -253,7 +268,6 @@ final class CaptureSelector {
     }
 
     func mouseDown(at point: CGPoint, modifiers: NSEvent.ModifierFlags) {
-        guard !isPreparing else { return }
         if kind == .window { updatePointer(point, modifiers: modifiers); confirm(); return }
         // 6-point edge bands give the 12-point handle hit areas from the interaction spec.
         let drag = SelectionDrag(at: point, adjusting: isAdjusting ? selection : nil, tolerance: 6)
@@ -325,7 +339,8 @@ final class CaptureSelector {
     }
 
     func confirm() {
-        guard isActive, !isPreparing else { return }
+        guard isActive else { return }
+        guard !isLoading else { confirmWhenLoaded = true; return }
         if kind == .window {
             guard let id = selectedWindowID, let target = windows.first(where: { $0.id == id }) else { return }
             let shadow = configuration.shadow != shadowInverted
@@ -375,15 +390,11 @@ final class CaptureSelector {
         }
     }
 
-    /// Hides the selection surface and finishes with the result of `work`. Slow work shows
-    /// the cancellable preparation panel, so Escape stays available until the result exists.
+    /// Hides the selection surface and finishes with the result of `work`.
     private func produce(_ work: @escaping @MainActor () async throws -> CaptureSelection) {
         let request = requestID
         hidePanels()
-        isPreparing = true
         operation = Task {
-            let progress = showPreparation(after: .milliseconds(150), for: request)
-            defer { progress.cancel() }
             do {
                 let result = try await work()
                 guard requestID == request, !Task.isCancelled else { return }
@@ -414,8 +425,6 @@ final class CaptureSelector {
         hoverOperation = nil
         hidePanels()
         panels.removeAll()
-        progressPanel?.close()
-        progressPanel = nil
         if let screenObservation { NotificationCenter.default.removeObserver(screenObservation) }
         screenObservation = nil
         let set = frozen
@@ -431,7 +440,8 @@ final class CaptureSelector {
         shadowInverted = false
         isAdjusting = false
         isActive = false
-        isPreparing = false
+        isLoading = false
+        confirmWhenLoaded = false
         completion = nil
     }
 
@@ -450,29 +460,6 @@ final class CaptureSelector {
     }
 
     var accessibleWindowTitle: String? { windows.first { $0.id == selectedWindowID }?.title }
-
-    /// Shows the preparation panel after `delay` unless the request finished first. The panel
-    /// becomes key so Escape reaches its Cancel button while no selection panel is visible.
-    private func showPreparation(after delay: Duration, for request: UUID) -> Task<Void, Never> {
-        Task { [weak self] in
-            do { try await Task.sleep(for: delay) } catch { return }
-            guard let self, self.requestID == request, self.isPreparing, self.progressPanel == nil else { return }
-            let panel = SelectionPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
-                                       backing: .buffered, defer: false)
-            panel.isReleasedWhenClosed = false
-            panel.level = .screenSaver
-            panel.contentView = NSHostingView(rootView: HStack {
-                ProgressView().controlSize(.small)
-                Text("Preparing capture…")
-                Button("Cancel") { [weak self] in self?.cancel() }.keyboardShortcut(.cancelAction)
-            }.padding(14))
-            panel.setContentSize(NSSize(width: 300, height: 54))
-            let frame = NSScreen.screens.first(where: { $0.frame.contains(self.pointer) })?.visibleFrame ?? .zero
-            panel.setFrameOrigin(CGPoint(x: frame.midX - 150, y: frame.midY - 27))
-            self.progressPanel = panel
-            panel.makeKeyAndOrderFront(nil)
-        }
-    }
 
     private func showAdjustment() {
         guard adjustmentPanel == nil, let selection else { return }
@@ -566,9 +553,10 @@ extension NSScreen {
 
 private final class SelectionView: NSView {
     private unowned let selector: CaptureSelector
-    private let display: SelectionDisplay
-    /// Created once; drawing a fresh wrapper per frame would redecode the snapshot.
-    private let displayImage: NSImage?
+    private var display: SelectionDisplay
+    /// Created once per snapshot; drawing a fresh wrapper per frame would redecode it.
+    private var displayImage: NSImage?
+    var displayID: CGDirectDisplayID { display.id }
     private var tracking: NSTrackingArea?
 
     init(selector: CaptureSelector, display: SelectionDisplay) {
@@ -584,6 +572,13 @@ private final class SelectionView: NSView {
     }
     required init?(coder: NSCoder) { nil }
     override var acceptsFirstResponder: Bool { true }
+
+    /// Replaces the live view with the frozen snapshot once it is ready.
+    func show(_ frozen: SelectionDisplay) {
+        display = frozen
+        displayImage = frozen.image.map { NSImage(cgImage: $0, size: frozen.frame.size) }
+        needsDisplay = true
+    }
 
     func updateAccessibility() {
         let value: String
@@ -603,11 +598,12 @@ private final class SelectionView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: bounds, options: [.activeAlways, .mouseMoved, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: bounds, options: [.activeAlways, .mouseMoved, .cursorUpdate, .inVisibleRect], owner: self)
         addTrackingArea(area)
         tracking = area
     }
     override func resetCursorRects() { addCursorRect(bounds, cursor: selector.kind == .window ? .arrow : .crosshair) }
+    override func cursorUpdate(with event: NSEvent) { selector.updateCursor() }
 
     override func draw(_ dirtyRect: NSRect) {
         displayImage?.draw(in: bounds)
@@ -617,11 +613,15 @@ private final class SelectionView: NSView {
             // Occluded parts of the frozen target become visible, exactly where the window is.
             preview.draw(in: local(selected))
         }
-        let shade = NSBezierPath(rect: bounds)
-        if let selected { shade.appendRect(local(selected)) }
-        shade.windingRule = .evenOdd
-        Chrome.scrim.setFill()
-        shade.fill()
+        // Nothing covers the screen until a region exists; then only its surroundings dim.
+        // A hovered window gets its blue tint instead.
+        if let selected, selector.kind != .window {
+            let shade = NSBezierPath(rect: bounds)
+            shade.appendRect(local(selected))
+            shade.windingRule = .evenOdd
+            Chrome.scrim.setFill()
+            shade.fill()
+        }
         if let selected {
             let rect = local(selected)
             if selector.kind == .window {
@@ -737,7 +737,10 @@ private final class SelectionView: NSView {
     }
 
     private func point(_ event: NSEvent) -> CGPoint { window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation }
-    override func mouseMoved(with event: NSEvent) { selector.mouseMoved(at: point(event), modifiers: event.modifierFlags) }
+    override func mouseMoved(with event: NSEvent) {
+        selector.updateCursor()
+        selector.mouseMoved(at: point(event), modifiers: event.modifierFlags)
+    }
     override func mouseDown(with event: NSEvent) { selector.mouseDown(at: point(event), modifiers: event.modifierFlags) }
     override func mouseDragged(with event: NSEvent) { selector.updatePointer(point(event), modifiers: event.modifierFlags) }
     override func mouseUp(with event: NSEvent) { selector.mouseUp(at: point(event), modifiers: event.modifierFlags) }
