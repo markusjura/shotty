@@ -41,6 +41,12 @@ enum Chrome {
         }
     }
 
+    // MARK: Window level
+
+    /// Thumbnails and capture overlays sit where CleanShot's do, just below the cursor: above app
+    /// windows, full-screen apps, the menu bar, and other apps' floating panels.
+    static let floatingLevel = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.cursorWindow)) - 2)
+
     // MARK: Shape and type
 
     static let cardRadius: CGFloat = 13

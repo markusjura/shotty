@@ -128,7 +128,7 @@ final class CaptureSelector {
             panel.backgroundColor = .clear
             // Transparent areas would otherwise pass clicks through to the app underneath.
             panel.ignoresMouseEvents = false
-            panel.level = .screenSaver
+            panel.level = Chrome.floatingLevel
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             panel.acceptsMouseMovedEvents = true
             let view = SelectionView(selector: self, display: display)
@@ -461,7 +461,7 @@ final class CaptureSelector {
                                    backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false
         panel.title = "Adjust Selection"
-        panel.level = .screenSaver
+        panel.level = Chrome.floatingLevel
         panel.contentView = NSHostingView(rootView: SelectionAdjustment(selector: self))
         panel.setContentSize(NSSize(width: 430, height: 70))
         let visible = NSScreen.screens.first(where: { $0.frame.contains(pointer) })?.visibleFrame ?? .zero
@@ -481,7 +481,7 @@ final class CaptureSelector {
         panel.backgroundColor = .clear
         panel.hasShadow = false
         // Clicking a selection panel brings it to the front of its level, so stay one level above.
-        panel.level = NSWindow.Level(NSWindow.Level.screenSaver.rawValue + 1)
+        panel.level = NSWindow.Level(Chrome.floatingLevel.rawValue + 1)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = NSHostingView(rootView: Button { [weak self] in self?.confirm() } label: {
             Label("Start Capture", systemImage: "arrow.down")

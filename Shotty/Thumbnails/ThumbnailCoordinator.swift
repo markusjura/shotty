@@ -71,7 +71,18 @@ final class ThumbnailCoordinator {
     private var relocation: Task<Void, Never>?
     private var targetDisplay: CGDirectDisplayID?
 
-    init(preferences: AppPreferences) { self.preferences = preferences }
+    init(preferences: AppPreferences) {
+        self.preferences = preferences
+        // Menus open at the pop-up menu level, far below the stack. While any Shotty menu tracks,
+        // such as a card's context menu or the editor's zoom menu, the stack drops beneath it.
+        for (name, level) in [(NSMenu.didBeginTrackingNotification, NSWindow.Level.floating),
+                              (NSMenu.didEndTrackingNotification, Chrome.floatingLevel)] {
+            menuObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.panel?.level = level }
+            })
+        }
+    }
+    private var menuObservers: [NSObjectProtocol] = []
 
     /// The binding a card should honour for `action`. Recording suspends every card shortcut.
     func shortcut(for action: Action) -> Shortcut? {
@@ -201,7 +212,7 @@ final class ThumbnailCoordinator {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.level = .floating
+        panel.level = Chrome.floatingLevel
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         panel.press = { [weak self] active in self?.setInteraction(.press, active) }
@@ -275,8 +286,10 @@ final class ThumbnailCoordinator {
     private func place(animated: Bool = false) {
         guard let panel, let screen = resolveScreen() else { return }
         targetDisplay = screen.displayID
-        // visibleFrame excludes the menu bar, notch area, and Dock; 12 pt edge margin.
-        let frame = screen.visibleFrame.insetBy(dx: 12, dy: 12)
+        // visibleFrame excludes the menu bar, notch area, and Dock. The side and bottom insets match
+        // where CleanShot starts its stack (40 pt in, 100 pt up); the top keeps a 12 pt margin.
+        let visible = screen.visibleFrame
+        let frame = CGRect(x: visible.minX + 40, y: visible.minY + 100, width: visible.width - 80, height: visible.height - 112)
         let width = min(self.width, frame.width)
         let heights = Array(repeating: ThumbnailLayout.previewHeight(width: width), count: cards.count)
         visibleCount = ThumbnailLayout.visibleCount(heights: heights, available: frame.height)
