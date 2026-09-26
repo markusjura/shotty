@@ -191,10 +191,11 @@ final class CaptureSelector {
         }
     }
 
-    /// Crosshair for drawing a screenshot region; the normal arrow for picking a window or a
-    /// scrolling region. Set directly as well as through cursor rects, because Shotty is not the
-    /// active app and the frontmost app may otherwise keep its cursor.
-    var cursor: NSCursor { kind == .window || kind == .scrolling ? .arrow : .crosshair }
+    /// CleanShot-style crosshair for drawing a screenshot region, before and while dragging; the
+    /// normal arrow for picking a window or a scrolling region. Set directly as well as through
+    /// cursor rects, because Shotty is not the active app and the frontmost app may otherwise keep
+    /// its cursor.
+    var cursor: NSCursor { kind == .window || kind == .scrolling ? .arrow : .captureCrosshair }
 
     func updateCursor() { cursor.set() }
 
@@ -606,9 +607,9 @@ private final class SelectionView: NSView {
             // Occluded parts of the frozen target become visible, exactly where the window is.
             preview.draw(in: local(selected))
         }
-        // Nothing covers the screen until a region exists; then only its surroundings dim.
-        // A hovered window gets its blue tint instead.
-        if let selected, selector.kind != .window {
+        // Nothing covers the screen until a region exists. A scrolling region dims its surroundings,
+        // a drawn area gets a light tint inside a white border, and a hovered window a blue tint.
+        if let selected, selector.kind == .scrolling {
             let shade = NSBezierPath(rect: bounds)
             shade.appendRect(local(selected))
             shade.windingRule = .evenOdd
@@ -623,13 +624,19 @@ private final class SelectionView: NSView {
                 let symbol = NSImage(systemSymbolName: "camera.fill", accessibilityDescription: "Capture window")
                 symbol?.draw(in: CGRect(x: rect.midX - 18, y: rect.midY - 15, width: 36, height: 30))
             }
+            if selector.kind != .window && selector.kind != .scrolling {
+                Chrome.selectionTint.setFill()
+                rect.fill()
+            }
             if selector.drawsHandles {
                 drawHandles(around: rect)
-            } else {
+            } else if selector.kind == .scrolling {
                 NSColor.controlAccentColor.setStroke()
                 let path = NSBezierPath(rect: rect)
                 path.lineWidth = 1
                 path.stroke()
+            } else {
+                drawBorder(around: rect)
             }
         } else if selector.kind == .scrolling {
             drawInstruction()
@@ -651,6 +658,21 @@ private final class SelectionView: NSView {
     }
 
     static let scrollingInstruction = "Drag to capture the scrolling part of the screen."
+
+    /// White one-point border just outside the region, clear of its pixels. A soft shadow keeps it
+    /// visible over white content.
+    private func drawBorder(around rect: CGRect) {
+        let path = NSBezierPath(rect: rect.insetBy(dx: -0.5, dy: -0.5))
+        path.lineWidth = 1
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowColor = .black.withAlphaComponent(0.35)
+        shadow.shadowBlurRadius = 1.5
+        shadow.set()
+        NSColor.white.setStroke()
+        path.stroke()
+        NSGraphicsContext.restoreGraphicsState()
+    }
 
     /// White corner brackets and edge bars drawn just outside the region, clear of its pixels.
     private func drawHandles(around rect: CGRect) {
@@ -728,4 +750,31 @@ private final class SelectionView: NSView {
 final class NonKeyPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+}
+
+extension NSCursor {
+    /// Area-capture crosshair modeled on CleanShot X: a one-point black plus inside a white
+    /// outline with a faint dark rim, so it reads on light and dark content alike.
+    @MainActor static let captureCrosshair: NSCursor = {
+        let size: CGFloat = 23
+        let mid = size / 2
+        let image = NSImage(size: CGSize(width: size, height: size), flipped: false) { _ in
+            let plus = NSBezierPath()
+            plus.move(to: CGPoint(x: 3, y: mid)); plus.line(to: CGPoint(x: size - 3, y: mid))
+            plus.move(to: CGPoint(x: mid, y: 3)); plus.line(to: CGPoint(x: mid, y: size - 3))
+            plus.lineCapStyle = .round
+            plus.lineWidth = 4
+            NSColor.black.withAlphaComponent(0.3).setStroke()
+            plus.stroke()
+            plus.lineWidth = 3
+            NSColor.white.setStroke()
+            plus.stroke()
+            plus.lineCapStyle = .butt
+            plus.lineWidth = 1
+            NSColor.black.setStroke()
+            plus.stroke()
+            return true
+        }
+        return NSCursor(image: image, hotSpot: CGPoint(x: mid, y: mid))
+    }()
 }

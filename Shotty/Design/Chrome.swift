@@ -18,8 +18,10 @@ enum Chrome {
     /// Label on `controlFill`; dark gray reads softer than black at small sizes.
     static let controlLabel = NSColor(white: 0.14, alpha: 1)
     static let controlLabelDisabled = NSColor(white: 0.14, alpha: 0.4)
-    /// Dims everything outside a selected capture region.
+    /// Dims everything outside a selected scrolling region.
     static let scrim = NSColor.black.withAlphaComponent(0.3)
+    /// Light wash inside a drawn capture area, matching CleanShot's selection.
+    static let selectionTint = NSColor.white.withAlphaComponent(0.15)
     /// Small dark readouts such as selection dimensions.
     static let readoutFill = NSColor.black.withAlphaComponent(0.78)
 
@@ -29,6 +31,15 @@ enum Chrome {
             ? NSColor(white: 0.5, alpha: 1) : NSColor(white: 0.6, alpha: 0.55)
     }
     static var hairlineWidth: CGFloat { NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast ? 2 : 1 }
+    /// Faint outline around thumbnail cards, measured against CleanShot's: a soft light edge in
+    /// Dark Mode, a soft dark edge in Light Mode. Falls back to `hairline` with Increase Contrast.
+    static var cardOutline: NSColor {
+        guard !NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast else { return hairline }
+        return NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(white: 1, alpha: 0.16) : NSColor(white: 0, alpha: 0.1)
+        }
+    }
 
     // MARK: Shape and type
 

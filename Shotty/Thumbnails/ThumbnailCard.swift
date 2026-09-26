@@ -259,7 +259,7 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
             (status as NSString).draw(with: rect, options: [.truncatesLastVisibleLine], attributes: attributes)
         }
         NSGraphicsContext.restoreGraphicsState()
-        Chrome.hairline.setStroke()
+        Chrome.cardOutline.setStroke()
         outline.lineWidth = Chrome.hairlineWidth
         outline.stroke()
     }
