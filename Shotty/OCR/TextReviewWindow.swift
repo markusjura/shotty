@@ -121,7 +121,7 @@ private struct TextReviewView: View {
         panel.allowedContentTypes = [.plainText]
         panel.canCreateDirectories = true
         panel.directoryURL = settings.saveDirectory
-        panel.nameFieldStringValue = ExportService.filenameStem(template: settings.capture.filenameTemplate,
+        panel.nameFieldStringValue = ExportService.filenameStem(template: ExportService.defaultFilenameTemplate,
                                                                 date: createdAt, kind: .text) + ".txt"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {

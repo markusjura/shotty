@@ -74,17 +74,3 @@ enum EditorStyleSamples {
         return context.makeImage()
     }
 }
-
-/// A picker choice with its rendered sample; the title carries the accessible name.
-struct StyleSampleLabel: View {
-    let title: String
-    let sample: NSImage?
-
-    var body: some View {
-        Label {
-            Text(title)
-        } icon: {
-            if let sample { Image(nsImage: sample).accessibilityHidden(true) }
-        }
-    }
-}

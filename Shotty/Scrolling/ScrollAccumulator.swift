@@ -24,10 +24,13 @@ actor ScrollAccumulator {
     private var generation = 0
     private let requestedAxis: ScrollAxis?
     private let limits: ScrollLimits
+    private let makesPreviews: Bool
 
-    init(axis: ScrollAxis? = nil, limits: ScrollLimits = .init()) {
+    /// `makesPreviews: false` skips the periodic downscaled preview when nothing displays it.
+    init(axis: ScrollAxis? = nil, limits: ScrollLimits = .init(), makesPreviews: Bool = true) {
         requestedAxis = axis
         self.limits = limits
+        self.makesPreviews = makesPreviews
     }
 
     func accept(_ image: CGImage) async throws -> Progress {
@@ -125,7 +128,7 @@ actor ScrollAccumulator {
     }
 
     private func refreshedPreview(if requested: Bool) async throws -> CGImage? {
-        guard requested, previewIsDirty, let tiles else { return nil }
+        guard makesPreviews, requested, previewIsDirty, let tiles else { return nil }
         let image = try await tiles.preview()
         previewIsDirty = false
         return image

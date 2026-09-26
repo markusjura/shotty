@@ -31,10 +31,6 @@ struct SelectionScreenLayout: Equatable {
 struct SelectionConfiguration {
     var freeze = true
     var shadow = true
-    var cursor = false
-    var adjust = false
-    var crosshair = false
-    var magnifier = false
 }
 
 enum CaptureSelection {
@@ -164,8 +160,7 @@ final class CaptureSelector {
                                       width: window.frame.width, height: window.frame.height))
                 }.sorted { (order.firstIndex(of: $0.id) ?? .max) < (order.firstIndex(of: $1.id) ?? .max) }
                 if configuration.freeze && kind != .scrolling {
-                    let set = try await FrozenCaptureSet.acquire(shadow: configuration.shadow,
-                        includeAlternateShadow: true, showsCursor: configuration.cursor)
+                    let set = try await FrozenCaptureSet.acquire(shadow: configuration.shadow, includeAlternateShadow: true)
                     guard requestID == request, !Task.isCancelled else { try? await set.close(); return }
                     frozen = set
                     var loaded: [SelectionDisplay] = []
@@ -196,11 +191,12 @@ final class CaptureSelector {
         }
     }
 
-    /// Crosshair for drawing, arrow for picking a window. Set directly as well as through cursor
-    /// rects, because Shotty is not the active app and the frontmost app may otherwise keep its cursor.
-    func updateCursor() {
-        (kind == .window ? NSCursor.arrow : NSCursor.crosshair).set()
-    }
+    /// Crosshair for drawing a screenshot region; the normal arrow for picking a window or a
+    /// scrolling region. Set directly as well as through cursor rects, because Shotty is not the
+    /// active app and the frontmost app may otherwise keep its cursor.
+    var cursor: NSCursor { kind == .window || kind == .scrolling ? .arrow : .crosshair }
+
+    func updateCursor() { cursor.set() }
 
     func changeMode(_ newKind: CaptureKind) {
         guard isActive, drag == nil else { return }
@@ -286,7 +282,7 @@ final class CaptureSelector {
             return
         }
         // A scrolling region is always adjustable, so sticky headers can be excluded before Start.
-        if configuration.adjust || isAdjusting || kind == .scrolling { isAdjusting = true; showAdjustment(); redraw() }
+        if isAdjusting || kind == .scrolling { isAdjusting = true; showAdjustment(); redraw() }
         else { confirm() }
     }
 
@@ -354,9 +350,8 @@ final class CaptureSelector {
                                  scale: Double(snapshot.pointPixelScale)) }
             } else {
                 let scale = Double(displays.first(where: { $0.frame.intersects(target.frame) })?.scale ?? 1)
-                let cursor = configuration.cursor
                 produce { [capture] in
-                    .image(try await capture.window(id: id, shadow: shadow, showsCursor: cursor), kind: .window, scale: scale)
+                    .image(try await capture.window(id: id, shadow: shadow), kind: .window, scale: scale)
                 }
             }
             return
@@ -374,14 +369,13 @@ final class CaptureSelector {
                                        processID: target.processID, displayID: display.id)))
             return
         }
-        let (kind, displays, freeze, cursor) = (kind, displays, configuration.freeze, configuration.cursor)
+        let (kind, displays, freeze) = (kind, displays, configuration.freeze)
         produce { [capture, renderer] in
             var images = displays
             if !freeze {
                 images = []
                 for display in displays where display.frame.intersects(selection) {
-                    let image = try await capture.display(id: display.id, excluding: ProcessInfo.processInfo.processIdentifier,
-                                                          showsCursor: cursor)
+                    let image = try await capture.display(id: display.id, excluding: ProcessInfo.processInfo.processIdentifier)
                     images.append(SelectionDisplay(id: display.id, frame: display.frame, scale: display.scale, image: image))
                 }
             }
@@ -517,9 +511,10 @@ final class CaptureSelector {
         return CGSize(width: ceil(selection.width * scale), height: ceil(selection.height * scale))
     }
 
-    var showsCrosshair: Bool { configuration.crosshair }
-    var showsMagnifier: Bool { configuration.magnifier }
     var drawsHandles: Bool { isAdjusting }
+    /// The pointer readout helps while drawing. It stays away once a region exists, and scrolling
+    /// capture never shows it; errors are always shown.
+    var showsReadout: Bool { errorMessage != nil || (kind != .scrolling && (selection == nil || drag != nil)) }
 }
 
 final class SelectionPanel: NSPanel {
@@ -602,7 +597,7 @@ private final class SelectionView: NSView {
         addTrackingArea(area)
         tracking = area
     }
-    override func resetCursorRects() { addCursorRect(bounds, cursor: selector.kind == .window ? .arrow : .crosshair) }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: selector.cursor) }
     override func cursorUpdate(with event: NSEvent) { selector.updateCursor() }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -642,14 +637,7 @@ private final class SelectionView: NSView {
             drawInstruction()
         }
         let point = CGPoint(x: selector.pointer.x - display.frame.minX, y: selector.pointer.y - display.frame.minY)
-        guard bounds.contains(point) else { return }
-        if selector.showsCrosshair {
-            NSColor.white.withAlphaComponent(0.6).setStroke()
-            let lines = NSBezierPath()
-            lines.move(to: CGPoint(x: 0, y: point.y)); lines.line(to: CGPoint(x: bounds.maxX, y: point.y))
-            lines.move(to: CGPoint(x: point.x, y: 0)); lines.line(to: CGPoint(x: point.x, y: bounds.maxY))
-            lines.stroke()
-        }
+        guard selector.showsReadout, bounds.contains(point) else { return }
         let dimensions = selector.pixelDimensions
         let message = selector.errorMessage ?? (selector.selection == nil
             ? "X \(Int(point.x))  Y \(Int(bounds.height - point.y))"
@@ -662,18 +650,6 @@ private final class SelectionView: NSView {
         Chrome.readoutFill.setFill()
         NSBezierPath(roundedRect: label, xRadius: 5, yRadius: 5).fill()
         (message as NSString).draw(at: CGPoint(x: label.minX + 6, y: label.minY + 4), withAttributes: attributes)
-        if selector.showsMagnifier, let image = display.image {
-            // The snapshot's own pixel density, which need not match the current backing scale.
-            let density = CGFloat(image.width) / bounds.width
-            let pixels = CGRect(x: point.x * density - 8, y: (bounds.height - point.y) * density - 8,
-                                width: 16, height: 16).intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
-            if let crop = image.cropping(to: pixels) {
-                let rect = CGRect(x: min(bounds.width - 88, max(8, point.x + 20)),
-                                  y: min(bounds.height - 88, max(8, point.y + 20)), width: 80, height: 80)
-                NSGraphicsContext.current?.imageInterpolation = .none
-                NSImage(cgImage: crop, size: rect.size).draw(in: rect)
-            }
-        }
     }
 
     static let scrollingInstruction = "Drag to capture the scrolling part of the screen."

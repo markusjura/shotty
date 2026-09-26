@@ -19,7 +19,7 @@ struct ShottyApp: App {
                 }
             }
             SwiftUI.CommandGroup(after: .pasteboard) {
-                ForEach(CommandGroup.editor.commands.filter { ![.zoomIn, .zoomOut, .zoomToFit, .actualSize].contains($0) }, id: \.self) { command in
+                ForEach(CommandGroup.editor.commands.filter { $0.tool == nil && ![.zoomIn, .zoomOut, .zoomToFit, .actualSize].contains($0) }, id: \.self) { command in
                     Button(command.title) { delegate.execute(command) }
                         .keyboardShortcut(delegate.commands.shortcut(for: command)?.keyboardShortcut)
                         .disabled(!delegate.commands.isAvailable(command))
@@ -28,7 +28,7 @@ struct ShottyApp: App {
             // Tool keys stay routed by the focused editor canvas; plain-letter menu equivalents
             // would fire while typing, so these items carry no shortcut.
             CommandMenu("Tools") {
-                ForEach(CommandGroup.editorTools.commands, id: \.self) { command in
+                ForEach(CommandGroup.editor.commands.filter { $0.tool != nil }, id: \.self) { command in
                     Button(command.title) { delegate.execute(command) }
                         .disabled(!delegate.commands.isAvailable(command))
                 }
@@ -45,7 +45,6 @@ struct ShottyApp: App {
                         .keyboardShortcut(delegate.commands.shortcut(for: command)?.keyboardShortcut)
                         .disabled(!delegate.commands.isAvailable(command))
                 }
-                Button("Objects…") { delegate.showObjects() }
             }
         }
         MenuBarExtra("Shotty", systemImage: "viewfinder", isInserted: Binding(
@@ -138,10 +137,6 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
         default:
             editors.values.first { $0.window === NSApp.keyWindow }?.model.execute(command)
         }
-    }
-
-    func showObjects() {
-        editors.values.first { $0.window === NSApp.keyWindow }?.model.showsObjects = true
     }
 
     private func openEditor(_ id: UUID) {

@@ -83,11 +83,6 @@ final class AppPreferences {
         CaptureOutputSnapshot(kind: kind, capture: storedCapture, text: storedText, scrolling: storedScrolling)
     }
 
-    /// Resets only one tool's new-object style.
-    func resetToolDefaults(_ tool: EditorTool) {
-        editor.tools.reset(tool)
-    }
-
     private func save<Value: Encodable>(_ value: Value, _ key: Key) {
         // Encoding plain Codable values cannot fail; a failure would be a programming error.
         guard let data = try? JSONEncoder().encode(value) else { return assertionFailure("Unencodable \(key)") }

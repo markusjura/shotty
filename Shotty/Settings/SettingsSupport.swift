@@ -28,7 +28,6 @@ extension NSScreen {
 enum SystemSettingsLink {
     static let screenRecording = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
     static let accessibility = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-    static let keyboardShortcuts = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!
     static let privacy = URL(string: "x-apple.systempreferences:com.apple.preference.security")!
 
     /// Falls back to Privacy & Security if a deep link stops resolving.

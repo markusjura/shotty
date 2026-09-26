@@ -79,7 +79,6 @@ struct CapturePreferences: Codable, Equatable, Sendable {
 
     var outputs: Set<ScreenshotOutput> = [.showThumbnail]
     var destination = SaveDestination.downloads
-    var filenameTemplate = ExportService.defaultFilenameTemplate
     var format = ImageFormatPreference.png
     var jpegQuality = 0.9
     /// JPEG has no alpha; transparent pixels are composited onto this color.
@@ -87,12 +86,8 @@ struct CapturePreferences: Codable, Equatable, Sendable {
     var colorHandling = ColorHandlingPreference.preserveSource
     var outputScale = OutputScalePreference.native
     var fullscreenTarget = FullscreenTarget.pointerDisplay
-    var showsCursor = false
     var freezesScreen = true
     var includesWindowShadow = true
-    var adjustsBeforeCapture = false
-    var showsCrosshair = false
-    var showsMagnifier = false
 
     var isValid: Bool {
         !outputs.isEmpty && Self.jpegQualityRange.contains(jpegQuality) && jpegBackground.isValid
@@ -126,25 +121,12 @@ enum ScrollPace: String, Codable, CaseIterable, Sendable {
     }
 }
 
-enum ScrollAxisPreference: String, Codable, CaseIterable, Sendable {
-    case automatic, vertical, horizontal
-
-    var axis: ScrollAxis? {
-        switch self {
-        case .automatic: nil
-        case .vertical: .vertical
-        case .horizontal: .horizontal
-        }
-    }
-}
-
 struct ScrollingPreferences: Codable, Equatable, Sendable {
     /// Upper bounds are the tested 30,000-pixel / 120-second envelope.
     static let axisPixelRange = 5_000...30_000
     static let durationRange = 30...120
 
     var pace = ScrollPace.adaptive
-    var axis = ScrollAxisPreference.automatic
     var maximumAxisPixels = 30_000
     var maximumDurationSeconds = 120
 
@@ -220,6 +202,9 @@ enum SpotlightShape: String, Codable, CaseIterable, Sendable { case rectangle, r
 /// New-object defaults per tool. Widths and sizes are image pixels, independent of zoom.
 struct EditorToolDefaults: Codable, Equatable, Sendable {
     static let widthRange = 1.0...64.0
+    /// The editor's thickness choices.
+    static let widthPresets: [Double] = [2, 4, 6, 10, 16]
+    static let roundedCornerRadius = 16.0
 
     struct Arrow: Codable, Equatable, Sendable {
         var color = RGBAColor.annotationRed
@@ -284,36 +269,6 @@ struct EditorToolDefaults: Codable, Equatable, Sendable {
 
     /// Select and Crop have no persisted style.
     static let styledTools: [EditorTool] = [.arrow, .rectangle, .ellipse, .line, .text, .redact, .spotlight, .counter]
-
-    func isDefault(_ tool: EditorTool) -> Bool {
-        let base = EditorToolDefaults()
-        switch tool {
-        case .select, .crop: return true
-        case .arrow: return arrow == base.arrow
-        case .rectangle: return rectangle == base.rectangle
-        case .ellipse: return ellipse == base.ellipse
-        case .line: return line == base.line
-        case .text: return text == base.text
-        case .redact: return redact == base.redact
-        case .spotlight: return spotlight == base.spotlight
-        case .counter: return counter == base.counter
-        }
-    }
-
-    mutating func reset(_ tool: EditorTool) {
-        let base = EditorToolDefaults()
-        switch tool {
-        case .select, .crop: break
-        case .arrow: arrow = base.arrow
-        case .rectangle: rectangle = base.rectangle
-        case .ellipse: ellipse = base.ellipse
-        case .line: line = base.line
-        case .text: text = base.text
-        case .redact: redact = base.redact
-        case .spotlight: spotlight = base.spotlight
-        case .counter: counter = base.counter
-        }
-    }
 
     var isValid: Bool {
         let widths = [arrow.width, rectangle.width, ellipse.width, line.width]

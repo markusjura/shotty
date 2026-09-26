@@ -131,12 +131,12 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
     override func layout() {
         super.layout()
         hoverBackdrop.frame = bounds.insetBy(dx: 1, dy: 1)
-        statusLabel.frame = CGRect(x: 34, y: bounds.height - 25, width: bounds.width - 40, height: 16)
+        statusLabel.frame = CGRect(x: 34, y: bounds.height - 25, width: bounds.width - 68, height: 16)
         // Proportions follow CleanShot's overlay: small corner buttons, two compact centered pills.
         let inset: CGFloat = 6, diameter = Chrome.iconButtonDiameter
         let pill = Chrome.cardPillSize, gap: CGFloat = 10
         controls[0].frame = CGRect(x: inset, y: bounds.height - inset - diameter, width: diameter, height: diameter)
-        controls[1].frame = CGRect(x: inset, y: inset, width: diameter, height: diameter)
+        controls[1].frame = CGRect(x: bounds.width - inset - diameter, y: bounds.height - inset - diameter, width: diameter, height: diameter)
         controls[2].frame = CGRect(x: bounds.midX - pill.width / 2, y: bounds.midY + gap / 2, width: pill.width, height: pill.height)
         controls[3].frame = CGRect(x: bounds.midX - pill.width / 2, y: bounds.midY - gap / 2 - pill.height, width: pill.width, height: pill.height)
     }

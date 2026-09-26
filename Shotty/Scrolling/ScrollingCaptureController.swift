@@ -35,11 +35,12 @@ struct ScrollAcquisitionReadiness {
 /// `ScrollAutomationDriver` for explicit Auto Scroll, and `ScrollInputObserver` for manual takeover.
 ///
 /// Flow: the selector's Start confirms an adjustable region; acquisition then begins as soon as the
-/// target window is frontmost, with Start as the fallback if it is not. The first
-/// manual scroll makes the capture manual-only. Auto Scroll runs only from its button. Limits and
-/// interruptions keep accepted pixels. Done hands a complete result to the ordinary output
-/// pipeline directly; a partial result is shown first and needs Keep Partial Capture. A failed
-/// hand-off keeps the accepted pixels for another attempt. Cancel produces no output.
+/// target window is frontmost, with Start as the fallback if it is not. Cancel and Done sit below the
+/// region and Auto Scroll inside it, at the bottom. The first manual scroll makes the capture
+/// manual-only and removes Auto Scroll. The first accepted movement decides whether the capture
+/// grows vertically or horizontally. Limits and interruptions keep accepted pixels. Done hands a
+/// complete result to the ordinary output pipeline directly; a partial result needs Keep Partial
+/// Capture. A failed hand-off keeps the accepted pixels for another attempt. Cancel produces no output.
 @MainActor @Observable
 final class ScrollingCaptureController {
     enum Phase: Equatable {
@@ -52,21 +53,18 @@ final class ScrollingCaptureController {
     }
 
     private(set) var phase: Phase?
-    private(set) var preview: NSImage?
-    private(set) var pixelSize: CGSize = .zero
-    private(set) var status = ""
+    /// Something the user must know or act on; nil while the capture runs normally.
+    private(set) var notice: String?
     private(set) var automaticMode = ScrollInputState.Mode.undecided
     private(set) var hasAcceptedFrame = false
     /// Why the result is partial; nil means the capture ended normally.
     private(set) var incompleteReason: String?
-    /// Direction for Auto Scroll when Settings leave the axis automatic and none is established yet.
-    var autoScrollAxis = ScrollAxis.vertical
-    private(set) var asksForAutoScrollAxis = false
-    /// Requested in Settings or inferred from the first accepted movement; authoritative once set.
-    private(set) var establishedAxis: ScrollAxis?
-    /// The direction choice is offered only before Auto Scroll starts and before any axis exists.
-    var offersAxisChoice: Bool { asksForAutoScrollAxis && establishedAxis == nil && automaticMode == .undecided }
+    /// Inferred from the first accepted movement. Auto Scroll goes down until then.
+    private var establishedAxis: ScrollAxis?
     private(set) var isKeeping = false
+
+    /// Auto Scroll, then Pause or Resume once started, shows until the user scrolls by hand.
+    var showsAutoScroll: Bool { phase == .capturing && automaticMode != .manualOnly }
 
     var isActive: Bool { phase != nil }
 
@@ -84,7 +82,7 @@ final class ScrollingCaptureController {
     @ObservationIgnored private var screenObserver: NSObjectProtocol?
     @ObservationIgnored private var shadePanel: NSPanel?
     @ObservationIgnored private var controlsPanel: NSPanel?
-    @ObservationIgnored private var previewPanel: NSPanel?
+    @ObservationIgnored private var autoScrollPanel: NSPanel?
     @ObservationIgnored private var outputTask: Task<Bool, Never>?
     /// Invalidates follow-up work from an ended session.
     @ObservationIgnored private var sessionID = UUID()
@@ -122,15 +120,11 @@ final class ScrollingCaptureController {
                           displayID: displayID,
                           displayLocalRegion: globalRegion.offsetBy(dx: -captureFrame.minX, dy: -captureFrame.minY),
                           scale: screen.backingScaleFactor, settings: settings, ticket: ticket)
-        preview = nil
-        pixelSize = .zero
         hasAcceptedFrame = false
         incompleteReason = nil
         automaticMode = .undecided
-        asksForAutoScrollAxis = settings.scrolling.axis == .automatic
-        autoScrollAxis = settings.scrolling.axis.axis ?? .vertical
-        establishedAxis = settings.scrolling.axis.axis
-        status = "Starting…"
+        establishedAxis = nil
+        notice = nil
         phase = .ready
         isKeeping = false
         showsReturnHint = false
@@ -159,7 +153,7 @@ final class ScrollingCaptureController {
         guard phase == .ready, var session else { return }
         switch ScrollAutomationDriver.Environment.live.windowBounds(session.target) {
         case .failure(let reason):
-            status = "\(reason.rawValue) Bring the window to the front, then press Start."
+            notice = "\(reason.rawValue) Bring the window to the front, then press Start."
             controlsPanel?.makeKey()
             return
         case .success(let bounds):
@@ -167,15 +161,15 @@ final class ScrollingCaptureController {
             self.session = session
         }
         let settings = session.settings.scrolling
-        accumulator = ScrollAccumulator(axis: settings.axis.axis, limits: settings.limits)
-        let driver = ScrollAutomationDriver(axis: establishedAxis ?? autoScrollAxis, stepFraction: settings.pace.stepFraction)
+        accumulator = ScrollAccumulator(limits: settings.limits, makesPreviews: false)
+        let driver = ScrollAutomationDriver(stepFraction: settings.pace.stepFraction)
         driver.onStateChange = { [weak self, weak driver] in
             guard let self, let driver, self.driver === driver else { return }
             automaticMode = driver.inputState.mode
             if driver.pauseReason == .noProgress {
-                status = "Auto Scroll stopped: nothing new appeared. The end may be reached. Press Done to finish."
+                notice = "Nothing new appeared. The end may be reached."
             } else if let reason = driver.pauseReason {
-                status = reason.rawValue
+                notice = reason.rawValue
             }
         }
         self.driver = driver
@@ -188,7 +182,7 @@ final class ScrollingCaptureController {
                                                                 object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.interrupt("The display arrangement changed.", canContinue: false) }
         }
-        status = "Scroll the region, or choose Auto Scroll."
+        notice = nil
         phase = .capturing
         runAcquisition(after: nil)
     }
@@ -199,11 +193,11 @@ final class ScrollingCaptureController {
             // Prompts at most once per macOS policy; later presses only explain.
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
             _ = AXIsProcessTrustedWithOptions(options)
-            status = "Auto Scroll needs Accessibility access. Allow Shotty in System Settings. Accepted pixels are kept; when you return, press Continue with the window where you left it, then Auto Scroll."
+            notice = "Auto Scroll needs Accessibility access. Allow Shotty in System Settings, then return and press Continue."
             return
         }
-        guard driver.startAutomatic(target: session.target, axis: establishedAxis ?? autoScrollAxis) else { return }
-        status = "Auto Scrolling."
+        guard driver.startAutomatic(target: session.target, axis: establishedAxis ?? .vertical) else { return }
+        notice = nil
         driver.injectNextStepIfReady()
     }
 
@@ -212,7 +206,7 @@ final class ScrollingCaptureController {
         guard phase == .capturing, let driver, driver.inputState.mode != .undecided, driver.inputState.mode != .manualOnly else { return }
         driver.handle(.toggleAutomaticPause)
         if driver.inputState.mode == .automaticRunning {
-            status = "Auto Scrolling."
+            notice = nil
             driver.injectNextStepIfReady()
         }
     }
@@ -220,10 +214,10 @@ final class ScrollingCaptureController {
     func continueCapture() {
         guard case .interrupted(_, true) = phase, let session else { return }
         if let reason = targetFailure(session) {
-            status = "\(reason.rawValue) Return to the window, then press Continue."
+            notice = "\(reason.rawValue) Return to the window, then press Continue."
             return
         }
-        status = "Scroll the region to continue."
+        notice = nil
         phase = .capturing
         runAcquisition(after: acquisition)
     }
@@ -237,17 +231,12 @@ final class ScrollingCaptureController {
         let token = sessionID
         phase = .review
         isKeeping = incompleteReason == nil
-        status = isKeeping ? "Finishing the capture…" : "Preparing the result…"
+        notice = incompleteReason.map { "Partial capture: \($0)" }
         Task { [weak self] in
             await running?.value
-            guard let self, sessionID == token, phase == .review else { return }
-            if incompleteReason == nil {
-                isKeeping = false
-                output()
-            } else {
-                await showFinalPreview()
-                status = incompleteReason.map { "Partial capture: \($0)" } ?? status
-            }
+            guard let self, sessionID == token, phase == .review, incompleteReason == nil else { return }
+            isKeeping = false
+            output()
         }
     }
 
@@ -262,7 +251,6 @@ final class ScrollingCaptureController {
     private func output() {
         guard !isKeeping, let accumulator, let session, let coordinator else { return }
         isKeeping = true
-        status = "Saving the capture…"
         let token = sessionID
         let task = Task { () -> Bool in
             guard let image = try? await accumulator.renderImage() else { return false }
@@ -278,19 +266,8 @@ final class ScrollingCaptureController {
                 await endSession()
             } else {
                 isKeeping = false
-                if preview == nil { await showFinalPreview() }
-                status = "The capture couldn't be kept. Its pixels are still here: press Keep to try again, or Discard."
+                notice = "The capture couldn't be kept. Press Keep to try again, or Discard."
             }
-        }
-    }
-
-    private func showFinalPreview() async {
-        guard let accumulator else { return }
-        do {
-            let image = try await accumulator.finishPreview()
-            preview = NSImage(cgImage: image, size: CGSize(width: image.width, height: image.height))
-        } catch {
-            status = "The preview could not be drawn: \(error.localizedDescription)"
         }
     }
 
@@ -371,8 +348,6 @@ final class ScrollingCaptureController {
                     try Task.checkCancellation()
                     guard acquisitionID == id, phase == .capturing else { return }
                     if result.paused && !frame.isSettled { continue }
-                    if let image = result.preview { preview = NSImage(cgImage: image, size: CGSize(width: image.width, height: image.height)) }
-                    pixelSize = result.dimensions
                     hasAcceptedFrame = true
                     clearReturnHint()
                     if let axis = result.axis { establishedAxis = axis }
@@ -382,12 +357,12 @@ final class ScrollingCaptureController {
                             return
                         }
                         incompleteReason = rejection.explanation
-                        status = "Paused: \(rejection.explanation) Scroll back to the last accepted position, or press Done."
+                        notice = "\(rejection.explanation) Scroll back, or press Done."
                         continue
                     }
                     if result.didMove {
                         incompleteReason = nil
-                        if driver.inputState.mode != .automaticRunning { status = "Scroll to continue, then press Done." }
+                        notice = nil
                     }
                     if frame.isSettled, driver.didSettleAndAlign(capturedAt: frame.capturedAt, didMove: result.didMove) {
                         driver.injectNextStepIfReady()
@@ -417,13 +392,13 @@ final class ScrollingCaptureController {
     private func showReturnHint() {
         guard !showsReturnHint else { return }
         showsReturnHint = true
-        status = "Return to the captured window to continue. Accepted pixels are kept."
+        notice = "Return to the captured window to continue."
     }
 
     private func clearReturnHint() {
         guard showsReturnHint else { return }
         showsReturnHint = false
-        status = "Scroll to continue, then press Done."
+        notice = nil
     }
 
     /// Returns the loop so callers outside it can wait for the accumulator to settle.
@@ -443,7 +418,7 @@ final class ScrollingCaptureController {
         guard phase == .capturing else { return }
         stopAcquisition()
         incompleteReason = reason
-        status = hasAcceptedFrame ? "\(reason) Accepted pixels are kept." : reason
+        notice = reason
         phase = .interrupted(reason: reason, canContinue: canContinue)
     }
 
@@ -483,11 +458,11 @@ final class ScrollingCaptureController {
         await accumulator?.discard()
         accumulator = nil
         session = nil
-        for panel in [shadePanel, controlsPanel, previewPanel] { panel?.orderOut(nil) }
+        for panel in [shadePanel, controlsPanel, autoScrollPanel] { panel?.orderOut(nil) }
         shadePanel = nil
         controlsPanel = nil
-        previewPanel = nil
-        preview = nil
+        autoScrollPanel = nil
+        notice = nil
         phase = nil
     }
 
@@ -507,9 +482,8 @@ final class ScrollingCaptureController {
         }
     }
 
-    /// Dims the display around the region and attaches the controls below it and the preview beside
-    /// it when space permits. Near-fullscreen regions use a corner fallback; Shotty's
-    /// windows are always excluded from the capture stream.
+    /// Dims the display around the region, attaches Cancel and Done below it, and places Auto Scroll
+    /// inside it at the bottom. Shotty's windows are always excluded from the capture stream.
     private func showPanels(around region: CGRect, on screen: NSScreen, targetProcess pid: pid_t) {
         let hole = region.offsetBy(dx: -screen.frame.minX, dy: -screen.frame.minY)
         let shade = Self.overlayPanel(frame: screen.frame, content: ShadeView(hole: hole))
@@ -517,7 +491,7 @@ final class ScrollingCaptureController {
         shadePanel = shade
 
         let visible = screen.visibleFrame.insetBy(dx: 8, dy: 8)
-        let barSize = CGSize(width: 460, height: 50)
+        let barSize = CGSize(width: 520, height: 50)
         let barOrigin = SelectionGeometry.firstClearOrigin(
             SelectionGeometry.attachedOrigins(size: barSize, to: region, within: visible, gap: 4) + Self.corners(of: visible, size: barSize),
             size: barSize, avoiding: [region], within: visible) ?? CGPoint(x: visible.midX - barSize.width / 2, y: visible.minY)
@@ -526,18 +500,13 @@ final class ScrollingCaptureController {
         bar.becomesKeyOnlyIfNeeded = false
         controlsPanel = bar
 
-        let previewSize = CGSize(width: 208, height: min(max(region.height, 260), 440))
-        let top = min(region.maxY, visible.maxY) - previewSize.height
-        let besideRegion = [CGPoint(x: region.maxX + 12, y: top), CGPoint(x: region.minX - 12 - previewSize.width, y: top)]
-        let previewOrigin = SelectionGeometry.firstClearOrigin(besideRegion + Self.corners(of: visible, size: previewSize),
-                                                               size: previewSize, avoiding: [region, bar.frame], within: visible)
-            ?? CGPoint(x: visible.maxX - previewSize.width, y: visible.maxY - previewSize.height)
-        let preview = Self.overlayPanel(frame: CGRect(origin: previewOrigin, size: previewSize),
-                                        content: NSHostingView(rootView: ScrollingCapturePreview(controller: self)))
-        preview.ignoresMouseEvents = true
-        previewPanel = preview
+        let autoSize = CGSize(width: min(200, region.width), height: 44)
+        let autoOrigin = CGPoint(x: region.midX - autoSize.width / 2, y: region.minY + min(12, max(0, region.height - autoSize.height)))
+        let autoScroll = Self.overlayPanel(frame: CGRect(origin: autoOrigin, size: autoSize),
+                                           content: NSHostingView(rootView: AutoScrollControl(controller: self)))
+        autoScrollPanel = autoScroll
 
-        for panel in [shade, preview, bar] { panel.orderFrontRegardless() }
+        for panel in [shade, autoScroll, bar] { panel.orderFrontRegardless() }
         makeControlsKey(after: pid)
     }
 
@@ -584,15 +553,30 @@ private final class ShadeView: NSView {
     }
 }
 
-/// Compact capsule controls attached below the region. Return, Escape, and Space keep working
-/// because this panel is key.
+/// Compact capsule controls attached below the region, with any notice beside them. Return,
+/// Escape, and Space keep working because this panel is key.
 private struct ScrollingCaptureBar: View {
     let controller: ScrollingCaptureController
 
     var body: some View {
-        HStack(spacing: 8) { controls }
-            .buttonStyle(.overlayCapsule)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        HStack(spacing: 8) {
+            if let notice = controller.notice {
+                Text(notice)
+                    .font(.caption.weight(.medium)).lineLimit(2)
+                    .foregroundStyle(Color(nsColor: Chrome.controlLabel))
+                    .padding(.horizontal, 12).padding(.vertical, 4)
+                    .frame(maxWidth: 280, minHeight: Chrome.pillHeight)
+                    .overlayCapsuleBackground()
+            }
+            controls
+        }
+        .buttonStyle(.overlayCapsule)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Space pauses and resumes Auto Scroll, whose button lives in a panel that is never key.
+        .background {
+            Button("Pause or Resume Auto Scroll", action: controller.toggleAutoScrollPause)
+                .keyboardShortcut(.space, modifiers: []).opacity(0).accessibilityHidden(true)
+        }
     }
 
     @ViewBuilder
@@ -603,28 +587,6 @@ private struct ScrollingCaptureBar: View {
             Button("Start", systemImage: "arrow.down", action: controller.beginCapture)
                 .keyboardShortcut(.defaultAction).buttonStyle(.overlayCapsuleProminent)
         case .capturing:
-            if controller.offersAxisChoice {
-                Picker("Auto Scroll direction", selection: Bindable(controller).autoScrollAxis) {
-                    Label("Vertical", systemImage: "arrow.up.and.down").tag(ScrollAxis.vertical)
-                    Label("Horizontal", systemImage: "arrow.left.and.right").tag(ScrollAxis.horizontal)
-                }
-                .pickerStyle(.segmented).labelStyle(.iconOnly).labelsHidden().fixedSize()
-                .help("Auto Scroll direction")
-                .padding(.horizontal, 4).frame(height: Chrome.pillHeight)
-                .overlayCapsuleBackground()
-                .environment(\.colorScheme, .light)
-            }
-            switch controller.automaticMode {
-            case .undecided:
-                Button("Auto Scroll", systemImage: "arrow.down.circle.fill", action: controller.startAutoScroll)
-                    .disabled(!controller.hasAcceptedFrame)
-            case .automaticRunning:
-                Button("Pause", systemImage: "pause.fill", action: controller.toggleAutoScrollPause).keyboardShortcut(.space, modifiers: [])
-            case .automaticPaused:
-                Button("Resume", systemImage: "play.fill", action: controller.toggleAutoScrollPause).keyboardShortcut(.space, modifiers: [])
-            case .manualOnly:
-                EmptyView()
-            }
             cancelButton
             doneButton
         case .interrupted(_, let canContinue):
@@ -635,7 +597,7 @@ private struct ScrollingCaptureBar: View {
             Button("Discard", systemImage: "xmark", action: controller.cancel).keyboardShortcut(.cancelAction)
             Button(controller.incompleteReason == nil ? "Keep" : "Keep Partial Capture", systemImage: "checkmark", action: controller.keep)
                 .keyboardShortcut(.defaultAction).buttonStyle(.overlayCapsuleProminent)
-                .disabled(controller.preview == nil || controller.isKeeping)
+                .disabled(controller.isKeeping)
         case nil:
             EmptyView()
         }
@@ -651,37 +613,26 @@ private struct ScrollingCaptureBar: View {
     }
 }
 
-/// The stitched result beside the region, with its size and the current status.
-private struct ScrollingCapturePreview: View {
+/// Sits inside the region at its bottom edge. Scrolling by hand removes it.
+private struct AutoScrollControl: View {
     let controller: ScrollingCaptureController
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let preview = controller.preview {
-                Image(nsImage: preview)
-                    .resizable().scaledToFit()
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .frame(maxWidth: .infinity)
-                    .accessibilityLabel("Stitched preview")
-            }
-            if controller.pixelSize != .zero {
-                HStack(spacing: 6) {
-                    Text("\(Int(controller.pixelSize.width)) × \(Int(controller.pixelSize.height)) px").monospacedDigit()
-                    if let axis = controller.establishedAxis {
-                        Image(systemName: axis == .vertical ? "arrow.up.and.down" : "arrow.left.and.right")
-                            .accessibilityLabel(axis == .vertical ? "Vertical" : "Horizontal")
-                    }
+        Group {
+            if controller.showsAutoScroll {
+                switch controller.automaticMode {
+                case .automaticRunning:
+                    Button("Pause", systemImage: "pause.fill", action: controller.toggleAutoScrollPause)
+                case .automaticPaused:
+                    Button("Resume", systemImage: "play.fill", action: controller.toggleAutoScrollPause)
+                default:
+                    Button("Auto Scroll", systemImage: "arrow.down.circle.fill", action: controller.startAutoScroll)
+                        .disabled(!controller.hasAcceptedFrame)
                 }
-                .font(.caption.weight(.medium))
             }
-            Text(controller.status)
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(10)
-        .frame(width: 208, alignment: .topLeading)
-        .floatingSurface()
-        .frame(maxHeight: .infinity, alignment: .top)
+        .buttonStyle(.overlayCapsule)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

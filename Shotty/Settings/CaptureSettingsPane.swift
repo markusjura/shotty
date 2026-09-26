@@ -43,23 +43,11 @@ struct CaptureSettingsPane: View {
                     Button("Choose…", action: chooseFolder)
                 }
             }
-            HStack {
-                Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([preferences.capture.destination.url]) }
-                if preferences.capture.destination != .downloads {
-                    Button("Use Downloads") { apply(SaveDestination.downloads) }
-                }
+            if preferences.capture.destination != .downloads {
+                Button("Use Downloads") { apply(SaveDestination.downloads) }
             }
             if let message = destinationMessage ?? SaveDestinationCheck.status(of: preferences.capture.destination.url).message {
                 Label(message, systemImage: "exclamationmark.triangle").secondaryNote()
-            }
-            TextField("File name", text: $preferences.capture.filenameTemplate, prompt: Text(ExportService.defaultFilenameTemplate))
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Example: \(ExportService.filenameStem(template: preferences.capture.filenameTemplate, date: .now, kind: .area)).\(preferences.capture.format == .png ? "png" : "jpg")")
-                Text("Use {date}, {time}, or {type}. Duplicates are numbered.")
-            }
-            .secondaryNote()
-            if preferences.capture.filenameTemplate != ExportService.defaultFilenameTemplate {
-                Button("Restore Default Name") { preferences.capture.filenameTemplate = ExportService.defaultFilenameTemplate }
             }
         }
     }
@@ -94,7 +82,7 @@ struct CaptureSettingsPane: View {
                 Text("1× (points)").tag(OutputScalePreference.logical)
             }
             Picker("Fullscreen", selection: $preferences.capture.fullscreenTarget) {
-                Text("Display under pointer").tag(FullscreenTarget.pointerDisplay)
+                Text("Current display").tag(FullscreenTarget.pointerDisplay)
                 Text("Main display").tag(FullscreenTarget.mainDisplay)
                 Text("Each display").tag(FullscreenTarget.allDisplays)
             }
@@ -104,12 +92,8 @@ struct CaptureSettingsPane: View {
     private var selectionSection: some View {
         Section("Selection") {
             Toggle("Freeze screen while selecting", isOn: $preferences.capture.freezesScreen)
-            Toggle("Adjust area before capturing", isOn: $preferences.capture.adjustsBeforeCapture)
-            Toggle("Show crosshair", isOn: $preferences.capture.showsCrosshair)
-            Toggle("Show magnifier", isOn: $preferences.capture.showsMagnifier)
             Toggle("Include window shadow", isOn: $preferences.capture.includesWindowShadow)
                 .help("Hold Option while capturing a window to invert this once.")
-            Toggle("Include pointer", isOn: $preferences.capture.showsCursor)
         }
     }
 
@@ -171,11 +155,6 @@ struct CaptureSettingsPane: View {
                 Text("Fast").tag(ScrollPace.fast)
             }
             .pickerStyle(.segmented)
-            Picker("Direction", selection: $preferences.scrolling.axis) {
-                Text("Detect from first movement").tag(ScrollAxisPreference.automatic)
-                Text("Vertical").tag(ScrollAxisPreference.vertical)
-                Text("Horizontal").tag(ScrollAxisPreference.horizontal)
-            }
             Stepper(value: $preferences.scrolling.maximumAxisPixels, in: ScrollingPreferences.axisPixelRange, step: 1_000) {
                 Text("Maximum length: \(preferences.scrolling.maximumAxisPixels.formatted()) pixels")
             }

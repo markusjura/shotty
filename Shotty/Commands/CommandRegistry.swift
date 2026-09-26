@@ -8,16 +8,18 @@ enum CommandScope: String, Sendable {
 }
 
 enum CommandGroup: String, CaseIterable, Sendable {
-    case capture, thumbnails, editorTools, editor
+    case capture, thumbnails, editor
 
     var title: String {
         switch self {
         case .capture: "Capture"
         case .thumbnails: "Thumbnails"
-        case .editorTools: "Editor Tools"
         case .editor: "Editor"
         }
     }
+
+    /// Thumbnail commands are menu items only; the other groups have shortcuts in Settings.
+    var hasShortcuts: Bool { self != .thumbnails }
 
     var commands: [CommandID] { CommandID.allCases.filter { $0.group == self } }
 }
@@ -69,16 +71,15 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         case .captureArea, .captureWindow, .captureFullscreen, .captureScrolling, .captureText: .capture
         case .showThumbnails, .hideThumbnails, .openLatest, .saveAll, .dismissAll: .thumbnails
         case .toolSelect, .toolArrow, .toolRectangle, .toolEllipse, .toolLine, .toolText, .toolRedact,
-             .toolSpotlight, .toolCounter, .toolCrop: .editorTools
-        case .copyImage, .save, .saveAs, .done, .duplicate, .zoomIn, .zoomOut, .zoomToFit, .actualSize: .editor
+             .toolSpotlight, .toolCounter, .toolCrop,
+             .copyImage, .save, .saveAs, .done, .duplicate, .zoomIn, .zoomOut, .zoomToFit, .actualSize: .editor
         }
     }
 
     var scope: CommandScope {
         switch group {
         case .capture, .thumbnails: .global
-        case .editorTools: .editorTool
-        case .editor: .editor
+        case .editor: tool == nil ? .editor : .editorTool
         }
     }
 
@@ -113,7 +114,7 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         allCases.first { $0.tool == tool }!
     }
 
-    /// Fresh-install bindings. Thumbnail commands stay unassigned rather than taking global keys.
+    /// Fresh-install bindings. Thumbnail commands stay unassigned.
     var defaultShortcut: Shortcut? {
         let capture: Shortcut.Modifiers = [.control, .option, .command]
         switch self {
@@ -144,13 +145,6 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         case .actualSize: return Shortcut(kVK_ANSI_1, .command)
         }
     }
-
-    /// "Use my CleanShot shortcuts": window and text keep their current bindings.
-    static let cleanShotPreset: [(CommandID, Shortcut)] = [
-        (.captureFullscreen, Shortcut(kVK_ANSI_3, [.shift, .command])),
-        (.captureArea, Shortcut(kVK_ANSI_4, [.shift, .command])),
-        (.captureScrolling, Shortcut(kVK_ANSI_5, [.shift, .command])),
-    ]
 }
 
 enum ShortcutProblem: Error, Equatable, Sendable {
@@ -241,24 +235,6 @@ final class CommandRegistry {
         for id in group.commands {
             guard let shortcut = id.defaultShortcut else { continue }
             if let problem = problem(assigning: shortcut, to: id) { problems[id] = problem } else { bindings[id] = shortcut }
-        }
-        save()
-        return problems
-    }
-
-    /// Commands that could not take a preset key keep their previous binding.
-    @discardableResult
-    func applyCleanShotPreset() -> [CommandID: ShortcutProblem] {
-        let previous = bindings
-        for (id, _) in CommandID.cleanShotPreset { bindings[id] = nil }
-        var problems: [CommandID: ShortcutProblem] = [:]
-        for (id, shortcut) in CommandID.cleanShotPreset {
-            if let failure = problem(assigning: shortcut, to: id) {
-                problems[id] = failure
-                if let old = previous[id], problem(assigning: old, to: id) == nil { bindings[id] = old }
-            } else {
-                bindings[id] = shortcut
-            }
         }
         save()
         return problems
@@ -362,7 +338,7 @@ final class CommandRegistry {
         let stored = defaults.data(forKey: storageKey)
             .flatMap { try? JSONDecoder().decode([String: Shortcut?].self, from: $0) } ?? [:]
         let overrides = Dictionary(uniqueKeysWithValues: stored.compactMap { key, value in
-            CommandID(rawValue: key).map { ($0, value) }
+            CommandID(rawValue: key).flatMap { $0.group.hasShortcuts ? ($0, value) : nil }
         })
         var result: [CommandID: Shortcut] = [:]
         let customized = CommandID.allCases.filter { overrides.keys.contains($0) }

@@ -44,13 +44,13 @@ final class CommandRegistryTests: XCTestCase {
         XCTAssertNil(registry.assign(nil, to: .captureFullscreen))
         XCTAssertNil(registry.assign(fullscreen, to: .captureArea))
         XCTAssertNil(registry.assign(nil, to: .toolText))
-        XCTAssertNil(registry.assign(Shortcut(kVK_ANSI_O, [.control, .command]), to: .openLatest))
+        XCTAssertNil(registry.assign(Shortcut(kVK_ANSI_O, [.control, .command]), to: .duplicate))
 
         let reloaded = CommandRegistry(defaults: defaults)
         XCTAssertNil(reloaded.shortcut(for: .captureFullscreen), "A cleared default stays cleared")
         XCTAssertEqual(reloaded.shortcut(for: .captureArea), fullscreen, "A moved key wins over its old default owner")
         XCTAssertNil(reloaded.shortcut(for: .toolText))
-        XCTAssertEqual(reloaded.shortcut(for: .openLatest), Shortcut(kVK_ANSI_O, [.control, .command]))
+        XCTAssertEqual(reloaded.shortcut(for: .duplicate), Shortcut(kVK_ANSI_O, [.control, .command]))
         XCTAssertEqual(reloaded.shortcut(for: .captureWindow), CommandID.captureWindow.defaultShortcut)
     }
 
@@ -71,7 +71,7 @@ final class CommandRegistryTests: XCTestCase {
         registry.assign(nil, to: .toolArrow)
         registry.assign(arrow, to: .toolRectangle)
         registry.assign(rectangle, to: .toolArrow)
-        XCTAssertEqual(registry.restoreDefaults(in: .editorTools), [:])
+        XCTAssertEqual(registry.restoreDefaults(in: .editor), [:])
         XCTAssertEqual(registry.shortcut(for: .toolArrow), arrow)
         XCTAssertEqual(registry.shortcut(for: .toolRectangle), rectangle)
 
@@ -81,19 +81,17 @@ final class CommandRegistryTests: XCTestCase {
         XCTAssertNil(registry.shortcut(for: .save))
     }
 
-    func testCleanShotPresetLeavesWindowAndTextAndKeepsBindingsItCannotReplace() {
+    func testAdvisoryFlagsMacOSScreenshotKeys() {
         let registry = CommandRegistry(defaults: defaults)
-        registry.assign(Shortcut(kVK_ANSI_5, [.shift, .command]), to: .showThumbnails)
-        let problems = registry.applyCleanShotPreset()
-
-        XCTAssertEqual(problems, [.captureScrolling: .conflict(.showThumbnails)])
-        XCTAssertEqual(registry.shortcut(for: .captureFullscreen), Shortcut(kVK_ANSI_3, [.shift, .command]))
-        XCTAssertEqual(registry.shortcut(for: .captureArea), Shortcut(kVK_ANSI_4, [.shift, .command]))
-        XCTAssertEqual(registry.shortcut(for: .captureScrolling), CommandID.captureScrolling.defaultShortcut)
-        XCTAssertEqual(registry.shortcut(for: .captureWindow), CommandID.captureWindow.defaultShortcut)
-        XCTAssertEqual(registry.shortcut(for: .captureText), CommandID.captureText.defaultShortcut)
+        XCTAssertNil(registry.assign(Shortcut(kVK_ANSI_3, [.shift, .command]), to: .captureFullscreen))
         XCTAssertNotNil(registry.advisory(for: .captureFullscreen), "macOS's own screenshot keys are an external owner")
         XCTAssertNil(registry.advisory(for: .captureWindow))
+    }
+
+    func testStoredThumbnailBindingsAreIgnored() throws {
+        let stored = [CommandID.showThumbnails.rawValue: Shortcut(kVK_ANSI_9, [.control, .command])]
+        defaults.set(try JSONEncoder().encode(stored), forKey: CommandRegistry.storageKey)
+        XCTAssertNil(CommandRegistry(defaults: defaults).shortcut(for: .showThumbnails), "Thumbnail commands have no shortcut settings")
     }
 
     func testLocalRoutingOnlyMatchesRequestedScopes() {

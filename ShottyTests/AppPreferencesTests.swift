@@ -52,27 +52,18 @@ final class AppPreferencesTests: XCTestCase {
     }
 
     func testStoredSectionsMergeOverDefaultsAndBadSectionsFallBackIndividually() throws {
-        defaults.set(Data(#"{"outputs":["copyImage"],"showsCursor":true}"#.utf8), forKey: "preferences.v1.capture")
+        defaults.set(Data(#"{"outputs":["copyImage"],"includesWindowShadow":false,"showsCursor":true}"#.utf8), forKey: "preferences.v1.capture")
         defaults.set(Data("not json".utf8), forKey: "preferences.v1.thumbnails")
         defaults.set(Data(#"{"maximumAxisPixels":99999}"#.utf8), forKey: "preferences.v1.scrolling")
         defaults.set(Data(#"{"tools":{"arrow":{"width":12}}}"#.utf8), forKey: "preferences.v1.editor")
 
         let preferences = AppPreferences(defaults: defaults)
         XCTAssertEqual(preferences.capture.outputs, [.copyImage])
-        XCTAssertTrue(preferences.capture.showsCursor)
+        XCTAssertFalse(preferences.capture.includesWindowShadow, "Unknown stored fields are ignored")
         XCTAssertTrue(preferences.capture.freezesScreen, "Fields missing from older data keep their defaults")
         XCTAssertEqual(preferences.thumbnails, ThumbnailPreferences())
         XCTAssertEqual(preferences.scrolling, ScrollingPreferences(), "Out-of-bounds stored limits are not trusted")
         XCTAssertEqual(preferences.editor.tools.arrow.width, 12)
         XCTAssertEqual(preferences.editor.tools.arrow.style, .standard, "Nested sections merge field by field")
-    }
-
-    func testResettingOneToolLeavesOtherToolDefaults() {
-        let preferences = AppPreferences(defaults: defaults)
-        preferences.editor.tools.arrow.color = .black
-        preferences.editor.tools.counter.size = 40
-        preferences.resetToolDefaults(.arrow)
-        XCTAssertTrue(preferences.editor.tools.isDefault(.arrow))
-        XCTAssertEqual(preferences.editor.tools.counter.size, 40)
     }
 }

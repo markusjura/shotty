@@ -78,7 +78,6 @@ final class EditorWindowModel {
     var busy = false
     var saveAndClose = false
     var close: (() -> Void)?
-    var showsObjects = false
     private var styleDraft: AnnotationDocument?
     private var defaultsDraft: EditorToolDefaults?
     private var isStyling = false
@@ -122,14 +121,6 @@ final class EditorWindowModel {
         return values
     }
 
-    var hasMixedStyles: Bool {
-        guard let first = selectedAnnotations.first else { return false }
-        let baseline = values(for: first, base: coordinator.preferences.editor.tools)
-        return selectedAnnotations.dropFirst().contains {
-            $0.tool != first.tool || values(for: $0, base: coordinator.preferences.editor.tools) != baseline
-        }
-    }
-
     func hasMixedValues<Value: Equatable>(_ key: KeyPath<EditorToolDefaults, Value>) -> Bool {
         let selected = selectedAnnotations.filter { $0.tool == styleTool }
         guard let first = selected.first else { return false }
@@ -152,30 +143,11 @@ final class EditorWindowModel {
         return values
     }
 
-    /// Apply only fields changed by this control, preserving mixed values in other fields.
-    func setDefaults(_ next: EditorToolDefaults) {
-        let before = defaults
-        updateStyles { value in
-            func assign<Value: Equatable>(_ key: WritableKeyPath<EditorToolDefaults, Value>) {
-                if before[keyPath: key] != next[keyPath: key] { value[keyPath: key] = next[keyPath: key] }
-            }
-            assign(\.arrow.color); assign(\.arrow.width); assign(\.arrow.style)
-            assign(\.rectangle.strokeColor); assign(\.rectangle.width); assign(\.rectangle.fillColor); assign(\.rectangle.cornerRadius)
-            assign(\.ellipse.strokeColor); assign(\.ellipse.width); assign(\.ellipse.fillColor)
-            assign(\.line.color); assign(\.line.width)
-            assign(\.text.color); assign(\.text.size); assign(\.text.design); assign(\.text.weight); assign(\.text.treatment)
-            assign(\.redact.style); assign(\.redact.strength); assign(\.redact.solidColor)
-            assign(\.spotlight.shape); assign(\.spotlight.dimPercent)
-            assign(\.counter.color); assign(\.counter.size)
-        }
-    }
-
+    /// Styles the selection, if any. The choice always becomes the default for new objects.
     private func updateStyles(_ transform: (inout EditorToolDefaults) -> Void) {
-        guard !selectedAnnotations.isEmpty else {
-            var values = defaultsDraft ?? coordinator.preferences.editor.tools; transform(&values)
-            if isStyling { defaultsDraft = values } else { coordinator.preferences.editor.tools = values }
-            return
-        }
+        var stored = defaultsDraft ?? coordinator.preferences.editor.tools; transform(&stored)
+        if isStyling { defaultsDraft = stored } else { coordinator.preferences.editor.tools = stored }
+        guard !selectedAnnotations.isEmpty else { return }
         var state = styleDraft ?? document.state
         let selected = canvas.selected
         var changed = defaults; transform(&changed)
@@ -224,8 +196,26 @@ final class EditorWindowModel {
     func colorBinding(_ keyPath: WritableKeyPath<EditorToolDefaults, RGBAColor>) -> Binding<Color> {
         Binding(get: { Color(cgColor: self.defaults[keyPath: keyPath].cgColor) }, set: { color in
             guard let value = RGBAColor(NSColor(color).cgColor) else { return }
-            self.updateStyles { $0[keyPath: keyPath] = value }
+            self.setColor(value, keyPath)
         })
+    }
+    /// A filled shape keeps its fill in step with its outline color.
+    func setColor(_ color: RGBAColor, _ keyPath: WritableKeyPath<EditorToolDefaults, RGBAColor>) {
+        updateStyles { values in
+            values[keyPath: keyPath] = color
+            if keyPath == \.rectangle.strokeColor, values.rectangle.fillColor != nil { values.rectangle.fillColor = color }
+            if keyPath == \.ellipse.strokeColor, values.ellipse.fillColor != nil { values.ellipse.fillColor = color }
+        }
+    }
+    /// Fills each shape with its own outline color, or removes the fill.
+    func setFilled(_ filled: Bool, for tool: EditorTool) {
+        updateStyles { values in
+            switch tool {
+            case .rectangle: values.rectangle.fillColor = filled ? values.rectangle.strokeColor : nil
+            case .ellipse: values.ellipse.fillColor = filled ? values.ellipse.strokeColor : nil
+            default: break
+            }
+        }
     }
     /// `value` is image pixels per display backing pixel (1 = actual pixels); nil fits the window.
     func setZoom(_ value: CGFloat?) {
@@ -302,8 +292,7 @@ final class EditorWindowModel {
                         }
                     }
                 } else {
-                    let receipt = try await coordinator.exporter.export(snapshot, to: settings.saveDirectory, options: settings.exportOptions,
-                                                                        filenameTemplate: settings.capture.filenameTemplate)
+                    let receipt = try await coordinator.exporter.export(snapshot, to: settings.saveDirectory, options: settings.exportOptions)
                     try await coordinator.store.markSaved(receipt)
                 }
                 await coordinator.refreshRecords()
@@ -338,63 +327,72 @@ private struct EditorWindowView: View {
                     Button("Apply") { model.canvas.applyCrop(); model.tool = .select }
                         .keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
                 } else {
-                    // One grouped strip, like a segmented control: the active tool is a filled accent tile.
+                    // Crop changes the whole image, so it sits apart from the drawing tools, as in CleanShot.
+                    ToolButton(model: model, tool: .crop).toolGroup()
                     HStack(spacing: 2) {
-                        ForEach(EditorTool.allCases, id: \.self) { tool in
-                            let active = model.tool == tool
-                            Button { model.tool = tool } label: {
-                                ToolIcon(tool: tool).frame(width: 30, height: 26).contentShape(Rectangle())
-                            }
-                            .buttonStyle(.borderless)
-                            .foregroundStyle(active ? Color.white : .primary)
-                            .background(active ? Color.accentColor : .clear, in: RoundedRectangle(cornerRadius: 6))
-                            .help("\(CommandID.tool(tool).title) \(model.commands.shortcut(for: .tool(tool))?.displayString ?? "")")
-                            .accessibilityLabel(CommandID.tool(tool).title)
-                            .accessibilityAddTraits(active ? .isSelected : [])
-                        }
+                        ForEach(EditorTool.allCases.filter { $0 != .crop }, id: \.self) { ToolButton(model: model, tool: $0) }
                     }
-                    .padding(2)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                    .toolGroup()
                     // Select without an editable selection has no options; hide rather than disable.
                     if model.styleTool != .select {
                         Divider().frame(height: 24)
                         EditorOptions(model: model)
                     }
                     Spacer(minLength: 4)
-                    Button("Save") { model.save(asNew: NSEvent.modifierFlags.contains(.option)) }.disabled(model.busy)
+                    Button("Copy Image", systemImage: "doc.on.doc") { model.copy() }
+                        .help(help(.copyImage))
+                    Button("Save", systemImage: "square.and.arrow.down") { model.save(asNew: NSEvent.modifierFlags.contains(.option)) }
+                        .help("\(help(.save)). Option-click to save as.")
+                        .disabled(model.busy)
                     Button("Done") { model.close?() }.buttonStyle(.borderedProminent)
                 }
-            }.padding(.horizontal, 10).frame(height: 52)
+            }
+            .labelStyle(.iconOnly)
+            .padding(.horizontal, 10).frame(height: 52)
             Divider()
             CanvasContainer(canvas: model.canvas)
             Divider()
-            HStack {
-                Menu(model.zoomLabel) {
-                    Button("Fit") { model.setZoom(nil) }
-                    ForEach([25, 50, 100, 200, 400], id: \.self) { value in Button("\(value)%") { model.setZoom(CGFloat(value) / 100) } }
-                }.frame(width: 90)
-                Button { model.showsObjects.toggle() } label: { Image(systemName: "list.bullet") }
-                    .help("Objects").accessibilityLabel("Show objects")
-                    .popover(isPresented: $model.showsObjects) {
-                        let _ = model.selectionVersion
-                        List(selection: Binding<UUID?>(get: {
-                            model.canvas.selected.count == 1 ? model.canvas.selected.first : nil
-                        }, set: { id in
-                            model.tool = .select
-                            model.canvas.selected = id.map { [$0] } ?? []
-                        })) {
-                            ForEach(model.document.state.annotations) { annotation in
-                                Text("\(annotation.tool.rawValue.capitalized) · \(Int(annotation.bounds.minX)), \(Int(annotation.bounds.minY))")
-                                    .tag(annotation.id)
-                            }
-                        }.frame(width: 260, height: 300)
-                    }
-                Spacer()
+            ZStack {
+                HStack {
+                    Menu(model.zoomLabel) {
+                        Button("Fit") { model.setZoom(nil) }
+                        ForEach([25, 50, 100, 200, 400], id: \.self) { value in Button("\(value)%") { model.setZoom(CGFloat(value) / 100) } }
+                    }.frame(width: 90)
+                    Spacer()
+                }
                 EditorDragHandle(model: model).frame(width: 150, height: 28)
-                Spacer()
-                Button("Copy Image") { model.copy() }
             }.padding(.horizontal, 12).frame(height: 36)
         }
+    }
+
+    private func help(_ command: CommandID) -> String {
+        [command.title, model.commands.shortcut(for: command)?.displayString].compactMap { $0 }.joined(separator: " ")
+    }
+}
+
+/// One tool in the toolbar; the active tool is a filled accent tile.
+private struct ToolButton: View {
+    let model: EditorWindowModel
+    let tool: EditorTool
+
+    var body: some View {
+        let active = model.tool == tool
+        Button { model.tool = tool } label: {
+            ToolIcon(tool: tool).frame(width: 30, height: 26).contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(active ? Color.white : .primary)
+        .background(active ? Color.accentColor : .clear, in: RoundedRectangle(cornerRadius: 6))
+        .help([CommandID.tool(tool).title, model.commands.shortcut(for: .tool(tool))?.displayString].compactMap { $0 }.joined(separator: " "))
+        .accessibilityLabel(CommandID.tool(tool).title)
+        .accessibilityAddTraits(active ? .isSelected : [])
+    }
+}
+
+private extension View {
+    /// A grouped strip of tools, like a segmented control.
+    func toolGroup() -> some View {
+        padding(2).background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -431,24 +429,9 @@ final class CenteringClipView: NSClipView {
     }
 }
 
-struct ToolIcon: View {
+private struct ToolIcon: View {
     let tool: EditorTool
-    var body: some View {
-        switch tool {
-        case .redact:
-            Canvas { context, size in
-                for x in 0..<3 { for y in 0..<3 {
-                    context.fill(Path(CGRect(x: CGFloat(x) * size.width / 3 + 1, y: CGFloat(y) * size.height / 3 + 1,
-                                             width: size.width / 3 - 2, height: size.height / 3 - 2)), with: .foreground)
-                } }
-            }.frame(width: 16, height: 16)
-        case .spotlight:
-            // A bright opening in a dimmed frame; both parts follow the button's foreground.
-            ZStack { RoundedRectangle(cornerRadius: 2).fill(.foreground.opacity(0.35)); Circle().fill(.foreground).padding(4) }
-                .frame(width: 18, height: 16)
-        default: Image(systemName: symbol)
-        }
-    }
+    var body: some View { Image(systemName: symbol) }
     private var symbol: String {
         switch tool {
         case .select: "cursorarrow"
@@ -457,9 +440,10 @@ struct ToolIcon: View {
         case .ellipse: "circle"
         case .line: "line.diagonal"
         case .text: "textformat"
+        case .redact: "checkerboard.rectangle"
+        case .spotlight: "rectangle.center.inset.filled"
         case .counter: "1.circle"
         case .crop: "crop"
-        case .redact, .spotlight: "square"
         }
     }
 }

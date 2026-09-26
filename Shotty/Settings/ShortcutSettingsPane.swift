@@ -6,22 +6,7 @@ struct ShortcutSettingsPane: View {
 
     var body: some View {
         Form {
-            Section {
-                Text("Capture and thumbnail shortcuts work in every app.")
-                    .secondaryNote()
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("CleanShot keys")
-                    VStack(alignment: .leading, spacing: 6) {
-                        Button("Use ⇧⌘3, ⇧⌘4, and ⇧⌘5") { report(commands.applyCleanShotPreset(), for: CommandID.cleanShotPreset.map(\.0)) }
-                            .help("Assign Fullscreen, Area, and Scrolling respectively.")
-                        Text("Disable matching macOS and CleanShot shortcuts first.")
-                            .secondaryNote()
-                        Button("Open Keyboard Settings") { SystemSettingsLink.open(SystemSettingsLink.keyboardShortcuts) }
-                    }
-                    .accessibilityElement(children: .contain)
-                }
-            }
-            ForEach(CommandGroup.allCases, id: \.self) { group in
+            ForEach(CommandGroup.allCases.filter(\.hasShortcuts), id: \.self) { group in
                 Section(group.title) {
                     ForEach(group.commands, id: \.self, content: row)
                     Button("Restore \(group.title) Defaults") { report(commands.restoreDefaults(in: group), for: group.commands) }

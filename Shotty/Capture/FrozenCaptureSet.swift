@@ -185,7 +185,7 @@ actor FrozenCaptureSet {
     /// budgets. Large rasters fall back to sequential capture when necessary.
     /// Fixture IDs deliberately bypass own-process exclusion, but still must be on
     /// screen, normal-layer windows. Nil means the full eligible set, not a shortlist.
-    static func acquire(shadow: Bool, includeAlternateShadow: Bool = false, showsCursor: Bool = false,
+    static func acquire(shadow: Bool, includeAlternateShadow: Bool = false,
                         displayIDs: Set<CGDirectDisplayID>? = nil,
                         fixtureWindowIDs: Set<CGWindowID>? = nil,
                         excludingProcessID: pid_t = ProcessInfo.processInfo.processIdentifier,
@@ -266,7 +266,7 @@ actor FrozenCaptureSet {
                     let job = requests[reservation.index]
                     var availableLimits = limits
                     availableLimits.maximumResidentBytes = reservation.residentBytes
-                    return try await capture(filter: job.filter, shadow: job.shadow, showsCursor: showsCursor, directory: directory,
+                    return try await capture(filter: job.filter, shadow: job.shadow, directory: directory,
                                              remainingDiskBytes: reservation.rasterBytes, limits: availableLimits,
                                              isWindow: job.isWindow, label: job.diagnosticLabel)
                 }
@@ -379,7 +379,7 @@ actor FrozenCaptureSet {
         }
     }
 
-    private static func capture(filter: SCContentFilter, shadow: Bool, showsCursor: Bool, directory: URL,
+    private static func capture(filter: SCContentFilter, shadow: Bool, directory: URL,
                                 remainingDiskBytes: Int, limits: FrozenCaptureLimits,
                                 isWindow: Bool, label: String) async throws -> FrozenRasterDescriptor {
         try Task.checkCancellation()
@@ -387,7 +387,7 @@ actor FrozenCaptureSet {
                                                            scale: Double(filter.pointPixelScale), shadow: shadow)
         guard estimatedBytes <= remainingDiskBytes else { throw FrozenCaptureFailure.diskLimit }
         let configuration = SCScreenshotConfiguration()
-        configuration.showsCursor = showsCursor
+        configuration.showsCursor = false
         configuration.ignoreShadows = !shadow
         // Window capture is the selected window only. Capturing a child window with children
         // included returns its parent group, which no longer matches the window's frame.

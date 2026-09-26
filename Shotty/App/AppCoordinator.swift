@@ -108,8 +108,7 @@ final class AppCoordinator {
                 for screen in targets {
                     guard let id = screen.displayID else { continue }
                     do {
-                        let image = try await stillCapture.display(id: id, excluding: ProcessInfo.processInfo.processIdentifier,
-                                                                  showsCursor: settings.capture.showsCursor)
+                        let image = try await stillCapture.display(id: id, excluding: ProcessInfo.processInfo.processIdentifier)
                         try Task.checkCancellation()
                         await accept(image, kind: .fullscreen, scale: screen.backingScaleFactor, settings: settings, ticket: ticket)
                     } catch is CancellationError { return }
@@ -117,9 +116,7 @@ final class AppCoordinator {
                 }
             }
         } else {
-            let config = SelectionConfiguration(freeze: settings.capture.freezesScreen, shadow: settings.capture.includesWindowShadow,
-                cursor: settings.capture.showsCursor, adjust: settings.capture.adjustsBeforeCapture,
-                crosshair: settings.capture.showsCrosshair, magnifier: settings.capture.showsMagnifier)
+            let config = SelectionConfiguration(freeze: settings.capture.freezesScreen, shadow: settings.capture.includesWindowShadow)
             selector.begin(kind: kind, configuration: config) { [weak self] result in
                 guard let self else { return }
                 isCapturing = false
@@ -251,8 +248,7 @@ final class AppCoordinator {
         thumbnails.update(id, feedback: .saving)
         do {
             let snapshot = try await store.snapshot(for: id)
-            let receipt = try await exporter.export(snapshot, to: settings.saveDirectory, options: settings.exportOptions,
-                                                     filenameTemplate: settings.capture.filenameTemplate)
+            let receipt = try await exporter.export(snapshot, to: settings.saveDirectory, options: settings.exportOptions)
             try await store.markSaved(receipt)
             outputFailures.remove(id)
             await refreshRecords()
@@ -285,7 +281,7 @@ final class AppCoordinator {
             panel.allowedContentTypes = [.png, .jpeg]
             panel.canCreateDirectories = true
             panel.directoryURL = settings.saveDirectory
-            panel.nameFieldStringValue = ExportService.filenameStem(template: settings.capture.filenameTemplate,
+            panel.nameFieldStringValue = ExportService.filenameStem(template: ExportService.defaultFilenameTemplate,
                 date: snapshot.createdAt, kind: snapshot.kind) + "." + settings.exportOptions.fileExtension
             NSApp.activate()
             guard await panel.begin() == .OK, let destination = panel.url else { return false }
@@ -350,7 +346,7 @@ final class AppCoordinator {
         let id = snapshot.captureID, token = UUID()
         let settings = preferences.snapshot(for: snapshot.kind)
         let promise = CaptureFilePromise(snapshot: snapshot, options: settings.exportOptions,
-                                          exporter: exporter, template: settings.capture.filenameTemplate)
+                                          exporter: exporter, template: ExportService.defaultFilenameTemplate)
         // The source must survive until the promised write finishes or can no longer start.
         retain(id)
         dragOutcomes[token] = DragOutcome(captureID: id, promise: promise)

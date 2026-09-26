@@ -10,6 +10,15 @@ Follow-up on 26 September: hover controls match CleanShot's proportions. Cards u
 
 Scrolling selection uses an instruction pill, white corner/edge handles, and Start Capture below the selection. Active capture uses compact Auto Scroll/Pause/Resume, Cancel, and Done capsules and an adjacent stitched preview. Keyboard, physical takeover, recovery, and export behavior remain unchanged. Settings should be narrower with a centered title in a standard compact titlebar, concise helper text, and no clipped controls.
 
+Second follow-up on 26 September, from side-by-side comparisons. These points supersede conflicting details below.
+
+- Thumbnail hover puts Edit in the top-right corner, opposite Close.
+- The editor toolbar has Crop as its own group left of the drawing tools. Redact uses a pixel-grid symbol and Spotlight (never "Dim") a highlighted center in a frame. Tool options follow CleanShot: a Color button showing the current color with a chevron opens a swatch palette plus a custom well; Thickness opens a checked list of preset widths drawn at their weight; Arrow style, redaction style, and spotlight shape open checked lists with rendered samples. There is no separate Options popover or reset action. Copy and Save are icon-only buttons left of the text Done button. The bottom bar holds only zoom (left) and the drag handle (center); the Objects list is removed.
+- Tool styles are not settings. Every option change applies to the selection and becomes the default for new objects, so the editor reopens with the last configuration.
+- Capture settings drop Reveal in Finder, the file-name template (the default name is always used), Adjust before capturing, crosshair, magnifier, and Include pointer. The pointer-display fullscreen choice is called "Current display".
+- Shortcut settings have two sections, Capture and Editor (tools included). Thumbnail commands have no shortcut settings and the CleanShot preset is removed.
+- The pointer readout appears only while no region exists or while dragging, and never in scrolling capture. Scrolling has no axis choice: the first accepted movement decides it, and Auto Scroll goes down until then. After selection only Start Capture is shown; Escape discards the region. Once capturing, Cancel and Done sit below the region and Auto Scroll sits inside it at the bottom edge until the user scrolls by hand. There is no preview or status panel beside the region; a notice appears next to Cancel only when something needs attention.
+
 ## Product standard
 
 Keep only the capture, annotation, output, and settings features Markus needs, then finish those features to a high standard. Small scope does not mean crude tools, unfinished input handling, generic icons, or missing configuration. Do not expand scope to compensate for weak execution.
