@@ -26,7 +26,8 @@ final class CaptureFilePromise: NSObject, NSFilePromiseProviderDelegate {
         self.snapshot = snapshot
         self.options = options
         self.exporter = exporter
-        filename = ExportService.filenameStem(template: template, date: snapshot.createdAt, kind: snapshot.kind) + "." + options.fileExtension
+        filename = ExportService.filename(stem: ExportService.filenameStem(template: template, date: snapshot.createdAt, kind: snapshot.kind),
+                                          scale: snapshot.sourceScale, options: options)
     }
 
     func makeProvider() -> NSFilePromiseProvider {

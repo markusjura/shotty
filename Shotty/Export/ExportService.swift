@@ -58,7 +58,8 @@ actor ExportService {
 
     /// Bound an individual decoded raster to 256 MiB of RGBA pixels before decoding.
     static let maximumPixels = 64 * 1_024 * 1_024
-    static let defaultFilenameTemplate = "Shotty {date} at {time}"
+    /// CleanShot's naming, e.g. `image-2026-09-26-14.17.05`; `filename` adds `@2x` for Retina pixels.
+    static let defaultFilenameTemplate = "image-{date}-{time}"
 
     func fingerprint(at url: URL) throws -> FileFingerprint { try FileFingerprint.read(at: url) }
 
@@ -133,7 +134,7 @@ actor ExportService {
         var suffix = 1
         while true {
             try Task.checkCancellation()
-            let filename = "\(stem)\(suffix == 1 ? "" : "-\(suffix)").\(options.fileExtension)"
+            let filename = Self.filename(stem: stem, collision: suffix, scale: snapshot.sourceScale, options: options)
             let url = directory.appendingPathComponent(filename)
             do {
                 try AtomicFile.write(data, to: url, beforePublish: { try Task.checkCancellation() })
@@ -158,6 +159,13 @@ actor ExportService {
         return receipt(snapshot, url: destination, data: data)
     }
 
+    /// `stem-2@2x.png`: a collision number, then the pixel density when the output keeps Retina
+    /// pixels, so macOS and other apps still read the density from the name.
+    nonisolated static func filename(stem: String, collision: Int = 1, scale: Double, options: ExportOptions) -> String {
+        let density = options.scale == .native && scale > 1 && scale == scale.rounded() ? "@\(Int(scale))x" : ""
+        return "\(stem)\(collision == 1 ? "" : "-\(collision)")\(density).\(options.fileExtension)"
+    }
+
     nonisolated static func filenameStem(template: String, date: Date, kind: CaptureKind,
                                          timeZone: TimeZone = .current) -> String {
         let formatter = DateFormatter()
@@ -179,7 +187,7 @@ actor ExportService {
             guard result.utf8.count + String(character).utf8.count <= 180 else { break }
             result.append(character)
         }
-        return result.isEmpty ? "Shotty \(day) at \(time)" : result
+        return result.isEmpty ? "image-\(day)-\(time)" : result
     }
 
     private func verify(_ url: URL, expected: FileFingerprint) throws {

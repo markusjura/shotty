@@ -281,8 +281,9 @@ final class AppCoordinator {
             panel.allowedContentTypes = [.png, .jpeg]
             panel.canCreateDirectories = true
             panel.directoryURL = settings.saveDirectory
-            panel.nameFieldStringValue = ExportService.filenameStem(template: ExportService.defaultFilenameTemplate,
-                date: snapshot.createdAt, kind: snapshot.kind) + "." + settings.exportOptions.fileExtension
+            panel.nameFieldStringValue = ExportService.filename(
+                stem: ExportService.filenameStem(template: ExportService.defaultFilenameTemplate, date: snapshot.createdAt, kind: snapshot.kind),
+                scale: snapshot.sourceScale, options: settings.exportOptions)
             NSApp.activate()
             guard await panel.begin() == .OK, let destination = panel.url else { return false }
             var options = settings.exportOptions
