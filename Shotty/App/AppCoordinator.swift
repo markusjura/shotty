@@ -2,6 +2,7 @@ import AppKit
 import Observation
 import SwiftUI
 import UniformTypeIdentifiers
+import os
 
 @MainActor @Observable
 final class AppCoordinator {
@@ -21,7 +22,6 @@ final class AppCoordinator {
     var openEditor: ((UUID) -> Void)?
     var recognizeText: ((CGImage, CaptureOutputSnapshot, ClipboardWriter.Ticket) -> Void)?
     var startScrolling: ((CGRect, CGDirectDisplayID, CaptureOutputSnapshot, ClipboardWriter.Ticket) -> Void)?
-    var flushEditors: (() async throws -> Void)?
     var stopAuxiliaryCapture: (() async -> Void)?
     var auxiliaryCaptureActive: (() -> Bool)?
     var hasEditor: ((UUID) -> Bool)?
@@ -400,67 +400,26 @@ final class AppCoordinator {
         release(outcome.captureID)
     }
 
-    /// Quit never ends an unfinished scrolling or text capture; the user finishes or cancels it
-    /// first. Nothing destructive happens before the session decision, and Cancel leaves the
-    /// app as it was.
+    /// Quit asks nothing, as in CleanShot. Captures in progress are cancelled, a running save or
+    /// started drop finishes writing, and the session is discarded, so thumbnails simply disappear.
+    /// Saved files are never touched.
     func prepareToQuit() async -> Bool {
         guard ready else { return true }
-        if auxiliaryCaptureActive?() == true {
-            let alert = NSAlert(); alert.messageText = "Finish your capture before quitting"
-            alert.informativeText = "A scrolling capture or text recognition is still in progress. Use Done to keep it or Cancel to discard it, then quit Shotty."
-            NSApp.activate(); alert.runModal()
-            return false
-        }
         isClosing = true
         selector.cancel()
-        // An accepted image finishes storing rather than being lost to cancellation.
+        await stopAuxiliaryCapture?()
         await captureTask?.value
-        do { try await flushEditors?() } catch { showError(error, title: "Couldn't retain edits"); return abortQuit() }
-        await refreshRecords()
-        // Unused drag promises are cancelled only after Quit is confirmed, so a cancelled Quit
-        // leaves them able to write. They do not count as running exports.
-        // A deallocated promise without a fallback release had started a write, so it still blocks.
-        let unusedDrags = dragOutcomes.filter { $0.value.promise?.state == .pending }
-        var blocking = holds
-        for outcome in unusedDrags.values {
-            if let count = blocking[outcome.captureID], count > 1 { blocking[outcome.captureID] = count - 1 }
-            else { blocking.removeValue(forKey: outcome.captureID) }
+        for (token, outcome) in dragOutcomes where outcome.promise?.cancelUnused() == true { finishDrag(token) }
+        // Exports read session sources; wait for them, but never hang Quit on a stuck one.
+        let deadline = ContinuousClock.now + .seconds(10)
+        while !holds.isEmpty || pendingAcceptances > 0, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(100))
         }
-        guard blocking.isEmpty, pendingAcceptances == 0 else {
-            let alert = NSAlert(); alert.messageText = "An export is still running"
-            alert.informativeText = "Wait for the export to finish, then quit Shotty."
-            NSApp.activate(); alert.runModal(); return abortQuit()
+        do { try await store.discard() } catch {
+            Logger(subsystem: "local.markus.Shotty", category: "Quit").error("Couldn't discard the session: \(error.localizedDescription, privacy: .public)")
         }
-        let retained = records.filter { !dismissed.contains($0.id) || hasEditor?($0.id) == true }
-        let decision: NSApplication.ModalResponse
-        if !retained.isEmpty {
-            let alert = NSAlert(); alert.messageText = "Keep your captures for next launch?"
-            alert.informativeText = "Saved image files are kept either way."
-            alert.addButton(withTitle: "Keep for Next Launch"); alert.addButton(withTitle: "Discard"); alert.addButton(withTitle: "Cancel")
-            NSApp.activate(); decision = alert.runModal()
-            if decision == .alertThirdButtonReturn { return abortQuit() }
-        } else { decision = .alertSecondButtonReturn }
-        for (token, outcome) in unusedDrags where outcome.promise?.cancelUnused() == true { finishDrag(token) }
-        do {
-            if decision == .alertSecondButtonReturn { try await store.discard() }
-            else {
-                // Dismissed captures still held by an editor or drag do not return next launch.
-                for record in records where !retained.contains(where: { $0.id == record.id }) {
-                    try await store.remove(record.id)
-                    dismissed.remove(record.id)
-                }
-                try await store.retainForNextLaunch()
-            }
-            thumbnails.close()
-            return true
-        } catch { showError(error, title: "Couldn't close the capture session"); return abortQuit() }
-    }
-
-    /// Restores normal operation after a cancelled or failed Quit, including deferred removals.
-    private func abortQuit() -> Bool {
-        isClosing = false
-        for id in dismissed { removeIfUnreferenced(id) }
-        return false
+        thumbnails.close()
+        return true
     }
 
     private func requestCapturePermission() {

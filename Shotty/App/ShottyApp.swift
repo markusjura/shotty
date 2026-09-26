@@ -90,10 +90,6 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
         coordinator.stopAuxiliaryCapture = { [weak self] in await self?.textCapture.stop(); await self?.scrollingCapture.stop() }
         coordinator.openEditor = { [weak self] in self?.openEditor($0) }
         coordinator.hasEditor = { [weak self] in self?.editors[$0] != nil || self?.openingEditors.contains($0) == true }
-        coordinator.flushEditors = { [weak self] in
-            guard let self else { return }
-            for editor in editors.values { editor.model.canvas.finishText(); _ = try await editor.model.document.flush() }
-        }
         commands.availability = { [weak self] command in
             guard let self, coordinator.ready else { return false }
             switch command.scope {
