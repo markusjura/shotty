@@ -234,7 +234,7 @@ final class AppCoordinator {
             let snapshot = try await store.snapshot(for: id)
             var png = options; png.format = .png
             let data = try await exporter.encodedData(snapshot, options: png)
-            if clipboard.write(data, type: .png, ticket: ticket) {
+            if clipboard.write(data, type: .png, ticket: ticket, onPaste: pasteHandler(for: id)) {
                 try await store.markCopied(snapshot)
                 thumbnails.update(id, feedback: .copied)
                 await refreshRecords()
@@ -310,6 +310,15 @@ final class AppCoordinator {
     }
 
     /// Removes the card at once; the capture is deleted as soon as no editor or drag still holds it.
+    /// Dismisses the capture's thumbnail when its copy is pasted, if the user asked for that.
+    func pasteHandler(for id: UUID) -> (@MainActor () -> Void)? {
+        guard preferences.thumbnails.dismissesAfterPaste else { return nil }
+        return { [weak self] in
+            guard let self, !isClosing, thumbnails.cards.contains(where: { $0.id == id }) else { return }
+            dismiss(id)
+        }
+    }
+
     private func dismiss(_ id: UUID) {
         dismissed.insert(id)
         thumbnails.remove(id)

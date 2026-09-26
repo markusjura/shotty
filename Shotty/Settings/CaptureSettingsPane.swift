@@ -31,6 +31,7 @@ struct CaptureSettingsPane: View {
                 Text("At least one option must be enabled.")
                     .secondaryNote()
             }
+            Toggle("Dismiss thumbnail after pasting", isOn: $preferences.thumbnails.dismissesAfterPaste)
         }
     }
 

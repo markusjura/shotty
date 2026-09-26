@@ -275,7 +275,7 @@ final class EditorWindowModel {
                 let snapshot = try await document.flush()
                 var png = options; png.format = .png
                 let data = try await coordinator.exporter.encodedData(snapshot, options: png)
-                if coordinator.clipboard.write(data, type: .png, ticket: ticket) {
+                if coordinator.clipboard.write(data, type: .png, ticket: ticket, onPaste: coordinator.pasteHandler(for: document.record.id)) {
                     try await coordinator.store.markCopied(snapshot); await coordinator.refreshRecords()
                     if shouldClose { close?() }
                 }

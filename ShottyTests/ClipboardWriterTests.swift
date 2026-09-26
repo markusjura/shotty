@@ -18,4 +18,20 @@ final class ClipboardWriterTests: XCTestCase {
         XCTAssertTrue(writer.write("second display", ticket: second))
         XCTAssertEqual(board.string(forType: .string), "second display")
     }
+
+    func testPasteHandlerRunsOnceWhenTheImageIsRead() async {
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let writer = ClipboardWriter(pasteboard: board)
+        let data = Data([1, 2, 3])
+        var pastes = 0
+        XCTAssertTrue(writer.write(data, type: .png, ticket: writer.begin(), onPaste: { pastes += 1 }))
+        await Task.yield()
+        XCTAssertEqual(pastes, 0, "Writing alone is not a paste")
+
+        XCTAssertEqual(board.data(forType: .png), data)
+        XCTAssertEqual(board.data(forType: .png), data)
+        for _ in 0..<5 { await Task.yield() }
+        XCTAssertEqual(pastes, 1)
+    }
 }
