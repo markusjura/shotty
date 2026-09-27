@@ -11,7 +11,8 @@ final class ThumbnailCoordinator {
         let id: UUID
         var image: NSImage
         var status: String?
-        /// The copy or save that succeeded last. Only its pill shows a checkmark.
+        /// The copy or save that succeeded last. Its pill shows a checkmark: a copy's for a moment,
+        /// a save's until the card goes away.
         var success: Action?
     }
     enum Feedback {
@@ -65,6 +66,7 @@ final class ThumbnailCoordinator {
     private var hovering = false
     private var countdown = ThumbnailCountdown()
     private var countdownTask: Task<Void, Never>?
+    private var copyResets: [UUID: Task<Void, Never>] = [:]
     private let preferences: AppPreferences
     private var panel: ThumbnailPanel?
     private var monitors: [Any] = []
@@ -127,21 +129,34 @@ final class ThumbnailCoordinator {
         refresh(animated: true)
     }
 
-    func update(_ id: UUID, image: CGImage? = nil, feedback: Feedback? = nil) {
+    func update(_ id: UUID, feedback: Feedback) {
         guard let index = cards.firstIndex(where: { $0.id == id }) else { return }
-        if let image { cards[index].image = NSImage(cgImage: image, size: .zero) }
         switch feedback {
-        case .copied: cards[index].success = .copy; cards[index].status = nil
+        case .copied:
+            cards[index].success = .copy; cards[index].status = nil
+            showCopyReset(for: id)
         case .saved: cards[index].success = .save; cards[index].status = nil
         case .saving: cards[index].status = "Saving…"
         case .waitingToSave: cards[index].status = "Waiting to save…"
         case .message(let message): cards[index].status = message
-        case nil: cards[index].status = nil
         }
         place()
     }
 
+    /// A copy's checkmark confirms it for 1.5 s, then the pill reads Copy again. Another copy
+    /// restarts the wait; a save in the meantime keeps its own checkmark.
+    private func showCopyReset(for id: UUID) {
+        copyResets[id]?.cancel()
+        copyResets[id] = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(1.5)) } catch { return }
+            guard let self else { return }
+            copyResets[id] = nil
+            if let index = cards.firstIndex(where: { $0.id == id }), cards[index].success == .copy { cards[index].success = nil }
+        }
+    }
+
     func remove(_ id: UUID) {
+        copyResets.removeValue(forKey: id)?.cancel()
         countdown.cancel(id)
         cards.removeAll { $0.id == id }
         if focusRequest == id { focusRequest = nil }
@@ -167,6 +182,8 @@ final class ThumbnailCoordinator {
         stopTracking()
         countdownTask?.cancel()
         countdownTask = nil
+        copyResets.values.forEach { $0.cancel() }
+        copyResets.removeAll()
         countdown = ThumbnailCountdown()
         panel?.close()
         panel = nil

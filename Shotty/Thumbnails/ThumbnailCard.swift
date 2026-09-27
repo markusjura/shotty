@@ -201,8 +201,8 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         return Self.ciContext.createCGImage(darkened, from: extent)
     }
 
-    /// The copy or save that succeeded last shows a checkmark in its pill until this card is removed;
-    /// the other pill keeps its label. Changing a pill never moves the card or adds a status strip.
+    /// The pill of the copy or save that succeeded last shows a checkmark while the coordinator keeps
+    /// it current; the other pill keeps its label. Changing a pill never moves the card or adds a status strip.
     func setSuccess(_ success: ThumbnailCoordinator.Action?) {
         for (index, action, title) in [(2, ThumbnailCoordinator.Action.copy, "Copy"), (3, .save, "Save")]
         where (action == success) != (action == self.success) {

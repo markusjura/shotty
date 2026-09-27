@@ -232,7 +232,8 @@ final class AppCoordinator {
         }
     }
 
-    /// `automatic` outputs report failures on the card only, without an alert or activation.
+    /// `automatic` outputs report failures on the card only, without an alert or activation. An
+    /// automatic copy shows no checkmark, so a new card reads Copy until the user copies it.
     func copy(_ id: UUID, options: ExportOptions, ticket: ClipboardWriter.Ticket, automatic: Bool = false) async {
         retain(id); defer { release(id) }
         do {
@@ -241,7 +242,7 @@ final class AppCoordinator {
             let data = try await exporter.encodedData(snapshot, options: png)
             if clipboard.write(data, type: .png, ticket: ticket, onPaste: pasteHandler(for: id)) {
                 try await store.markCopied(snapshot)
-                thumbnails.update(id, feedback: .copied)
+                if !automatic { thumbnails.update(id, feedback: .copied) }
                 await refreshRecords()
             } else {
                 // Something else was copied meanwhile; never overwrite it.
