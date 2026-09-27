@@ -194,8 +194,8 @@ final class ScrollingCaptureController {
 
     // MARK: - Panels
 
-    /// Dims the display around the region, attaches Cancel and Done below it, and places Auto Scroll
-    /// inside it at the bottom. Shotty's windows are excluded from the capture stream.
+    /// Outlines the region, attaches Cancel and Done below it, and places Auto Scroll inside it at
+    /// the bottom. Shotty's windows are excluded from the capture stream.
     private func showPanels(around region: CGRect, on screen: NSScreen) {
         let outline = Self.overlayPanel(frame: screen.frame, content: RegionView(region: region.offsetBy(dx: -screen.frame.minX, dy: -screen.frame.minY)))
         outline.ignoresMouseEvents = true

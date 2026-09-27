@@ -4,7 +4,8 @@ import CoreImage
 import CoreText
 import Foundation
 
-/// Owned by ExportService's serial actor. Preview and output call the same full-resolution renderer.
+/// Preview and output call the same full-resolution renderer. Each owner, such as ExportService,
+/// the session store, or the editor's preview actor, keeps its own instance and uses it serially.
 final class DocumentRenderer {
     enum Failure: LocalizedError {
         case invalidDocument, rendering

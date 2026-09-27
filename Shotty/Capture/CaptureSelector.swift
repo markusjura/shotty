@@ -279,7 +279,7 @@ final class CaptureSelector {
 
     func mouseDown(at point: CGPoint, modifiers: NSEvent.ModifierFlags) {
         if kind == .window { updatePointer(point, modifiers: modifiers); confirm(); return }
-        // 6-point edge bands give the 12-point handle hit areas from the interaction spec.
+        // A 6-point band on each side of an edge gives handles a 12-point hit area.
         let drag = SelectionDrag(at: point, adjusting: isAdjusting ? selection : nil, tolerance: 6)
         self.drag = drag
         selection = drag.rect

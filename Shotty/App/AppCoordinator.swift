@@ -16,7 +16,8 @@ final class AppCoordinator {
     private(set) var ready = false
     private(set) var isCapturing = false
     private var pendingAcceptances = 0
-    /// Set while Quit is deciding. New captures, outputs, and removals wait; Cancel resets it.
+    /// Set for good once Quit starts. New captures and thumbnail actions are refused, and the
+    /// session discard replaces individual removals.
     private(set) var isClosing = false
     private var saveAllTask: Task<Void, Never>?
     var openEditor: ((UUID) -> Void)?
@@ -309,7 +310,6 @@ final class AppCoordinator {
         if !automatic { showError(error, title: "Couldn't \(action) capture") }
     }
 
-    /// Removes the card at once; the capture is deleted as soon as no editor or drag still holds it.
     /// Dismisses the capture's thumbnail when its copy is pasted, if the user asked for that.
     func pasteHandler(for id: UUID) -> (@MainActor () -> Void)? {
         guard preferences.thumbnails.dismissesAfterPaste else { return nil }
@@ -319,6 +319,7 @@ final class AppCoordinator {
         }
     }
 
+    /// Removes the card at once; the capture is deleted as soon as no editor or drag still holds it.
     private func dismiss(_ id: UUID) {
         dismissed.insert(id)
         thumbnails.remove(id)
@@ -341,7 +342,7 @@ final class AppCoordinator {
     }
     func editorClosed(_ id: UUID) { removeIfUnreferenced(id) }
     private func removeIfUnreferenced(_ id: UUID) {
-        // During Quit the session decision handles removal; Cancel replays pending ones.
+        // During Quit, discarding the session removes every capture at once.
         guard !isClosing, dismissed.contains(id), holds[id] == nil, hasEditor?(id) != true else { return }
         dismissed.remove(id)
         Task {

@@ -14,7 +14,8 @@ enum CaptureFailure: LocalizedError {
     }
 }
 
-/// Owns capture work independently of AppKit. Callers retain this exact image for frozen output.
+/// Live screenshots of one window or display, independent of AppKit. Frozen selections read
+/// their pixels from `FrozenCaptureSet` instead.
 actor StillCaptureService {
     private let budget = RasterBudget()
 
