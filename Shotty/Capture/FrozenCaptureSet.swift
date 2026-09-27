@@ -87,17 +87,6 @@ struct FrozenDisplaySnapshot: Sendable {
     let raster: FrozenRasterDescriptor
 }
 
-struct FrozenCaptureMeasurements: Sendable {
-    let windowCount: Int
-    let rasterCount: Int
-    let displayCount: Int
-    let diskBytes: Int
-    let largestRasterBytes: Int
-    let elapsedSeconds: TimeInterval
-    let maximumConcurrentCaptures: Int
-    let peakReservedResidentBytes: Int
-}
-
 /// Reservations include each in-flight raster, its provider copy, profile and up to
 /// 1 MiB of provider allocation padding. Completed profiles remain charged separately.
 struct FrozenCaptureBatch: Sendable {
@@ -167,50 +156,39 @@ actor FrozenCaptureSet {
     private static let logger = Logger(subsystem: "local.markus.Shotty", category: "FrozenCapture")
     nonisolated let windows: [FrozenWindowSnapshot]
     nonisolated let displays: [FrozenDisplaySnapshot]
-    nonisolated let measurements: FrozenCaptureMeasurements
     private let directory: URL
     private var isClosed = false
 
-    private init(directory: URL, windows: [FrozenWindowSnapshot], displays: [FrozenDisplaySnapshot],
-                 measurements: FrozenCaptureMeasurements) {
+    private init(directory: URL, windows: [FrozenWindowSnapshot], displays: [FrozenDisplaySnapshot]) {
         self.directory = directory
         self.windows = windows
         self.displays = displays
-        self.measurements = measurements
     }
 
     deinit { try? FileManager.default.removeItem(at: directory) }
 
-    /// At most three acquisitions run together, each with a reserved share of both
+    /// Freezes every display and, with `includingWindows`, every eligible window with and without
+    /// its shadow. At most three acquisitions run together, each with a reserved share of both
     /// budgets. Large rasters fall back to sequential capture when necessary.
     /// Shotty's own windows stay visible, such as Settings and thumbnails; only the capture
-    /// overlays in `excludingWindowIDs` are left out. Fixture IDs must still be on-screen,
-    /// normal-layer windows. Nil means the full eligible set, not a shortlist.
-    static func acquire(shadow: Bool, includeAlternateShadow: Bool = false,
-                        displayIDs: Set<CGDirectDisplayID>? = nil,
-                        fixtureWindowIDs: Set<CGWindowID>? = nil,
-                        excludingWindowIDs: Set<CGWindowID> = [],
-                        limits: FrozenCaptureLimits = .init()) async throws -> FrozenCaptureSet {
-        let started = ProcessInfo.processInfo.systemUptime
+    /// overlays in `excludingWindowIDs` are left out.
+    static func acquire(includingWindows: Bool, excludingWindowIDs: Set<CGWindowID>) async throws -> FrozenCaptureSet {
         guard CGPreflightScreenCaptureAccess() else { throw CaptureFailure.permissionRequired }
-        guard limits.maximumDiskBytes > 0, limits.maximumResidentBytes > 0,
-              limits.maximumWindows >= 0 else { throw FrozenCaptureFailure.resourceLimit }
         try Task.checkCancellation()
+        let limits = FrozenCaptureLimits()
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
-        let selectedDisplays = content.displays.filter { displayIDs?.contains($0.displayID) ?? true }
-        guard !selectedDisplays.isEmpty,
-              displayIDs.map({ $0 == Set(selectedDisplays.map(\.displayID)) }) ?? true else {
-            throw CaptureFailure.targetUnavailable
+        let selectedDisplays = content.displays
+        guard !selectedDisplays.isEmpty else { throw CaptureFailure.targetUnavailable }
+        // On-screen normal application windows on the frozen displays, overlays excluded.
+        func eligible(_ windows: [SCWindow]) -> [SCWindow] {
+            guard includingWindows else { return [] }
+            return windows.filter { window in
+                window.isOnScreen && window.windowLayer == 0 && !window.frame.isEmpty && window.owningApplication != nil
+                    && !excludingWindowIDs.contains(window.windowID)
+                    && selectedDisplays.contains { $0.frame.intersects(window.frame) }
+            }
         }
-        let selectedWindows = content.windows.filter { window in
-            guard window.isOnScreen, window.windowLayer == 0, !window.frame.isEmpty,
-                  selectedDisplays.contains(where: { $0.frame.intersects(window.frame) }) else { return false }
-            if let fixtureWindowIDs { return fixtureWindowIDs.contains(window.windowID) }
-            return window.owningApplication != nil && !excludingWindowIDs.contains(window.windowID)
-        }
-        guard fixtureWindowIDs.map({ $0 == Set(selectedWindows.map(\.windowID)) }) ?? true else {
-            throw CaptureFailure.targetUnavailable
-        }
+        let selectedWindows = eligible(content.windows)
         guard selectedWindows.count <= limits.maximumWindows else { throw FrozenCaptureFailure.resourceLimit }
         try CaptureScratchSpace.prepare()
         let directory = CaptureScratchSpace.directory.appendingPathComponent("Shotty-freeze-" + UUID().uuidString, isDirectory: true)
@@ -225,10 +203,11 @@ actor FrozenCaptureSet {
             var displays: [FrozenDisplaySnapshot] = []
             var diskBytes = 0
             var profileBytes = 0
-            var largestRaster = 0
             var jobs: [CaptureJob] = []
             for window in selectedWindows {
-                for includesShadow in includeAlternateShadow ? [shadow, !shadow] : [shadow] {
+                // The unshadowed raster previews the window exactly on its frame; Option at
+                // confirmation can pick either variant for the output.
+                for includesShadow in [false, true] {
                     let filter = SCContentFilter(desktopIndependentWindow: window)
                     jobs.append(CaptureJob(filter: filter, shadow: includesShadow, target: .window(window.windowID, window.frame)))
                 }
@@ -249,8 +228,6 @@ actor FrozenCaptureSet {
                 }
             }
             var nextIndex = 0
-            var maximumConcurrentCaptures = 0
-            var peakReservedResidentBytes = 0
             while nextIndex < requests.count {
                 try Task.checkCancellation()
                 let batch: FrozenCaptureBatch
@@ -261,8 +238,6 @@ actor FrozenCaptureSet {
                     logger.error("Frozen batch rejected \(requests[nextIndex].diagnosticLabel, privacy: .public) estimate=\(estimates[nextIndex]) retainedProfiles=\(profileBytes) storedDisk=\(diskBytes)")
                     throw error
                 }
-                maximumConcurrentCaptures = max(maximumConcurrentCaptures, batch.reservations.count)
-                peakReservedResidentBytes = max(peakReservedResidentBytes, profileBytes + batch.residentBytes)
                 let rasters = try await batch.run { reservation in
                     let job = requests[reservation.index]
                     var availableLimits = limits
@@ -275,7 +250,6 @@ actor FrozenCaptureSet {
                     let job = requests[reservation.index]
                     diskBytes += raster.byteCount
                     profileBytes += raster.colorSpace.count
-                    largestRaster = max(largestRaster, raster.byteCount)
                     switch job.target {
                     case .window(let id, let frame):
                         windows.append(FrozenWindowSnapshot(windowID: id, frame: frame, pointPixelScale: job.filter.pointPixelScale,
@@ -289,12 +263,7 @@ actor FrozenCaptureSet {
             try Task.checkCancellation()
             // Prevent binding invocation-time frames to pixels acquired after a move.
             let latest = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
-            let latestEligibleIDs = Set(latest.windows.filter { window in
-                guard window.isOnScreen, window.windowLayer == 0, !window.frame.isEmpty,
-                      selectedDisplays.contains(where: { $0.frame.intersects(window.frame) }) else { return false }
-                if let fixtureWindowIDs { return fixtureWindowIDs.contains(window.windowID) }
-                return window.owningApplication != nil && !excludingWindowIDs.contains(window.windowID)
-            }.map(\.windowID))
+            let latestEligibleIDs = Set(eligible(latest.windows).map(\.windowID))
             let initialWindowIDs = Set(selectedWindows.map(\.windowID))
             let initialDisplayIDs = Set(selectedDisplays.map(\.displayID))
             let latestDisplayIDs = Set(latest.displays.map(\.displayID))
@@ -304,8 +273,7 @@ actor FrozenCaptureSet {
             let changedDisplays = selectedDisplays.filter { initial in
                 !latest.displays.contains { $0.displayID == initial.displayID && $0.frame == initial.frame && $0.width == initial.width && $0.height == initial.height }
             }
-            guard latestEligibleIDs == initialWindowIDs,
-                  displayIDs != nil || latestDisplayIDs == initialDisplayIDs,
+            guard latestEligibleIDs == initialWindowIDs, latestDisplayIDs == initialDisplayIDs,
                   changedWindows.isEmpty, changedDisplays.isEmpty else {
                 let windows = changedWindows.map { initial in
                     let current = latest.windows.first { $0.windowID == initial.windowID }
@@ -319,13 +287,7 @@ actor FrozenCaptureSet {
                 throw FrozenCaptureFailure.targetChanged
             }
             try Task.checkCancellation()
-            return FrozenCaptureSet(directory: directory, windows: windows, displays: displays,
-                                    measurements: FrozenCaptureMeasurements(windowCount: selectedWindows.count,
-                                        rasterCount: windows.count + displays.count, displayCount: displays.count,
-                                        diskBytes: diskBytes, largestRasterBytes: largestRaster,
-                                        elapsedSeconds: ProcessInfo.processInfo.systemUptime - started,
-                                        maximumConcurrentCaptures: maximumConcurrentCaptures,
-                                        peakReservedResidentBytes: peakReservedResidentBytes))
+            return FrozenCaptureSet(directory: directory, windows: windows, displays: displays)
         } catch {
             try? FileManager.default.removeItem(at: directory)
             throw error
@@ -455,7 +417,10 @@ enum FrozenRasterFile {
         do {
             let handle = try FileHandle(forWritingTo: url)
             defer { try? handle.close() }
-            try handle.write(contentsOf: (raw as Data).prefix(byteCount))
+            // Writes straight from the provider; bridging it to Data would first copy the whole raster.
+            try withExtendedLifetime(raw) {
+                try handle.write(contentsOf: UnsafeRawBufferPointer(start: CFDataGetBytePtr(raw), count: byteCount))
+            }
             try Task.checkCancellation()
             return descriptor
         } catch {

@@ -29,6 +29,9 @@ final class CaptureSessionStoreTests: XCTestCase {
         let thumbnail = try await store.thumbnail(for: created.id)
         XCTAssertEqual(thumbnail.width, 560)
         XCTAssertEqual(thumbnail.height, 280)
+        let fromMemory = try await store.thumbnail(of: image())
+        XCTAssertEqual(fromMemory.width, 560)
+        XCTAssertEqual(fromMemory.height, 280)
         let permissions = try FileManager.default.attributesOfItem(atPath: created.sourceURL.path)[.posixPermissions] as? Int
         XCTAssertEqual(permissions, 0o600)
         let backup = try directory.resourceValues(forKeys: [.isExcludedFromBackupKey])

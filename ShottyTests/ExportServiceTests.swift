@@ -48,6 +48,24 @@ final class ExportServiceTests: XCTestCase {
         XCTAssertEqual(dark[3], 255)
     }
 
+    func testUneditedNativePNGReusesStoredSourceAndEditsRender() async throws {
+        let fixture = try await fixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let service = ExportService()
+        // A re-encode would reproduce the stored bytes exactly, so a trailing byte, which PNG readers
+        // ignore, shows whether the source itself was reused.
+        var stored = try Data(contentsOf: fixture.snapshot.sourceURL)
+        stored.append(0)
+        try stored.write(to: fixture.snapshot.sourceURL)
+        let unedited = try await service.encodedData(fixture.snapshot)
+        XCTAssertEqual(unedited, stored)
+        var edited = fixture.snapshot
+        edited.documentState = AnnotationDocument(crop: CGRect(x: 0, y: 0, width: 10, height: 10))
+        let cropped = try decode(await service.encodedData(edited))
+        XCTAssertEqual(cropped.width, 10)
+        XCTAssertEqual(cropped.height, 10)
+    }
+
     func testCollisionSuffixesAndNoSilentOverwrite() async throws {
         let fixture = try await fixture()
         defer { try? FileManager.default.removeItem(at: fixture.directory) }

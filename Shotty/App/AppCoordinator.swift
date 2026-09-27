@@ -152,7 +152,7 @@ final class AppCoordinator {
         do {
             let record = try await store.create(image: image, kind: kind, scale: scale)
             await refreshRecords()
-            if settings.capture.outputs.contains(.showThumbnail) { await showThumbnail(record.id) }
+            if settings.capture.outputs.contains(.showThumbnail) { await showThumbnail(record.id, source: image) }
             if settings.capture.outputs.contains(.openEditor) { openEditor?(record.id) }
             if settings.capture.outputs.contains(.copyImage) {
                 await copy(record.id, options: settings.exportOptions, ticket: ticket, automatic: true)
@@ -207,9 +207,12 @@ final class AppCoordinator {
         return ids.filter { id in byID[id].map { !$0.isSaved && !$0.isCopied } ?? true }.count
     }
 
-    private func showThumbnail(_ id: UUID) async {
-        do { thumbnails.add(id, image: try await store.thumbnail(for: id)) }
-        catch { showError(error, title: "Couldn't show capture") }
+    /// Pass `source` while the unedited capture is still in memory; otherwise the store reads it back.
+    private func showThumbnail(_ id: UUID, source: CGImage? = nil) async {
+        do {
+            let image = if let source { try await store.thumbnail(of: source) } else { try await store.thumbnail(for: id) }
+            thumbnails.add(id, image: image)
+        } catch { showError(error, title: "Couldn't show capture") }
     }
 
     func perform(_ id: UUID, action: ThumbnailCoordinator.Action) {

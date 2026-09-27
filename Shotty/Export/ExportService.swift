@@ -65,6 +65,13 @@ actor ExportService {
 
     func encodedData(_ snapshot: CaptureSnapshot, options: ExportOptions = .init()) throws -> Data {
         try Task.checkCancellation()
+        // An unedited capture exported as native PNG is its stored source; decoding and re-encoding
+        // it would reproduce the same bytes.
+        if snapshot.documentState == AnnotationDocument(), options.format == .png, options.color == .preserve,
+           options.scale == .native || snapshot.sourceScale == 1 {
+            guard let source = try? Data(contentsOf: snapshot.sourceURL) else { throw Failure.unreadableSource }
+            return source
+        }
         return try autoreleasepool {
             let image = try renderedImage(snapshot, options: options)
             try Task.checkCancellation()
@@ -83,8 +90,7 @@ actor ExportService {
         }
     }
 
-    /// Copy image callers can use this result without constructing a second rendering pipeline.
-    func renderedImage(_ snapshot: CaptureSnapshot, options: ExportOptions = .init()) throws -> CGImage {
+    private func renderedImage(_ snapshot: CaptureSnapshot, options: ExportOptions = .init()) throws -> CGImage {
         try Task.checkCancellation()
         guard snapshot.sourceScale.isFinite, snapshot.sourceScale > 0 else { throw Failure.invalidScale }
         guard let source = CGImageSourceCreateWithURL(snapshot.sourceURL as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),

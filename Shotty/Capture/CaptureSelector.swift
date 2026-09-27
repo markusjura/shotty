@@ -141,26 +141,10 @@ final class CaptureSelector {
         updatePointer(pointer, modifiers: [])
         operation = Task { [self] in
             do {
-                let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
-                try Task.checkCancellation()
-                let order = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? [])
-                    .compactMap { $0[kCGWindowNumber as String] as? CGWindowID }
-                // Shotty's own normal windows, such as Settings, are targets too; overlays are not layer 0.
-                var targets: [WindowTarget] = content.windows.compactMap { window in
-                    guard window.isOnScreen, window.windowLayer == 0,
-                          let app = window.owningApplication,
-                          let display = content.displays.first(where: { $0.frame.intersects(window.frame) }),
-                          let screen = screens.first(where: { $0.displayID == display.displayID }) else { return nil }
-                    let geometry = DisplayGeometry(id: display.displayID, appKitFrame: screen.frame,
-                        captureFrame: display.frame, pixelSize: CGSize(width: display.width, height: display.height))
-                    let topLeft = geometry.appKitPoint(fromCapture: window.frame.origin)
-                    return WindowTarget(id: window.windowID, processID: app.processID,
-                        title: [app.applicationName, window.title].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", "),
-                        frame: CGRect(x: topLeft.x, y: topLeft.y - window.frame.height,
-                                      width: window.frame.width, height: window.frame.height))
-                }.sorted { (order.firstIndex(of: $0.id) ?? .max) < (order.firstIndex(of: $1.id) ?? .max) }
+                // Only area and window selection target windows; the other modes skip listing and freezing them.
+                var targets = try await selectsWindows ? Self.windowTargets(on: screens) : []
                 if configuration.freeze && kind != .scrolling {
-                    let set = try await FrozenCaptureSet.acquire(shadow: configuration.shadow, includeAlternateShadow: true,
+                    let set = try await FrozenCaptureSet.acquire(includingWindows: selectsWindows,
                                                                  excludingWindowIDs: overlayWindowIDs)
                     guard requestID == request, !Task.isCancelled else { try? await set.close(); return }
                     frozen = set
@@ -191,6 +175,31 @@ final class CaptureSelector {
             catch { if requestID == request { finish(.failure(error)) } }
         }
     }
+
+    /// On-screen normal windows, frontmost first, in AppKit coordinates. Shotty's own normal windows,
+    /// such as Settings, are targets too; overlays are not layer 0.
+    private static func windowTargets(on screens: [NSScreen]) async throws -> [WindowTarget] {
+        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        try Task.checkCancellation()
+        let order = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? [])
+            .compactMap { $0[kCGWindowNumber as String] as? CGWindowID }
+        return content.windows.compactMap { window in
+            guard window.isOnScreen, window.windowLayer == 0,
+                  let app = window.owningApplication,
+                  let display = content.displays.first(where: { $0.frame.intersects(window.frame) }),
+                  let screen = screens.first(where: { $0.displayID == display.displayID }) else { return nil }
+            let geometry = DisplayGeometry(id: display.displayID, appKitFrame: screen.frame,
+                captureFrame: display.frame, pixelSize: CGSize(width: display.width, height: display.height))
+            let topLeft = geometry.appKitPoint(fromCapture: window.frame.origin)
+            return WindowTarget(id: window.windowID, processID: app.processID,
+                title: [app.applicationName, window.title].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", "),
+                frame: CGRect(x: topLeft.x, y: topLeft.y - window.frame.height,
+                              width: window.frame.width, height: window.frame.height))
+        }.sorted { (order.firstIndex(of: $0.id) ?? .max) < (order.firstIndex(of: $1.id) ?? .max) }
+    }
+
+    /// Area and window selection switch into each other with Space; the other modes never pick a window.
+    private var selectsWindows: Bool { kind == .area || kind == .window }
 
     /// CleanShot-style crosshair for drawing a screenshot region, before and while dragging; the
     /// normal arrow for picking a window or a scrolling region. Set directly as well as through
@@ -302,7 +311,7 @@ final class CaptureSelector {
             guard !event.isARepeat else { return }
             if drag != nil {
                 drag?.setSpace(true, at: pointer)
-            } else if kind == .area || kind == .window {
+            } else if selectsWindows {
                 changeMode(kind == .window ? .area : .window)
             }
         case 48 where kind == .window:

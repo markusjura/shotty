@@ -122,33 +122,41 @@ actor CaptureSessionStore {
 
     func snapshot(for id: UUID) throws -> CaptureSnapshot { try record(id).snapshot }
 
+    /// Longest side of a thumbnail, in pixels.
+    private static let thumbnailPixels = 560
+
     func thumbnail(for id: UUID) throws -> CGImage {
         let interval = signposter.beginInterval("CaptureThumbnail", id: signposter.makeSignpostID())
         defer { signposter.endInterval("CaptureThumbnail", interval) }
         try Task.checkCancellation()
         let record = try record(id)
         if let state = record.documentState, state != AnnotationDocument() {
-            let rendered = try documentRenderer.render(source: image(for: id), state: state)
-            let factor = min(1, 560 / Double(max(rendered.width, rendered.height)))
-            let width = max(1, Int((Double(rendered.width) * factor).rounded()))
-            let height = max(1, Int((Double(rendered.height) * factor).rounded()))
-            guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
-                                          space: rendered.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!,
-                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw Failure.imageEncoding }
-            context.interpolationQuality = .high
-            context.draw(rendered, in: CGRect(x: 0, y: 0, width: width, height: height))
-            guard let thumbnail = context.makeImage() else { throw Failure.imageEncoding }
-            return thumbnail
+            return try thumbnail(of: documentRenderer.render(source: image(for: id), state: state))
         }
         let url = record.sourceURL
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
               let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceThumbnailMaxPixelSize: 560,
+                kCGImageSourceThumbnailMaxPixelSize: Self.thumbnailPixels,
                 kCGImageSourceCreateThumbnailWithTransform: true,
                 kCGImageSourceShouldCacheImmediately: true
               ] as CFDictionary) else { throw Failure.imageEncoding }
         return image
+    }
+
+    /// Scales `image` like thumbnail(for:). A new capture uses this while its pixels are still in
+    /// memory, which avoids decoding the PNG just written.
+    func thumbnail(of image: CGImage) throws -> CGImage {
+        let factor = min(1, Double(Self.thumbnailPixels) / Double(max(image.width, image.height)))
+        let width = max(1, Int((Double(image.width) * factor).rounded()))
+        let height = max(1, Int((Double(image.height) * factor).rounded()))
+        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                      space: image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw Failure.imageEncoding }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let thumbnail = context.makeImage() else { throw Failure.imageEncoding }
+        return thumbnail
     }
 
     /// Editor-only decode. Thumbnail queues must use thumbnail(for:) instead.
