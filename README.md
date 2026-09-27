@@ -2,8 +2,6 @@
 
 A native macOS screenshot utility tailored to Markus's workflow.
 
-The planned native feature set is implemented. Release acceptance is still in progress. See [native verification](.plans/native-verification.md) for measured results and pending gates.
-
 ## Build and test
 
 Requires an Apple Silicon Mac, macOS 26 or later, Xcode 27, and an existing Apple Development signing identity. Create a gitignored `Local.xcconfig` in the repository root containing `DEVELOPMENT_TEAM = YOUR_TEAM_ID`. The shared project includes it through `Config/Signing.xcconfig`; no certificate or private key belongs in the repository.
@@ -33,7 +31,7 @@ It builds Release, refuses to continue unless `codesign --verify --deep --strict
 
 Install on the same Mac:
 
-1. Quit Shotty from its menu and choose whether to keep the active capture session. The installer refuses to run while Shotty is running; it does not quit the app for you.
+1. Quit Shotty from its menu. Quitting discards the capture session and keeps saved files; only a session cut short by a crash is offered for restore on the next launch. The installer refuses to run while Shotty is running; it does not quit the app for you.
 2. Run `Scripts/install.sh .build/releases/Shotty-<version>-<build>-<commit>.zip`.
 
 The installer checks the checksum when the `.sha256` file is present, verifies the signature and bundle ID, and warns before installing a build whose designated requirement differs from the installed one, because macOS ties permission grants to it. It unpacks into a private work directory on the `/Applications` volume and replaces `/Applications/Shotty.app` by renaming; if placing the new build fails, the old one is moved back. The replaced build is then kept at `~/Library/Application Support/Shotty Installer/Shotty.previous.app`. If that last step fails, the new install stays and the script prints where the replaced build was left.
@@ -47,19 +45,7 @@ Neither script strips quarantine or changes Gatekeeper settings. Judge a copied 
 Grant permissions to the installed `/Applications/Shotty.app`, not to a build in `.build`. Grants are per Mac; signing does not carry them to another machine.
 
 - **Screen Recording** is required for every capture mode, including OCR. Shotty asks on the first capture and links to System Settings > Privacy & Security > Screen & System Audio Recording. macOS may require relaunching Shotty after granting it.
-- **Accessibility** is requested only when you start Auto Scroll. Manual scrolling capture works without it.
+- **Accessibility** is needed only for Auto Scroll and for "Dismiss thumbnail after pasting", which watches for ⌘V in other apps. Auto Scroll asks for it when you start it; manual scrolling capture works without it.
 - Input Monitoring, Full Disk Access, camera, and microphone are not needed.
 
-Keeping the bundle ID and signing identity stable keeps these grants across updates. On studio, grants have survived signed Release replacements with an unchanged designated requirement; see [signing verification](.plans/signing-verification.md). Install and permission continuity on m1 is deferred to a separate fleet change.
-
-The development harness captures a synthetic fixture window to verify frozen pixels and never saves screenshots into the repository. Its mouse-only observer does not request Accessibility or Input Monitoring.
-
-## Specifications
-
-- [Build contract and remaining engineering gates](.plans/build-readiness.md)
-- [Implementation plan](.plans/plan.md)
-- [Detailed interactions and native quality requirements](.plans/interaction-spec.md)
-- [CleanShot feature-by-feature UX reference](.plans/cleanshot-reference.md)
-- [macOS APIs, permissions, and signing research](.plans/platform-research.md)
-- [Free signing verification](.plans/signing-verification.md)
-- [Interactive design preview](.plans/design/standalone-shotty-design.html)
+Keeping the bundle ID and signing identity stable keeps these grants across updates. On studio, grants have survived signed Release replacements with an unchanged designated requirement. Install and permission continuity on m1 is deferred to a separate fleet change.

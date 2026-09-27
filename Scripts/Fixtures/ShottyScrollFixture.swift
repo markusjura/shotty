@@ -1,6 +1,6 @@
 import AppKit
 
-// Synthetic scrolling fixture for exercising Shotty's capture and stitching by hand or from a harness.
+// Synthetic scrolling fixture for exercising Shotty's capture and stitching by hand or from scripts.
 // Developer utility only; build it with Scripts/Fixtures/build-scroll-fixture.sh.
 //
 // Launch options (NSUserDefaults argument domain):
@@ -383,14 +383,6 @@ final class FixtureController: NSObject, NSApplicationDelegate {
         appItem.submenu = appMenu
         let menu = NSMenu()
         menu.addItem(appItem)
-        let verification = NSMenu(title: "Verification")
-        for (title, action) in [("Activate Fixture", #selector(activateFixture)), ("Move Window 20 Points", #selector(moveWindow))] {
-            let item = verification.addItem(withTitle: title, action: action, keyEquivalent: "")
-            item.target = self
-        }
-        let verificationItem = NSMenuItem(title: "Verification", action: nil, keyEquivalent: "")
-        verificationItem.submenu = verification
-        menu.addItem(verificationItem)
         return menu
     }
 
@@ -409,7 +401,7 @@ final class FixtureController: NSObject, NSApplicationDelegate {
     }
 
     /// Moves the clip view instantly within the legal range, including insets such as a table header,
-    /// then logs the offset for harnesses.
+    /// then logs the offset for scripts.
     private func scroll(by delta: CGFloat) {
         let clip = scrollView.contentView
         let insets = clip.contentInsets
@@ -426,15 +418,6 @@ final class FixtureController: NSObject, NSApplicationDelegate {
         scrollView.reflectScrolledClipView(clip)
         print("mode=\(mode.rawValue) offset=\(Int((mode == .horizontal ? origin.x : origin.y).rounded()))")
         fflush(stdout)
-    }
-
-    @objc private func activateFixture() {
-        NSApp.activate()
-        window.makeKeyAndOrderFront(nil)
-    }
-
-    @objc private func moveWindow() {
-        window.setFrameOrigin(CGPoint(x: window.frame.minX + 20, y: window.frame.minY))
     }
 
     @objc private func advance() { scroll(by: 80) }

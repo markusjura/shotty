@@ -33,7 +33,7 @@ struct PermissionSettingsPane: View {
             }
             Section("Accessibility") {
                 status(accessibility, granted: "Allowed", missing: "Not allowed")
-                Text("Only Auto Scroll needs this. Manual scrolling works without it.")
+                Text("Needed for Auto Scroll and for dismissing thumbnails after pasting.")
                     .secondaryNote()
                 if !accessibility {
                     Button("Open System Settings") { SystemSettingsLink.open(SystemSettingsLink.accessibility) }

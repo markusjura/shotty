@@ -3,7 +3,7 @@
 # Usage:
 #   Scripts/install.sh path/to/Shotty-<version>-<build>-<commit>.zip
 #   Scripts/install.sh --rollback      # swap the installed build with the previous one
-# Quit Shotty from its menu first, so it can keep or discard the active capture session itself.
+# Quit Shotty from its menu first, so it can finish running saves and discard its capture session itself.
 # Settings (UserDefaults) and ~/Library/Application Support/Shotty are never touched.
 # Gatekeeper and quarantine are left alone; judge an install by whether it launches.
 #
@@ -27,7 +27,7 @@ verify() {
 }
 
 [[ $# -eq 1 ]] || fail "Usage: Scripts/install.sh <Shotty.zip> | --rollback"
-pgrep -xq Shotty && fail "Shotty is running. Quit it from its menu, choose whether to keep the session, then retry."
+pgrep -xq Shotty && fail "Shotty is running. Quit it from its menu, then retry."
 mkdir -p "$keep_dir"
 work=$(mktemp -d /Applications/.Shotty-install.XXXXXX)
 # Removes only what this run created. A displaced build that could not be kept is left for recovery.

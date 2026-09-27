@@ -29,12 +29,10 @@ Open `scroll-fixture.html` directly or serve this directory. Header buttons sele
 - `#thread`: a virtualized thread of 3000 messages `M0001...` with deterministic heights. Only messages near the viewport exist in the DOM.
 - `#horizontal`: an `overflow-x` region of columns `C0001...`.
 
-`Advance 80`, `Reverse 40`, and `Reset` scroll the active scroller instantly. `Unstable` toggles a ticking counter. `body[data-mode]`, `body[data-offset]`, and `body[data-rendered]` (thread DOM item count) expose state for harnesses.
+`Advance 80`, `Reverse 40`, and `Reset` scroll the active scroller instantly. `Unstable` toggles a ticking counter. `body[data-mode]`, `body[data-offset]`, and `body[data-rendered]` (thread DOM item count) expose state for automation.
 
 ## Other native applications
 
 Generate a tall, single-page PDF with `swift Scripts/Fixtures/MakePDFFixture.swift /tmp/Shotty-PDF-Fixture.pdf`. Open it in Preview at Actual Size and select the document body, excluding app chrome and the scrollbar. Its 190 numbered rows are synthetic.
 
-Generate plain text with `python3 Scripts/Fixtures/MakeTextFixture.py /tmp/Shotty-Text-Fixture.txt`. Open it in TextEdit to exercise another app without accessibility adapters. Its 300 numbered rows are synthetic.
-
-The native fixture's Verification menu explicitly activates its app or moves its window 20 points. These actions let Computer Use exercise actual WindowServer focus and geometry changes, because tool-dispatched button clicks can operate on inactive windows without changing system focus.
+Generate plain text with `python3 Scripts/Fixtures/MakeTextFixture.py /tmp/Shotty-Text-Fixture.txt`. Open it in TextEdit to exercise another native app. Its 300 numbered rows are synthetic.
