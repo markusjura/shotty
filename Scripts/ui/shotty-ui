@@ -1,0 +1,32 @@
+#!/bin/zsh
+# UI verification helper for Shotty. Swift commands compile once into .build; video and key commands use
+# screencapture, ffmpeg, and System Events. Run `Scripts/ui/shotty-ui` without arguments for usage.
+set -euo pipefail
+dir=${0:A:h}
+binary=${dir:h:h}/.build/shotty-ui
+
+case ${1:-} in
+keys)
+  # System Events keystrokes reach the frontmost app; posted key events may not.
+  osascript -e "tell application \"System Events\" to keystroke \"$2\"" ;;
+key)
+  modifiers=${3:+ using {${${3//,/ down, }} down}}
+  osascript -e "tell application \"System Events\" to key code $2$modifiers" ;;
+record)
+  # 60 fps video of one display. Start it in the background, then act: `shotty-ui record 1 6 out.mov &`.
+  screencapture -x -V $3 -D$2 $4 ;;
+motion)
+  # Mean change per frame inside a region, in video pixels (2x points). Prints frames that visibly change.
+  ffmpeg -v error -i $2 -vf "crop=$5:$6:$3:$4,tblend=all_mode=difference,signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=-" \
+    -f null - | awk -F= '/YAVG/ { n++; if ($2 > 0.3) printf "%d:%.1f ", n, $2 } END { print "" }' ;;
+frames)
+  # One strip of frames first...last from a region, to look at only the frames that motion flagged.
+  count=$(( $4 - $3 + 1 ))
+  ffmpeg -v error -i $2 -vf "select='between(n,$3,$4)',crop=$7:$8:$5:$6,scale=-2:200,tile=${count}x1" -frames:v 1 -y $9 ;;
+*)
+  if [[ ! -x $binary || $dir/ShottyUI.swift -nt $binary ]]; then
+    mkdir -p ${binary:h}
+    swiftc -O $dir/ShottyUI.swift -o $binary
+  fi
+  exec $binary "$@" ;;
+esac
