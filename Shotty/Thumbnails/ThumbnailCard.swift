@@ -35,8 +35,8 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
     var image: NSImage? {
         didSet {
             guard image !== oldValue else { return }
+            backdrop = controlsVisible ? makeBackdrop() : nil
             needsDisplay = true
-            hoverBackdrop.layer?.contents = nil
         }
     }
     var captureID: UUID?
@@ -48,7 +48,8 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
     private var tracking: NSTrackingArea?
     private var hovered = false
     private var controls: [NSButton] = []
-    private let hoverBackdrop = ThumbnailHoverBackdrop()
+    /// The blurred, darkened capture drawn behind the hover controls.
+    private var backdrop: CGImage?
     private let statusLabel = NSTextField(labelWithString: "")
     private var success: ThumbnailCoordinator.Action?
     private var controlsVisible = false
@@ -85,15 +86,11 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        wantsLayer = true
         focusRingType = .none
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Capture thumbnail")
-        hoverBackdrop.wantsLayer = true
-        hoverBackdrop.layer?.contentsGravity = .resizeAspectFill
-        hoverBackdrop.layer?.cornerRadius = cornerRadius - 1
-        hoverBackdrop.layer?.masksToBounds = true
-        addSubview(hoverBackdrop)
         toolTip = "Click to edit. Drag to Finder or another app. Hold Option when dropping to keep the thumbnail."
         for (title, symbol, action) in [("Dismiss capture", "xmark", ThumbnailCoordinator.Action.dismiss),
                                          ("Open editor", "pencil", .open), ("Copy", "", .copy), ("Save", "", .save)] {
@@ -115,9 +112,7 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         statusLabel.alignment = .center
         statusLabel.lineBreakMode = .byTruncatingTail
         addSubview(statusLabel)
-        hoverBackdrop.isHidden = true
-        hoverBackdrop.alphaValue = 0
-        controls.forEach { $0.isHidden = true; $0.alphaValue = 0 }
+        controls.forEach { $0.isHidden = true }
         updateControls()
     }
     required init?(coder: NSCoder) { nil }
@@ -129,7 +124,6 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
 
     override func layout() {
         super.layout()
-        hoverBackdrop.frame = bounds.insetBy(dx: 1, dy: 1)
         statusLabel.frame = CGRect(x: 34, y: bounds.height - 25, width: bounds.width - 68, height: 16)
         // Proportions follow CleanShot's overlay: small corner buttons, two compact centered pills.
         let inset: CGFloat = 6, diameter = Chrome.iconButtonDiameter
@@ -177,19 +171,10 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         needsDisplay = true
         guard controlsVisible != visible else { return }
         controlsVisible = visible
-        if visible, hoverBackdrop.layer?.contents == nil { hoverBackdrop.layer?.contents = makeBackdrop() }
-        let views: [NSView] = [hoverBackdrop] + controls
-        for view in views { view.isHidden = false }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Chrome.duration(Chrome.fadeDuration)
-            for view in views { view.animator().alphaValue = visible ? 1 : 0 }
-        } completionHandler: { [weak self] in
-            Task { @MainActor in
-                guard let self, !self.controlsVisible else { return }
-                self.hoverBackdrop.isHidden = true
-                self.controls.forEach { $0.isHidden = true }
-            }
-        }
+        if visible, backdrop == nil { backdrop = makeBackdrop() }
+        controls.forEach { $0.isHidden = !visible }
+        // One crossfade covers the backdrop drawn by this view and the controls above it.
+        Chrome.crossfade(layer)
     }
 
     private static let ciContext = CIContext(options: [.cacheIntermediates: false])
@@ -202,14 +187,18 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         let backing = window?.backingScaleFactor ?? 2
         let pixels = CGSize(width: bounds.width * backing, height: bounds.height * backing)
         let scale = min(1, max(pixels.width / CGFloat(source.width), pixels.height / CGFloat(source.height)))
-        let input = CIImage(cgImage: source).transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let scaled = CIImage(cgImage: source).transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        // Whole pixels only. Core Image rounds the scaled extent up, and the partly covered edge column
+        // it adds would smear transparency into the blur.
+        let extent = CGRect(x: 0, y: 0, width: (CGFloat(source.width) * scale).rounded(.down),
+                            height: (CGFloat(source.height) * scale).rounded(.down))
         // About 7 pt of blur hides detail but keeps light and dark areas; Core Image works in linear
-        // light, where 0.3 lowers white to roughly 58% on screen.
-        let blurred = input.clampedToExtent().applyingGaussianBlur(sigma: 7 * backing).cropped(to: input.extent)
+        // light, where 0.1 lowers white to roughly 35% on screen, faint enough for the controls to stand out.
+        let blurred = scaled.cropped(to: extent).clampedToExtent().applyingGaussianBlur(sigma: 7 * backing).cropped(to: extent)
         let darkened = blurred.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: 0.3, y: 0, z: 0, w: 0), "inputGVector": CIVector(x: 0, y: 0.3, z: 0, w: 0),
-            "inputBVector": CIVector(x: 0, y: 0, z: 0.3, w: 0)])
-        return Self.ciContext.createCGImage(darkened, from: input.extent)
+            "inputRVector": CIVector(x: 0.1, y: 0, z: 0, w: 0), "inputGVector": CIVector(x: 0, y: 0.1, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: 0.1, w: 0)])
+        return Self.ciContext.createCGImage(darkened, from: extent)
     }
 
     /// The copy or save that succeeded last shows a checkmark in its pill until this card is removed;
@@ -218,12 +207,7 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         for (index, action, title) in [(2, ThumbnailCoordinator.Action.copy, "Copy"), (3, .save, "Save")]
         where (action == success) != (action == self.success) {
             let button = controls[index], done = action == success
-            if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-                let transition = CATransition()
-                transition.type = .fade
-                transition.duration = Chrome.fadeDuration
-                button.layer?.add(transition, forKey: "success")
-            }
+            Chrome.crossfade(button.layer)
             button.image = done ? ThumbnailGlyph.image("checkmark") : nil
             button.title = done ? "" : title
             button.setAccessibilityLabel(done ? (index == 2 ? "Copied. Copy again" : "Saved. Save again") : title)
@@ -245,11 +229,13 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         outline.addClip()
         NSColor.windowBackgroundColor.setFill()
         bounds.fill()
+        // The capture ends where the outline begins, so the translucent outline never shows its pixels.
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: cornerRadius - 1, yRadius: cornerRadius - 1).addClip()
         if let image, image.size.width > 0, image.size.height > 0 {
             let rect = ThumbnailLayout.imageRect(imageSize: image.size, bounds: bounds)
-            image.draw(in: rect)
+            if controlsVisible, let backdrop { NSGraphicsContext.current?.cgContext.draw(backdrop, in: rect) } else { image.draw(in: rect) }
         }
-        if let status, !showsControls {
+        if let status, !controlsVisible {
             let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .medium),
                                                            .foregroundColor: NSColor.white]
             let rect = CGRect(x: 10, y: 6, width: bounds.width - 20, height: 16)
@@ -344,7 +330,7 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
             let item = NSMenuItem(title: title, action: #selector(menuAction(_:)), keyEquivalent: "")
             if let shortcut = coordinator?.shortcut(for: action), let key = shortcut.keyboardShortcut {
                 item.keyEquivalent = String(key.key.character)
-                item.keyEquivalentModifierMask = shortcut.modifierFlags
+                item.keyEquivalentModifierMask = shortcut.modifiers.flags
             }
             item.target = self
             item.tag = tag
@@ -371,17 +357,6 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         if let captureID { coordinator?.dragFinished?(captureID, operation.contains(.copy), keepCard) }
         dragging = false
         press = nil
-    }
-}
-
-private extension Shortcut {
-    var modifierFlags: NSEvent.ModifierFlags {
-        var flags: NSEvent.ModifierFlags = []
-        if modifiers.contains(.control) { flags.insert(.control) }
-        if modifiers.contains(.option) { flags.insert(.option) }
-        if modifiers.contains(.shift) { flags.insert(.shift) }
-        if modifiers.contains(.command) { flags.insert(.command) }
-        return flags
     }
 }
 
@@ -416,14 +391,9 @@ private final class ThumbnailActionButton: NSButton {
     }
 }
 
-/// The blurred, darkened capture behind the hover controls. It is visual only; presses between
-/// the controls must reach the image's drag source.
-private final class ThumbnailHoverBackdrop: NSView {
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
-
-/// Heavy, dark glyphs sized to their button, like CleanShot's overlay icons. SF Symbols has
-/// no solid pencil, so Edit uses a small drawn one with the same weight as the xmark.
+/// Dark glyphs sized to their button, like CleanShot's overlay icons. Corner icons are heavy; the pill
+/// checkmark is one weight lighter, like the Copy and Save labels it replaces. SF Symbols has no solid
+/// pencil, so Edit uses a small drawn one with the same weight as the xmark.
 @MainActor
 private enum ThumbnailGlyph {
     /// Glyph size per point of button height: 8.5 pt in the 22 pt corner buttons, 10.4 pt in the 27 pt pills.
@@ -431,7 +401,7 @@ private enum ThumbnailGlyph {
 
     static func image(_ name: String) -> NSImage? {
         if name == "pencil" { return pencil }
-        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .heavy)
+        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: name == "checkmark" ? .bold : .heavy)
             .applying(.init(paletteColors: [Chrome.controlLabel]))
         return NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config)
     }

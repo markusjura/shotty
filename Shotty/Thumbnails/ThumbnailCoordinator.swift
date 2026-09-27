@@ -117,7 +117,7 @@ final class ThumbnailCoordinator {
         panel?.orderFrontRegardless()
     }
 
-    /// Adds a card nearest the anchor without taking keyboard focus.
+    /// Adds a card at the top of the stack without taking keyboard focus.
     func add(_ id: UUID, image: CGImage) {
         cards.removeAll { $0.id == id }
         cards.insert(Card(id: id, image: NSImage(cgImage: image, size: .zero)), at: 0)
@@ -336,20 +336,17 @@ final class ThumbnailPanel: NSPanel {
     }
 }
 
-/// Top-to-bottom rows: the newest card sits nearest the anchor; "N more" is farthest.
+/// Top-to-bottom rows, newest first at every anchor, with "N more" last.
 private struct ThumbnailStack: View {
     @Bindable var coordinator: ThumbnailCoordinator
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let visible = Array(coordinator.cards.prefix(coordinator.visibleCount))
-        let bottom = [.bottomLeft, .bottomRight].contains(coordinator.placement)
         VStack(spacing: ThumbnailLayout.gap) {
-            if bottom { overflow }
-            ForEach(ThumbnailLayout.displayOrder(visible, placement: coordinator.placement)) { card in
+            ForEach(coordinator.cards.prefix(coordinator.visibleCount)) { card in
                 ThumbnailCard(card: card, coordinator: coordinator)
             }
-            if !bottom { overflow }
+            overflow
         }
         .frame(width: coordinator.width)
         .animation(reduceMotion ? nil : .easeInOut(duration: Chrome.moveDuration), value: coordinator.cards.map(\.id))

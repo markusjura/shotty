@@ -13,12 +13,8 @@ final class ThumbnailLayoutTests: XCTestCase {
                        "A tiny display still shows the newest capture")
     }
 
-    func testPreviewHeightIsBoundedAndNewestSitsNearestTheAnchor() {
-        XCTAssertEqual(ThumbnailLayout.previewHeight(width: 220), 160)
-        XCTAssertEqual(ThumbnailLayout.previewHeight(width: 180), 140)
-        XCTAssertEqual(ThumbnailLayout.displayOrder([1, 2, 3], placement: .topRight), [1, 2, 3])
-        XCTAssertEqual(ThumbnailLayout.displayOrder([1, 2, 3], placement: .leftCenter), [1, 2, 3])
-        XCTAssertEqual(ThumbnailLayout.displayOrder([1, 2, 3], placement: .bottomLeft), [3, 2, 1])
+    func testPreviewIs16By10() {
+        XCTAssertEqual(ThumbnailSize.allCases.map { ThumbnailLayout.previewHeight(width: $0.width) }, [113, 138, 175])
     }
 
     func testImageFillsCardWithoutDistortion() {

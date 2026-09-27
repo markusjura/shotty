@@ -1,15 +1,15 @@
 import CoreGraphics
 import Foundation
 
-/// Pure stack rules from the build contract: 8 pt gaps, 160 pt maximum previews,
-/// newest card nearest the anchor, and an "N more" row instead of offscreen cards.
+/// Pure stack rules: 8 pt gaps, 16:10 previews, the newest card on top, and an "N more" row
+/// instead of offscreen cards.
 enum ThumbnailLayout {
     static let gap: CGFloat = 8
     static let overflowRowHeight: CGFloat = 32
 
+    /// Cards have a MacBook display's 16:10 aspect ratio, rounded to whole points.
     static func previewHeight(width: CGFloat) -> CGFloat {
-        // A stable card ratio gives hover controls breathing room and keeps the stack calm.
-        min(ThumbnailSize.maximumPreviewHeight, max(140, (width * 8 / 11).rounded()))
+        (width * 10 / 16).rounded()
     }
 
     /// Fill the card edge to edge, without distorting the source or adding letterboxing.
@@ -33,14 +33,6 @@ enum ThumbnailLayout {
             used = next
         }
         return heights.count
-    }
-
-    /// Top-to-bottom display order: bottom anchors put the newest card at the bottom.
-    static func displayOrder<Card>(_ newestFirst: [Card], placement: ThumbnailPlacement) -> [Card] {
-        switch placement {
-        case .bottomLeft, .bottomRight: newestFirst.reversed()
-        default: newestFirst
-        }
     }
 
     static func anchoredLeft(_ placement: ThumbnailPlacement) -> Bool {

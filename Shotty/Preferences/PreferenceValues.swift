@@ -148,8 +148,6 @@ enum ThumbnailSize: String, Codable, CaseIterable, Sendable {
         case .large: 280
         }
     }
-
-    static let maximumPreviewHeight: CGFloat = 160
 }
 
 enum ThumbnailDisplayPolicy: Codable, Hashable, Sendable {

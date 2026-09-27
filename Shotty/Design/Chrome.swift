@@ -55,16 +55,20 @@ enum Chrome {
     static let cardPillSize = CGSize(width: 52, height: 27)
     static let iconButtonDiameter: CGFloat = 22
     static let controlFont = NSFont.systemFont(ofSize: 13, weight: .medium)
-    /// Copy and Save on thumbnail cards: smaller and heavier, matching CleanShot's pills.
-    static let cardPillFont = NSFont.systemFont(ofSize: 12, weight: .semibold)
+    /// Copy and Save on thumbnail cards: a size smaller than `controlFont`, matching CleanShot's pills.
+    static let cardPillFont = NSFont.systemFont(ofSize: 12, weight: .medium)
 
     // MARK: Motion
 
     static let fadeDuration: TimeInterval = 0.15
     static let moveDuration: TimeInterval = 0.2
-    /// Zero when Reduce Motion is on, so callers can always animate.
-    static func duration(_ value: TimeInterval) -> TimeInterval {
-        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : value
+    /// Crossfades the next change of `layer` and its sublayers, unless Reduce Motion is on.
+    static func crossfade(_ layer: CALayer?) {
+        guard let layer, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        let transition = CATransition()
+        transition.type = .fade
+        transition.duration = fadeDuration
+        layer.add(transition, forKey: "crossfade")
     }
 }
 
