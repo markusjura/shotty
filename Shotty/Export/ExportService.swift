@@ -38,7 +38,7 @@ struct ExportReceipt: Equatable, Sendable {
     let fingerprint: FileFingerprint
 }
 
-/// One serial renderer/encoder shared by copy, save, and file promises. No clipboard/UI access.
+/// One serial renderer/encoder shared by copy and save. No clipboard/UI access.
 actor ExportService {
     private let documentRenderer = DocumentRenderer()
     enum Failure: LocalizedError {
@@ -62,6 +62,13 @@ actor ExportService {
     func fingerprint(at url: URL) throws -> FileFingerprint { try FileFingerprint.read(at: url) }
 
     func encodedData(_ snapshot: CaptureSnapshot, options: ExportOptions = .init()) throws -> Data {
+        try Self.encodedData(snapshot, options: options, renderer: documentRenderer)
+    }
+
+    /// The encoder itself, for main-actor callers that need the bytes before they return, such as a
+    /// drag that must hand over a file as it starts. Each caller passes a renderer it uses serially.
+    nonisolated static func encodedData(_ snapshot: CaptureSnapshot, options: ExportOptions,
+                                        renderer: DocumentRenderer) throws -> Data {
         try Task.checkCancellation()
         // An unedited capture exported as native PNG is its stored source; decoding and re-encoding
         // it would reproduce the same bytes.
@@ -71,7 +78,7 @@ actor ExportService {
             return source
         }
         return try autoreleasepool {
-            let image = try renderedImage(snapshot, options: options)
+            let image = try renderedImage(snapshot, options: options, renderer: renderer)
             try Task.checkCancellation()
             let data = NSMutableData()
             let type = options.format == .png ? UTType.png : .jpeg
@@ -88,7 +95,8 @@ actor ExportService {
         }
     }
 
-    private func renderedImage(_ snapshot: CaptureSnapshot, options: ExportOptions = .init()) throws -> CGImage {
+    private nonisolated static func renderedImage(_ snapshot: CaptureSnapshot, options: ExportOptions,
+                                                  renderer: DocumentRenderer) throws -> CGImage {
         try Task.checkCancellation()
         guard snapshot.sourceScale.isFinite, snapshot.sourceScale > 0 else { throw Failure.invalidScale }
         guard let source = CGImageSourceCreateWithURL(snapshot.sourceURL as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
@@ -98,7 +106,7 @@ actor ExportService {
         try validateDimensions(width: sourceWidth, height: sourceHeight)
         guard let original = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
         else { throw Failure.unreadableSource }
-        let image = try documentRenderer.render(source: original, state: snapshot.documentState)
+        let image = try renderer.render(source: original, state: snapshot.documentState)
         let divisor = options.scale == .logical ? snapshot.sourceScale : 1
         let scaledWidth = (Double(image.width) / divisor).rounded()
         let scaledHeight = (Double(image.height) / divisor).rounded()
@@ -182,7 +190,7 @@ actor ExportService {
         guard let actual = try? FileFingerprint.read(at: url), actual == expected else { throw Failure.externallyModified(url) }
     }
 
-    private func validateDimensions(width: Int, height: Int) throws {
+    private nonisolated static func validateDimensions(width: Int, height: Int) throws {
         guard width > 0, height > 0, width <= Self.maximumPixels / height else { throw Failure.resourceLimit }
     }
 

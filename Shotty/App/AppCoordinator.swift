@@ -1,7 +1,6 @@
 import AppKit
 import Observation
 import SwiftUI
-import UniformTypeIdentifiers
 import os
 
 @MainActor @Observable
@@ -29,31 +28,23 @@ final class AppCoordinator {
     private var captureTask: Task<Void, Never>?
     private var holds: [UUID: Int] = [:]
     private var dismissed = Set<UUID>()
-    /// One promised drag. The capture stays held until `finishDrag` runs exactly once.
-    private struct DragOutcome {
-        let captureID: UUID
-        weak var promise: CaptureFilePromise?
-        var accepted: Bool?
-        var keepCard = false
-        var saved = false
-        var failed = false
-    }
-    private var dragOutcomes: [UUID: DragOutcome] = [:]
-    private var activeDrag: [UUID: UUID] = [:]
     private var outputFailures = Set<UUID>()
     private let stillCapture = StillCaptureService()
+    /// Drags need their file as they start, so they render on the main actor with their own renderer.
+    @ObservationIgnored private lazy var dragRenderer = DocumentRenderer()
 
     /// Tests pass preferences backed by their own defaults suite.
     init(preferences: AppPreferences = AppPreferences()) { self.preferences = preferences }
 
     func launch() async {
         thumbnails.perform = { [weak self] id, action in self?.perform(id, action: action) }
-        thumbnails.makePromise = { [weak self] id in self?.filePromise(id) }
-        thumbnails.dragFinished = { [weak self] id, accepted, keepCard in
-            guard let self, let token = activeDrag.removeValue(forKey: id), dragOutcomes[token] != nil else { return }
-            dragOutcomes[token]?.accepted = accepted
-            dragOutcomes[token]?.keepCard = keepCard
-            resolveDrag(token)
+        thumbnails.dragFile = { [weak self] id in
+            guard let self, let record = records.first(where: { $0.id == id }) else { return nil }
+            return dragFile(record.snapshot)
+        }
+        thumbnails.dropped = { [weak self] id, keepCard in
+            guard let self, preferences.thumbnails.dismissesAfterDrag, !keepCard else { return }
+            dismiss(id)
         }
         thumbnails.autoClose = { [weak self] id, mode in
             guard let self else { return }
@@ -323,7 +314,7 @@ final class AppCoordinator {
         }
     }
 
-    /// Removes the card at once; the capture is deleted as soon as no editor or drag still holds it.
+    /// Removes the card at once; the capture is deleted as soon as no editor or export still holds it.
     private func dismiss(_ id: UUID) {
         dismissed.insert(id)
         thumbnails.remove(id)
@@ -355,66 +346,28 @@ final class AppCoordinator {
         }
     }
 
-    func filePromise(_ id: UUID) -> NSFilePromiseProvider? {
-        guard let record = records.first(where: { $0.id == id }) else { return nil }
-        return filePromise(snapshot: record.snapshot)
-    }
-
-    func filePromise(snapshot: CaptureSnapshot) -> NSFilePromiseProvider {
-        let id = snapshot.captureID, token = UUID()
-        let settings = preferences.snapshot()
-        let promise = CaptureFilePromise(snapshot: snapshot, options: settings.exportOptions, exporter: exporter)
-        // The source must survive until the promised write finishes or can no longer start.
-        retain(id)
-        dragOutcomes[token] = DragOutcome(captureID: id, promise: promise)
-        activeDrag[id] = token
-        // Runs only when no write ever started, so no save bookkeeping can be pending.
-        promise.released = { [weak self] in self?.finishDrag(token) }
-        promise.completed = { [weak self] result in
-            guard let self else { return }
-            Task {
-                switch result {
-                case .success(let receipt):
-                    do {
-                        try await store.markSaved(receipt); await refreshRecords()
-                        outputFailures.remove(id)
-                        dragOutcomes[token]?.saved = true
-                    } catch {
-                        outputFailed(id, error: error, action: "retain saved state")
-                        dragOutcomes[token]?.failed = true
-                    }
-                case .failure(let error):
-                    outputFailed(id, error: error, action: "export")
-                    dragOutcomes[token]?.failed = true
-                }
-                resolveDrag(token)
-            }
-        }
-        return promise.makeProvider()
-    }
-
-    /// Settles a drag once both its session outcome and any write are known. A rejected drop
-    /// releases immediately unless a write already started. An accepted drop waits for the
-    /// receiver's write or, if none arrives, the provider's release.
-    private func resolveDrag(_ token: UUID) {
-        guard let outcome = dragOutcomes[token], let accepted = outcome.accepted else { return }
-        if outcome.saved {
-            if accepted, preferences.thumbnails.dismissesAfterDrag, !outcome.keepCard { dismiss(outcome.captureID) }
-            finishDrag(token)
-        } else if outcome.failed || (!accepted && outcome.promise?.cancelUnused() == true) {
-            finishDrag(token)
+    /// Exports the capture to a file for a drag. A plain file URL works in Finder and in Chromium and
+    /// Electron apps such as Slack or ChatGPT, which ignore file promises. Receivers may read the file
+    /// long after the drop, when a message is sent, so each drag gets its own folder in the scratch
+    /// space, which the next launch clears.
+    func dragFile(_ snapshot: CaptureSnapshot) -> URL? {
+        let options = preferences.snapshot().exportOptions
+        let directory = CaptureScratchSpace.directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let url = directory.appendingPathComponent(ExportService.filename(
+            stem: ExportService.filenameStem(date: snapshot.createdAt), scale: snapshot.sourceScale, options: options))
+        do {
+            let data = try ExportService.encodedData(snapshot, options: options, renderer: dragRenderer)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+            try data.write(to: url)
+            return url
+        } catch {
+            outputFailed(snapshot.captureID, error: error, action: "export")
+            return nil
         }
     }
 
-    /// Terminal step for a drag; safe to call more than once.
-    private func finishDrag(_ token: UUID) {
-        guard let outcome = dragOutcomes.removeValue(forKey: token) else { return }
-        if activeDrag[outcome.captureID] == token { activeDrag.removeValue(forKey: outcome.captureID) }
-        release(outcome.captureID)
-    }
-
-    /// Quit asks nothing, as in CleanShot. Captures in progress are cancelled, a running save or
-    /// started drop finishes writing, and the session is discarded, so thumbnails simply disappear.
+    /// Quit asks nothing, as in CleanShot. Captures in progress are cancelled, a running save
+    /// finishes writing, and the session is discarded, so thumbnails simply disappear.
     /// Saved files are never touched.
     func prepareToQuit() async -> Bool {
         guard ready else { return true }
@@ -422,7 +375,6 @@ final class AppCoordinator {
         selector.cancel()
         await stopAuxiliaryCapture?()
         await captureTask?.value
-        for (token, outcome) in dragOutcomes where outcome.promise?.cancelUnused() == true { finishDrag(token) }
         // Exports read session sources; wait for them, but never hang Quit on a stuck one.
         let deadline = ContinuousClock.now + .seconds(10)
         while !holds.isEmpty || pendingAcceptances > 0, ContinuousClock.now < deadline {

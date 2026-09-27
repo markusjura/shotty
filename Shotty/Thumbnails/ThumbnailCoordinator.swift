@@ -46,9 +46,10 @@ final class ThumbnailCoordinator {
     var perform: ((UUID, Action) -> Void)?
     /// Supplies current command bindings; nil falls back to the registry defaults.
     var commands: CommandRegistry?
-    var makePromise: ((UUID) -> NSFilePromiseProvider?)?
-    /// Reports the drag outcome; `keepCard` is true when Option was held at the drop.
-    var dragFinished: ((UUID, _ accepted: Bool, _ keepCard: Bool) -> Void)?
+    /// Exports a card's capture to a file as its drag starts; nil cancels the drag.
+    var dragFile: ((UUID) -> URL?)?
+    /// Reports an accepted drop; `keepCard` is true when Option was held at the drop.
+    var dropped: ((UUID, _ keepCard: Bool) -> Void)?
     /// Runs a card's expired auto-close action. For `.saveThenDismiss`, dismiss only after the
     /// save succeeds, regardless of the dismiss-after-save preference; a failed save keeps the card.
     var autoClose: ((UUID, ThumbnailAutoClose) -> Void)?

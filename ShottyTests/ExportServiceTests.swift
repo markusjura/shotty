@@ -66,6 +66,29 @@ final class ExportServiceTests: XCTestCase {
         XCTAssertEqual(cropped.height, 10)
     }
 
+    /// Receivers such as chat apps read a dropped file when the message is sent, so a later drag of
+    /// the same capture must not replace an earlier file. Each drag exports the current edits.
+    func testEachDragExportsTheEditedCaptureToItsOwnFile() async throws {
+        let fixture = try await fixture()
+        let suite = "shotty-drag-tests-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: fixture.directory)
+        }
+        try CaptureScratchSpace.prepare()
+        let coordinator = AppCoordinator(preferences: AppPreferences(defaults: defaults))
+        var edited = fixture.snapshot
+        edited.documentState = AnnotationDocument(crop: CGRect(x: 0, y: 0, width: 10, height: 10))
+        let first = try XCTUnwrap(coordinator.dragFile(edited))
+        let second = try XCTUnwrap(coordinator.dragFile(edited))
+        defer { [first, second].forEach { try? FileManager.default.removeItem(at: $0.deletingLastPathComponent()) } }
+        XCTAssertNotEqual(first, second)
+        XCTAssertEqual(first.lastPathComponent, ExportService.filename(stem: ExportService.filenameStem(date: edited.createdAt),
+                                                                        scale: 2, options: .init()))
+        for url in [first, second] { XCTAssertEqual(try decode(Data(contentsOf: url)).width, 10) }
+    }
+
     func testCollisionSuffixesAndNoSilentOverwrite() async throws {
         let fixture = try await fixture()
         defer { try? FileManager.default.removeItem(at: fixture.directory) }

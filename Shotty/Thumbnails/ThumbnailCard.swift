@@ -255,14 +255,21 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         dragging = false
     }
     override func mouseDragged(with event: NSEvent) {
-        guard !dragging, let press, hypot(event.locationInWindow.x - press.x, event.locationInWindow.y - press.y) > 5,
-              let captureID, let provider = coordinator?.makePromise?(captureID) else { return }
-        logger.info("Starting thumbnail file-promise drag")
+        if let press { _ = drag(from: press, with: event) }
+    }
+
+    /// Starts dragging the capture once the pointer is 5 pt from where it was pressed. The hover
+    /// buttons call this too, so the whole card is a drag source. Returns true once dragging.
+    fileprivate func drag(from press: CGPoint, with event: NSEvent) -> Bool {
+        guard !dragging else { return true }
+        guard hypot(event.locationInWindow.x - press.x, event.locationInWindow.y - press.y) > 5,
+              let captureID, let url = coordinator?.dragFile?(captureID) else { return false }
+        logger.info("Starting thumbnail file drag")
         dragging = true
         coordinator?.setInteraction(.drag, true)
-        let item = NSDraggingItem(pasteboardWriter: provider)
+        let item = NSDraggingItem(pasteboardWriter: url as NSURL)
         // Snapshot the visible crop so the drag starts under the pointer without jumping
-        // to the full source aspect ratio. The promise still exports the full image.
+        // to the full source aspect ratio. The file still holds the full image.
         let preview = NSImage(size: bounds.size, flipped: false) { [image, bounds] _ in
             NSBezierPath(roundedRect: bounds, xRadius: Chrome.cardRadius, yRadius: Chrome.cardRadius).addClip()
             if let image { image.draw(in: ThumbnailLayout.imageRect(imageSize: image.size, bounds: bounds)) }
@@ -270,6 +277,7 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         }
         item.setDraggingFrame(bounds, contents: preview)
         beginDraggingSession(with: [item], event: event, source: self)
+        return true
     }
     override func mouseUp(with event: NSEvent) {
         if !dragging, press != nil, let captureID { coordinator?.perform?(captureID, .open) }
@@ -354,17 +362,37 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         updateControls()
         coordinator?.setInteraction(.drag, false)
         coordinator?.setInteraction(.press, false)
-        if let captureID { coordinator?.dragFinished?(captureID, operation.contains(.copy), keepCard) }
+        if let captureID, operation.contains(.copy) { coordinator?.dropped?(captureID, keepCard) }
         dragging = false
         press = nil
     }
 }
 
 /// Native buttons keep AppKit hit testing and accessibility while matching the compact
-/// light pills of the hover overlay. The surrounding image remains the drag source.
+/// light pills of the hover overlay. A press that moves drags the capture, as it does anywhere
+/// else on the card; one that doesn't clicks, so the buttons track the mouse themselves.
 private final class ThumbnailActionButton: NSButton {
     var actionValue = ThumbnailCoordinator.Action.open
+    private var press: CGPoint?
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) {
+        press = event.locationInWindow
+        isHighlighted = true
+    }
+    override func mouseDragged(with event: NSEvent) {
+        guard let press else { return }
+        if (superview as? ThumbnailImageView)?.drag(from: press, with: event) == true {
+            self.press = nil
+            isHighlighted = false
+        } else {
+            isHighlighted = bounds.contains(convert(event.locationInWindow, from: nil))
+        }
+    }
+    override func mouseUp(with event: NSEvent) {
+        if press != nil, bounds.contains(convert(event.locationInWindow, from: nil)) { sendAction(action, to: target) }
+        press = nil
+        isHighlighted = false
+    }
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
         (superview as? ThumbnailImageView)?.refreshFocusControls()

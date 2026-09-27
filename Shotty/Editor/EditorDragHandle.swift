@@ -44,8 +44,8 @@ final class ExportDragView: NSView, NSDraggingSource {
     override func mouseDragged(with event: NSEvent) {
         guard !started, let model else { return }
         model.canvas.finishText()
-        let provider = model.coordinator.filePromise(snapshot: model.document.snapshot)
-        let item = NSDraggingItem(pasteboardWriter: provider)
+        guard let url = model.coordinator.dragFile(model.document.snapshot) else { return }
+        let item = NSDraggingItem(pasteboardWriter: url as NSURL)
         // A small picture of the image under the pointer, as the editor itself disappears.
         let preview = model.canvas.dragPreview(maxDimension: 120)
         let size = preview?.size ?? CGSize(width: 32, height: 32)
@@ -55,15 +55,12 @@ final class ExportDragView: NSView, NSDraggingSource {
         started = true
         beginDraggingSession(with: [item], event: event, source: self)
         // Ordered out rather than made transparent, so drops reach the window underneath. The
-        // session and its file promise outlive the hidden window.
+        // session outlives the hidden window.
         window?.orderOut(nil)
     }
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { .copy }
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
         started = false
-        guard let model else { window?.makeKeyAndOrderFront(nil); return }
-        let accepted = operation.contains(.copy)
-        model.coordinator.thumbnails.dragFinished?(model.document.record.id, accepted, true)
-        if accepted { model.close?() } else { window?.makeKeyAndOrderFront(nil) }
+        if operation.contains(.copy), let model { model.close?() } else { window?.makeKeyAndOrderFront(nil) }
     }
 }
