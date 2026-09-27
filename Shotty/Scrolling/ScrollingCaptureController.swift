@@ -232,6 +232,8 @@ final class ScrollingCaptureController {
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // The outline covers the display; AppKit's window animation would zoom it on show and hide.
+        panel.animationBehavior = .none
         panel.contentView = content
         return panel
     }

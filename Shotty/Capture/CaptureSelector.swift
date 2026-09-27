@@ -128,6 +128,9 @@ final class CaptureSelector {
             panel.ignoresMouseEvents = false
             panel.level = Chrome.floatingLevel
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            // Display-sized surfaces must appear and vanish at once. AppKit's default window animation
+            // would briefly zoom and blur the frozen screen over the live one on every display.
+            panel.animationBehavior = .none
             let view = SelectionView(selector: self, display: display)
             panel.contentView = view
             panels.append(panel)
