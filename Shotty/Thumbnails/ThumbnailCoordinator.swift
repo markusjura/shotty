@@ -11,8 +11,8 @@ final class ThumbnailCoordinator {
         let id: UUID
         var image: NSImage
         var status: String?
-        var copied = false
-        var saved = false
+        /// The copy or save that succeeded last. Only its pill shows a checkmark.
+        var success: Action?
     }
     enum Feedback {
         case copied, saved, saving, waitingToSave, message(String)
@@ -131,8 +131,8 @@ final class ThumbnailCoordinator {
         guard let index = cards.firstIndex(where: { $0.id == id }) else { return }
         if let image { cards[index].image = NSImage(cgImage: image, size: .zero) }
         switch feedback {
-        case .copied: cards[index].copied = true; cards[index].status = nil
-        case .saved: cards[index].saved = true; cards[index].status = nil
+        case .copied: cards[index].success = .copy; cards[index].status = nil
+        case .saved: cards[index].success = .save; cards[index].status = nil
         case .saving: cards[index].status = "Saving…"
         case .waitingToSave: cards[index].status = "Waiting to save…"
         case .message(let message): cards[index].status = message

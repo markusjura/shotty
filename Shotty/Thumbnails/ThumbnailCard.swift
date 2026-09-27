@@ -23,7 +23,7 @@ private struct ThumbnailImage: NSViewRepresentable {
         view.captureID = card.id
         view.coordinator = coordinator
         view.status = card.status
-        view.setSuccess(copied: card.copied, saved: card.saved)
+        view.setSuccess(card.success)
         if coordinator.focusRequest == card.id, view.window?.firstResponder !== view {
             view.window?.makeFirstResponder(view)
             view.focusRingType = .exterior
@@ -50,8 +50,7 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
     private var controls: [NSButton] = []
     private let hoverBackdrop = ThumbnailHoverBackdrop()
     private let statusLabel = NSTextField(labelWithString: "")
-    private var copied = false
-    private var saved = false
+    private var success: ThumbnailCoordinator.Action?
     private var controlsVisible = false
     var status: String? {
         didSet {
@@ -213,24 +212,24 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         return Self.ciContext.createCGImage(darkened, from: input.extent)
     }
 
-    /// Success belongs to the action that completed, and stays until this card is removed.
-    /// Changing one button never moves the card or adds a status strip over the screenshot.
-    func setSuccess(copied: Bool, saved: Bool) {
-        for (index, success, previous, title) in [(2, copied, self.copied, "Copy"), (3, saved, self.saved, "Save")] where success != previous {
-            let button = controls[index]
+    /// The copy or save that succeeded last shows a checkmark in its pill until this card is removed;
+    /// the other pill keeps its label. Changing a pill never moves the card or adds a status strip.
+    func setSuccess(_ success: ThumbnailCoordinator.Action?) {
+        for (index, action, title) in [(2, ThumbnailCoordinator.Action.copy, "Copy"), (3, .save, "Save")]
+        where (action == success) != (action == self.success) {
+            let button = controls[index], done = action == success
             if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
                 let transition = CATransition()
                 transition.type = .fade
                 transition.duration = Chrome.fadeDuration
                 button.layer?.add(transition, forKey: "success")
             }
-            button.image = success ? ThumbnailGlyph.image("checkmark") : nil
-            button.title = success ? "" : title
-            button.setAccessibilityLabel(success ? (index == 2 ? "Copied. Copy again" : "Saved. Save again") : title)
+            button.image = done ? ThumbnailGlyph.image("checkmark") : nil
+            button.title = done ? "" : title
+            button.setAccessibilityLabel(done ? (index == 2 ? "Copied. Copy again" : "Saved. Save again") : title)
             button.needsDisplay = true
         }
-        self.copied = copied
-        self.saved = saved
+        self.success = success
     }
 
     @objc private func activateControl(_ sender: ThumbnailActionButton) {
@@ -405,8 +404,8 @@ private final class ThumbnailActionButton: NSButton {
         (isHighlighted ? Chrome.controlFillPressed : Chrome.controlFill).setFill()
         NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
         if let image {
-            // Every glyph fills the same optical box, so corner icons and the checkmark match in size.
-            let box = ThumbnailGlyph.box, scale = box / max(image.size.width, image.size.height)
+            // Glyphs keep one proportion to their button, so the pill checkmark matches the corner icons.
+            let box = bounds.height * ThumbnailGlyph.heightShare, scale = box / max(image.size.width, image.size.height)
             let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
             image.draw(in: CGRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2, width: size.width, height: size.height))
         } else {
@@ -423,15 +422,16 @@ private final class ThumbnailHoverBackdrop: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-/// Heavy, dark glyphs drawn into one optical box, like CleanShot's overlay icons. SF Symbols has
+/// Heavy, dark glyphs sized to their button, like CleanShot's overlay icons. SF Symbols has
 /// no solid pencil, so Edit uses a small drawn one with the same weight as the xmark.
 @MainActor
 private enum ThumbnailGlyph {
-    static let box: CGFloat = 8.5
+    /// Glyph size per point of button height: 8.5 pt in the 22 pt corner buttons, 10.4 pt in the 27 pt pills.
+    static let heightShare: CGFloat = 8.5 / 22
 
     static func image(_ name: String) -> NSImage? {
         if name == "pencil" { return pencil }
-        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: name == "checkmark" ? .bold : .heavy)
+        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .heavy)
             .applying(.init(paletteColors: [Chrome.controlLabel]))
         return NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config)
     }
