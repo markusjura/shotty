@@ -5,12 +5,17 @@ struct ShottyApp: App {
     @NSApplicationDelegateAdaptor(ShottyApplicationDelegate.self) private var delegate
 
     var body: some Scene {
-        Settings {
+        // A window rather than a Settings scene, which SwiftUI always keeps at a fixed size.
+        Window("Settings", id: SettingsView.windowID) {
             SettingsView(preferences: delegate.coordinator.preferences, commands: delegate.commands)
-                .onAppear { delegate.settingsOpened() }
         }
         .windowToolbarStyle(.unifiedCompact)
+        .defaultSize(width: 660, height: 608)
+        .windowResizability(.contentMinSize)
+        .restorationBehavior(.disabled)
+        .defaultLaunchBehavior(.suppressed)
         .commands {
+            SwiftUI.CommandGroup(replacing: .appSettings) { SettingsButton() }
             SwiftUI.CommandGroup(after: .appInfo) {
                 ForEach(CommandID.allCases.filter { $0.group == .capture }, id: \.self) { command in
                     Button(command.title) { delegate.execute(command) }
@@ -62,7 +67,7 @@ struct ShottyApp: App {
                     .disabled(!delegate.commands.isAvailable(command))
             }
             Divider()
-            SettingsLink { Text("Settings…") }.keyboardShortcut(",")
+            SettingsButton()
             Button("Quit Shotty") { NSApp.terminate(nil) }.keyboardShortcut("q")
         }
     }
@@ -109,7 +114,7 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         NSApp.activate()
-        // Invoke the native Settings scene's generated menu command through public AppKit APIs.
+        // Open Settings through its app menu command, the one bridge from AppKit to the SwiftUI window.
         if let menu = NSApp.mainMenu?.items.compactMap(\.submenu).first(where: { menu in
             menu.items.contains { $0.keyEquivalent == "," && $0.keyEquivalentModifierMask.contains(.command) }
         }), let index = menu.items.firstIndex(where: { $0.keyEquivalent == "," && $0.keyEquivalentModifierMask.contains(.command) }) {
@@ -117,8 +122,6 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
         }
         return false
     }
-
-    func settingsOpened() { NSApp.activate() }
 
     func execute(_ command: CommandID) {
         guard commands.isAvailable(command) else { return }

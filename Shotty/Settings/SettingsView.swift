@@ -31,6 +31,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 /// Flat native Settings: a sidebar plus one grouped form per pane. Every control writes
 /// straight to the typed stores, which persist immediately and reject invalid values.
 struct SettingsView: View {
+    static let windowID = "settings"
     let preferences: AppPreferences
     let commands: CommandRegistry
     @State private var pane: SettingsPane? = .general
@@ -60,7 +61,6 @@ struct SettingsView: View {
             .id(selected)
         }
         .navigationTitle((pane ?? .general).title)
-        .background(CompactSettingsToolbar().frame(width: 0, height: 0))
         .toolbar(removing: .title)
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -69,23 +69,19 @@ struct SettingsView: View {
             }
             .sharedBackgroundVisibility(.hidden)
         }
-        .frame(width: 660)
-        .frame(minHeight: 520)
+        .frame(minWidth: 660, minHeight: 520)
     }
 }
 
-/// Settings scenes do not consistently apply the scene toolbar style on macOS.
-private struct CompactSettingsToolbar: NSViewRepresentable {
-    func makeNSView(context: Context) -> ToolbarView { ToolbarView() }
-    func updateNSView(_ view: ToolbarView, context: Context) {}
+/// Opens Settings, or brings it forward, from the app menu and the menu bar item.
+struct SettingsButton: View {
+    @Environment(\.openWindow) private var openWindow
 
-    final class ToolbarView: NSView {
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            guard let window else { return }
-            DispatchQueue.main.async { [weak window] in
-                window?.toolbarStyle = .unifiedCompact
-            }
+    var body: some View {
+        Button("Settings…") {
+            NSApp.activate()
+            openWindow(id: SettingsView.windowID)
         }
+        .keyboardShortcut(",")
     }
 }
