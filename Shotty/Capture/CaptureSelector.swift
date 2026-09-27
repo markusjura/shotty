@@ -128,7 +128,6 @@ final class CaptureSelector {
             panel.ignoresMouseEvents = false
             panel.level = Chrome.floatingLevel
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            panel.acceptsMouseMovedEvents = true
             let view = SelectionView(selector: self, display: display)
             panel.contentView = view
             panels.append(panel)
@@ -605,12 +604,23 @@ private final class SelectionView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: bounds, options: [.activeAlways, .mouseMoved, .cursorUpdate, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: bounds, options: [.activeAlways, .mouseMoved, .mouseEnteredAndExited, .cursorUpdate, .inVisibleRect],
+                                  owner: self)
         addTrackingArea(area)
         tracking = area
     }
     override func resetCursorRects() { addCursorRect(bounds, cursor: selector.cursor) }
     override func cursorUpdate(with event: NSEvent) { selector.updateCursor() }
+    /// Keyboard focus follows the pointer across displays. Only the key panel of an inactive app
+    /// can set the cursor, and a press on a non-key panel would only make it key, not start a drag.
+    /// Focus moves only between selection surfaces, so typing in Adjust Selection keeps its field.
+    override func mouseEntered(with event: NSEvent) {
+        if NSApp.keyWindow == nil || NSApp.keyWindow?.contentView is SelectionView {
+            window?.makeKey()
+            window?.makeFirstResponder(self)
+        }
+        selector.updateCursor()
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         displayImage?.draw(in: bounds)
