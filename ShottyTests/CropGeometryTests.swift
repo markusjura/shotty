@@ -96,7 +96,8 @@ final class CropKeyboardTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let model = EditorWindowModel(record: record, image: try XCTUnwrap(context.makeImage()),
-                                      coordinator: AppCoordinator(), commands: CommandRegistry(defaults: defaults))
+                                      coordinator: AppCoordinator(preferences: AppPreferences(defaults: defaults)),
+                                      commands: CommandRegistry(defaults: defaults))
         for key: UInt16 in [53, 36] {
             model.tool = .crop
             XCTAssertNotNil(model.canvas.cropDraft)

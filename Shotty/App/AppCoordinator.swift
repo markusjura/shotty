@@ -6,7 +6,7 @@ import os
 
 @MainActor @Observable
 final class AppCoordinator {
-    let preferences = AppPreferences()
+    let preferences: AppPreferences
     let store = CaptureSessionStore()
     let exporter = ExportService()
     let clipboard = ClipboardWriter()
@@ -42,6 +42,9 @@ final class AppCoordinator {
     private var activeDrag: [UUID: UUID] = [:]
     private var outputFailures = Set<UUID>()
     private let stillCapture = StillCaptureService()
+
+    /// Tests pass preferences backed by their own defaults suite.
+    init(preferences: AppPreferences = AppPreferences()) { self.preferences = preferences }
 
     func launch() async {
         thumbnails.perform = { [weak self] id, action in self?.perform(id, action: action) }
