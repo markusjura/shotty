@@ -31,17 +31,7 @@ struct Shortcut: Codable, Hashable, Sendable {
         guard event.type == .keyDown, Self.supports(keyCode: event.keyCode),
               !event.modifierFlags.contains(.function) || Self.functionKeyCodes.contains(Int(event.keyCode))
                 || Self.navigationKeyCodes.contains(Int(event.keyCode)) else { return nil }
-        self.init(keyCode: event.keyCode, flags: event.modifierFlags)
-    }
-
-    /// Keeps ⌃⌥⇧⌘ from AppKit modifier flags and drops the rest, such as Caps Lock.
-    init(keyCode: UInt16, flags: NSEvent.ModifierFlags) {
-        var modifiers: Modifiers = []
-        if flags.contains(.control) { modifiers.insert(.control) }
-        if flags.contains(.option) { modifiers.insert(.option) }
-        if flags.contains(.shift) { modifiers.insert(.shift) }
-        if flags.contains(.command) { modifiers.insert(.command) }
-        self.init(keyCode: keyCode, modifiers: modifiers)
+        self.init(keyCode: event.keyCode, modifiers: Modifiers(flags: event.modifierFlags))
     }
 
     var hasCommandOrControl: Bool { !modifiers.isDisjoint(with: [.command, .control]) }
@@ -94,6 +84,27 @@ struct Shortcut: Codable, Hashable, Sendable {
         kVK_Command, kVK_RightCommand, kVK_Shift, kVK_RightShift, kVK_Option, kVK_RightOption,
         kVK_Control, kVK_RightControl, kVK_CapsLock, kVK_Function,
     ]
+}
+
+extension Shortcut.Modifiers {
+    /// Keeps ⌃⌥⇧⌘ from AppKit modifier flags and drops the rest, such as Caps Lock.
+    init(flags: NSEvent.ModifierFlags) {
+        self = []
+        if flags.contains(.control) { insert(.control) }
+        if flags.contains(.option) { insert(.option) }
+        if flags.contains(.shift) { insert(.shift) }
+        if flags.contains(.command) { insert(.command) }
+    }
+
+    /// The same modifiers as AppKit flags, e.g. for a menu item's key equivalent.
+    var flags: NSEvent.ModifierFlags {
+        var flags: NSEvent.ModifierFlags = []
+        if contains(.control) { flags.insert(.control) }
+        if contains(.option) { flags.insert(.option) }
+        if contains(.shift) { flags.insert(.shift) }
+        if contains(.command) { flags.insert(.command) }
+        return flags
+    }
 }
 
 /// Key names for display and menu key equivalents.

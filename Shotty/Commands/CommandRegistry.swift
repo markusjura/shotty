@@ -369,7 +369,7 @@ enum MacScreenshotShortcuts {
             guard entry["enabled"] as? Bool ?? true else { return nil }
             guard let parameters = (entry["value"] as? [String: Any])?["parameters"] as? [Int], parameters.count == 3,
                   let keyCode = UInt16(exactly: parameters[1]) else { return fallback }
-            return Shortcut(keyCode: keyCode, flags: NSEvent.ModifierFlags(rawValue: UInt(parameters[2])))
+            return Shortcut(keyCode: keyCode, modifiers: .init(flags: NSEvent.ModifierFlags(rawValue: UInt(parameters[2]))))
         })
     }
 }

@@ -286,8 +286,7 @@ enum EditorGeometry {
         var dirty = seeds
         for annotation in annotations {
             guard case .redact(let region, let style) = annotation.content, style.style != .solid else { continue }
-            let amount = style.style == .pixelate ? (4 + style.strength * 44).rounded() : 2 + style.strength * 28
-            let padding = style.style == .pixelate ? amount * 2 : ceil(amount * 3)
+            let padding = DocumentRenderer.effectPadding(style)
             let affected = dirty.map { $0.insetBy(dx: -padding, dy: -padding).intersection(region.integral) }
                 .filter { !$0.isEmpty }
             dirty = merged(dirty + affected)

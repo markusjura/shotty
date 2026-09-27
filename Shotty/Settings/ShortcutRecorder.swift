@@ -89,12 +89,7 @@ final class ShortcutRecorderButton: NSButton {
 
     override func flagsChanged(with event: NSEvent) {
         guard isRecording else { return super.flagsChanged(with: event) }
-        liveModifiers = []
-        let flags = event.modifierFlags
-        if flags.contains(.control) { liveModifiers.insert(.control) }
-        if flags.contains(.option) { liveModifiers.insert(.option) }
-        if flags.contains(.shift) { liveModifiers.insert(.shift) }
-        if flags.contains(.command) { liveModifiers.insert(.command) }
+        liveModifiers = Shortcut.Modifiers(flags: event.modifierFlags)
         refresh()
     }
 

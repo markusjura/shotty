@@ -437,10 +437,11 @@ final class AppCoordinator {
         alert.addButton(withTitle: "Open Screen Recording Settings"); alert.addButton(withTitle: "Cancel")
         NSApp.activate()
         if alert.runModal() == .alertFirstButtonReturn {
-            if !UserDefaults.standard.bool(forKey: "screenRecordingRequested") {
-                UserDefaults.standard.set(true, forKey: "screenRecordingRequested"); CGRequestScreenCaptureAccess()
+            let requested = PermissionSettingsPane.screenRecordingRequestedKey
+            if !UserDefaults.standard.bool(forKey: requested) {
+                UserDefaults.standard.set(true, forKey: requested); CGRequestScreenCaptureAccess()
             }
-            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+            NSWorkspace.shared.open(SystemSettingsLink.screenRecording)
         }
     }
 

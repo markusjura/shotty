@@ -89,8 +89,7 @@ final class DocumentRenderer {
             context.setStrokeColor(style.color.cgColor)
             context.setFillColor(style.color.cgColor)
             context.setLineWidth(style.width)
-            let control = bend ?? CGPoint(x: (start.x + end.x) / 2 - (end.y - start.y) * 0.2,
-                                          y: (start.y + end.y) / 2 + (end.x - start.x) * 0.2)
+            let control = bend ?? EditorGeometry.defaultBend(start: start, end: end)
             context.move(to: start)
             if style.style == .curved { context.addQuadCurve(to: end, control: control) }
             else { context.addLine(to: end) }
@@ -213,7 +212,9 @@ final class DocumentRenderer {
         style.style == .pixelate ? (4 + style.strength * 44).rounded() : 2 + style.strength * 28
     }
 
-    private static func effectPadding(_ style: EditorToolDefaults.Redact) -> CGFloat {
+    /// How far a blur or pixelation reads beyond its region. Preview invalidation spreads edits by
+    /// the same distance, so the canvas redraws everything an effect changes.
+    static func effectPadding(_ style: EditorToolDefaults.Redact) -> CGFloat {
         let amount = effectAmount(style)
         return style.style == .pixelate ? amount * 2 : ceil(amount * 3)
     }
