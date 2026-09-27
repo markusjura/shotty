@@ -17,59 +17,44 @@ struct ShottyApp: App {
         .commands {
             SwiftUI.CommandGroup(replacing: .appSettings) { SettingsButton() }
             SwiftUI.CommandGroup(after: .appInfo) {
-                ForEach(CommandID.allCases.filter { $0.group == .capture }, id: \.self) { command in
-                    Button(command.title) { delegate.execute(command) }
-                        .keyboardShortcut(delegate.commands.shortcut(for: command)?.keyboardShortcut)
-                        .disabled(!delegate.commands.isAvailable(command))
-                }
+                ForEach(CommandGroup.capture.commands, id: \.self) { commandButton($0) }
             }
             SwiftUI.CommandGroup(after: .pasteboard) {
-                ForEach(CommandGroup.editor.commands.filter { $0.tool == nil && ![.zoomIn, .zoomOut, .zoomToFit, .actualSize].contains($0) }, id: \.self) { command in
-                    Button(command.title) { delegate.execute(command) }
-                        .keyboardShortcut(delegate.commands.shortcut(for: command)?.keyboardShortcut)
-                        .disabled(!delegate.commands.isAvailable(command))
+                ForEach(CommandGroup.editor.commands.filter { $0.tool == nil && !Self.zoomCommands.contains($0) }, id: \.self) {
+                    commandButton($0)
                 }
             }
             // Tool keys stay routed by the focused editor canvas; plain-letter menu equivalents
             // would fire while typing, so these items carry no shortcut.
             CommandMenu("Tools") {
-                ForEach(CommandGroup.editor.commands.filter { $0.tool != nil }, id: \.self) { command in
-                    Button(command.title) { delegate.execute(command) }
-                        .disabled(!delegate.commands.isAvailable(command))
-                }
+                ForEach(CommandGroup.editor.commands.filter { $0.tool != nil }, id: \.self) { commandButton($0, shortcut: false) }
             }
             SwiftUI.CommandGroup(after: .toolbar) {
-                ForEach(CommandGroup.thumbnails.commands, id: \.self) { command in
-                    Button(command.title) { delegate.execute(command) }
-                        .keyboardShortcut(delegate.commands.shortcut(for: command)?.keyboardShortcut)
-                        .disabled(!delegate.commands.isAvailable(command))
-                }
+                ForEach(CommandGroup.thumbnails.commands, id: \.self) { commandButton($0) }
                 Divider()
-                ForEach([CommandID.zoomIn, .zoomOut, .zoomToFit, .actualSize], id: \.self) { command in
-                    Button(command.title) { delegate.execute(command) }
-                        .keyboardShortcut(delegate.commands.shortcut(for: command)?.keyboardShortcut)
-                        .disabled(!delegate.commands.isAvailable(command))
-                }
+                ForEach(Self.zoomCommands, id: \.self) { commandButton($0) }
             }
         }
         MenuBarExtra("Shotty", systemImage: "viewfinder", isInserted: Binding(
             get: { delegate.coordinator.preferences.general.showsMenuBarIcon },
             set: { delegate.coordinator.preferences.general.showsMenuBarIcon = $0 })) {
-            ForEach(CommandID.allCases.filter { $0.group == .capture }, id: \.self) { command in
-                Button(command.title) { delegate.execute(command) }
-                    .keyboardShortcut(delegate.commands.shortcut(for: command)?.keyboardShortcut)
-                    .disabled(!delegate.commands.isAvailable(command))
-            }
+            ForEach(CommandGroup.capture.commands, id: \.self) { commandButton($0) }
             Divider()
-            ForEach(CommandID.allCases.filter { $0.group == .thumbnails }, id: \.self) { command in
-                Button(command.title) { delegate.execute(command) }
-                    .keyboardShortcut(delegate.commands.shortcut(for: command)?.keyboardShortcut)
-                    .disabled(!delegate.commands.isAvailable(command))
-            }
+            ForEach(CommandGroup.thumbnails.commands, id: \.self) { commandButton($0) }
             Divider()
             SettingsButton()
             Button("Quit Shotty") { NSApp.terminate(nil) }.keyboardShortcut("q")
         }
+    }
+
+    /// Editor zoom lives in the View menu with the thumbnail commands, not with the other editor commands.
+    private static let zoomCommands: [CommandID] = [.zoomIn, .zoomOut, .zoomToFit, .actualSize]
+
+    /// A menu item for a command, with its current shortcut and availability.
+    private func commandButton(_ command: CommandID, shortcut: Bool = true) -> some View {
+        Button(command.title) { delegate.execute(command) }
+            .keyboardShortcut(shortcut ? delegate.commands.shortcut(for: command)?.keyboardShortcut : nil)
+            .disabled(!delegate.commands.isAvailable(command))
     }
 }
 

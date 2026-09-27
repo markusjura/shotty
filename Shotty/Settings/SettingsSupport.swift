@@ -16,14 +16,6 @@ extension GeneralPreferences {
     var activationPolicy: NSApplication.ActivationPolicy { showsDockIcon ? .regular : .accessory }
 }
 
-extension NSScreen {
-    /// Stable across reconnection and rearrangement; matches `ThumbnailDisplayPolicy.display(uuid:)`.
-    var displayUUID: String? {
-        guard let displayID, let uuid = CGDisplayCreateUUIDFromDisplayID(displayID)?.takeRetainedValue() else { return nil }
-        return CFUUIDCreateString(nil, uuid) as String?
-    }
-}
-
 /// System Settings destinations used by the Settings panes.
 enum SystemSettingsLink {
     static let screenRecording = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!

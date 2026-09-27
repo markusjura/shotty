@@ -217,8 +217,7 @@ final class ThumbnailCoordinator {
                 let expired = self.countdown.advance(by: seconds) { id in paused || self.pausesAutoClose?(id) == true }
                 let mode = self.preferences.thumbnails.autoClose
                 for id in expired where mode != .never && self.cards.contains(where: { $0.id == id }) {
-                    if let autoClose = self.autoClose { autoClose(id, mode) }
-                    else if mode == .dismiss { self.perform?(id, .dismiss) }
+                    self.autoClose?(id, mode)
                 }
             }
             self?.countdownTask = nil
@@ -297,10 +296,7 @@ final class ThumbnailCoordinator {
         case .mainDisplay: return main
         case .display(let uuid, _):
             // A disconnected choice falls back to main; the stored preference restores it on reconnection.
-            return screens.first { screen in
-                guard let id = screen.displayID, let value = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue() else { return false }
-                return CFUUIDCreateString(nil, value) as String == uuid
-            } ?? main
+            return screens.first { $0.displayUUID == uuid } ?? main
         }
     }
 
