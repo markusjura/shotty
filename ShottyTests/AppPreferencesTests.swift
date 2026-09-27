@@ -44,7 +44,7 @@ final class AppPreferencesTests: XCTestCase {
         XCTAssertEqual(reloaded.scrolling.maximumAxisPixels, 30_000)
         XCTAssertEqual(reloaded.thumbnails.autoCloseDelaySeconds, 10)
 
-        let snapshot = reloaded.snapshot(for: .area)
+        let snapshot = reloaded.snapshot()
         reloaded.capture.format = .png
         XCTAssertEqual(snapshot.exportOptions.format, .jpeg, "A snapshot keeps invocation-time choices")
         XCTAssertEqual(snapshot.exportOptions.scale, .logical)

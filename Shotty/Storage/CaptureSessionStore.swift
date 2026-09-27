@@ -84,12 +84,6 @@ actor CaptureSessionStore {
         removeOrphanSources()
     }
 
-    func retainForNextLaunch() throws {
-        try requireActive()
-        try persist(entries, state: .retained)
-        active = false
-    }
-
     func create(image: CGImage, kind: CaptureKind, scale: CGFloat) throws -> CaptureRecord {
         let interval = signposter.beginInterval("CreateCapture", id: signposter.makeSignpostID())
         defer { signposter.endInterval("CreateCapture", interval) }

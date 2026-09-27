@@ -3,7 +3,6 @@ import Observation
 
 /// Output preferences frozen when a capture is invoked. Later Settings changes never affect it.
 struct CaptureOutputSnapshot: Equatable, Sendable {
-    let kind: CaptureKind
     let capture: CapturePreferences
     let text: TextCapturePreferences
     let scrolling: ScrollingPreferences
@@ -79,8 +78,8 @@ final class AppPreferences {
     }
 
     /// Freeze output choices at invocation. Pass the result through the whole capture pipeline.
-    func snapshot(for kind: CaptureKind) -> CaptureOutputSnapshot {
-        CaptureOutputSnapshot(kind: kind, capture: storedCapture, text: storedText, scrolling: storedScrolling)
+    func snapshot() -> CaptureOutputSnapshot {
+        CaptureOutputSnapshot(capture: storedCapture, text: storedText, scrolling: storedScrolling)
     }
 
     private func save<Value: Encodable>(_ value: Value, _ key: Key) {

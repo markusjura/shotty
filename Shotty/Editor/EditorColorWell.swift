@@ -5,7 +5,7 @@ import SwiftUI
 struct EditorColorWell: NSViewRepresentable {
     @Binding var color: Color
     let model: EditorWindowModel
-    var label = "Color"
+    let label: String
 
     func makeNSView(context: Context) -> GestureColorWell {
         let well = GestureColorWell()

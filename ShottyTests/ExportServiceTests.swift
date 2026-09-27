@@ -70,15 +70,16 @@ final class ExportServiceTests: XCTestCase {
         let fixture = try await fixture()
         defer { try? FileManager.default.removeItem(at: fixture.directory) }
         let service = ExportService()
-        let original = fixture.directory.appendingPathComponent("Example@2x.png")
+        let stem = ExportService.filenameStem(date: fixture.snapshot.createdAt)
+        let original = fixture.directory.appendingPathComponent("\(stem)@2x.png")
         let sentinel = Data("existing file".utf8)
         try sentinel.write(to: original)
-        let second = try await service.export(fixture.snapshot, to: fixture.directory, filenameTemplate: "Example")
-        let third = try await service.export(fixture.snapshot, to: fixture.directory, filenameTemplate: "Example")
-        XCTAssertEqual(second.destinationURL.lastPathComponent, "Example-2@2x.png")
-        XCTAssertEqual(third.destinationURL.lastPathComponent, "Example-3@2x.png")
-        let logical = try await service.export(fixture.snapshot, to: fixture.directory, options: .init(scale: .logical), filenameTemplate: "Example")
-        XCTAssertEqual(logical.destinationURL.lastPathComponent, "Example.png")
+        let second = try await service.export(fixture.snapshot, to: fixture.directory)
+        let third = try await service.export(fixture.snapshot, to: fixture.directory)
+        XCTAssertEqual(second.destinationURL.lastPathComponent, "\(stem)-2@2x.png")
+        XCTAssertEqual(third.destinationURL.lastPathComponent, "\(stem)-3@2x.png")
+        let logical = try await service.export(fixture.snapshot, to: fixture.directory, options: .init(scale: .logical))
+        XCTAssertEqual(logical.destinationURL.lastPathComponent, "\(stem).png")
         XCTAssertEqual(try Data(contentsOf: original), sentinel)
         do {
             _ = try await service.save(fixture.snapshot, to: original)
@@ -143,15 +144,9 @@ final class ExportServiceTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), ["saved.png"])
     }
 
-    func testFilenameTemplateUsesOnlySupportedFieldsAndNormalizesFilesystemCharacters() {
-        let date = Date(timeIntervalSince1970: 0)
-        let zone = TimeZone(secondsFromGMT: 0)!
-        XCTAssertEqual(ExportService.filenameStem(template: ExportService.defaultFilenameTemplate, date: date, kind: .area, timeZone: zone),
-                       "image-1970-01-01-00.00.00")
-        XCTAssertEqual(ExportService.filenameStem(template: "../{type}: {date}/\n", date: date, kind: .window, timeZone: zone),
-                       "-window- 1970-01-01--")
-        XCTAssertEqual(ExportService.filenameStem(template: "...", date: date, kind: .area, timeZone: zone),
-                       "image-1970-01-01-00.00.00")
+    func testFilenameStemFollowsCleanShotNaming() {
+        let date = Date(timeIntervalSince1970: 1_788_703_625)  // 2026-09-06 14:07:05 UTC
+        XCTAssertEqual(ExportService.filenameStem(date: date, timeZone: TimeZone(secondsFromGMT: 0)!), "image-2026-09-06-14.07.05")
     }
 
     private func decode(_ bytes: Data) throws -> CGImage {

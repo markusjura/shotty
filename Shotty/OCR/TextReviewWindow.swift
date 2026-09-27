@@ -121,8 +121,7 @@ private struct TextReviewView: View {
         panel.allowedContentTypes = [.plainText]
         panel.canCreateDirectories = true
         panel.directoryURL = settings.saveDirectory
-        panel.nameFieldStringValue = ExportService.filenameStem(template: ExportService.defaultFilenameTemplate,
-                                                                date: createdAt, kind: .text) + ".txt"
+        panel.nameFieldStringValue = ExportService.filenameStem(date: createdAt) + ".txt"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             // The panel has already confirmed replacement of an existing file.

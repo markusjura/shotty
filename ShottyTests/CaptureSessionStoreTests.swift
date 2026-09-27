@@ -19,7 +19,7 @@ final class CaptureSessionStoreTests: XCTestCase {
         return try XCTUnwrap(context.makeImage())
     }
 
-    func testSourceAndBoundedThumbnailSurviveRetainAndResume() async throws {
+    func testSourceAndBoundedThumbnailSurviveInterruptionAndRestore() async throws {
         let directory = try directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = CaptureSessionStore(directory: directory)
@@ -36,18 +36,16 @@ final class CaptureSessionStoreTests: XCTestCase {
         XCTAssertEqual(permissions, 0o600)
         let backup = try directory.resourceValues(forKeys: [.isExcludedFromBackupKey])
         XCTAssertEqual(backup.isExcludedFromBackup, true)
-        try await store.retainForNextLaunch()
 
+        // Relaunching without Quit, as after a crash, finds the session interrupted until Restore.
         let relaunched = CaptureSessionStore(directory: directory)
         let recovery = try await relaunched.load()
-        XCTAssertEqual(recovery.state, .retained)
+        XCTAssertEqual(recovery.state, .interrupted)
         XCTAssertEqual(recovery.records, [created])
         try await relaunched.resume()
         let source = try await relaunched.image(for: created.id)
         XCTAssertEqual(source.width, 1_200)
         XCTAssertEqual(source.colorSpace?.name, CGColorSpace.displayP3)
-        let interrupted = try await CaptureSessionStore(directory: directory).load()
-        XCTAssertEqual(interrupted.state, .interrupted)
     }
 
     func testSessionOpenedThroughSymlinkKeepsOwnedSourceWhenCleaningOrphans() async throws {
@@ -59,7 +57,6 @@ final class CaptureSessionStoreTests: XCTestCase {
         try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: actual)
         let store = CaptureSessionStore(directory: alias)
         let record = try await store.create(image: image(), kind: .area, scale: 1)
-        try await store.retainForNextLaunch()
         let orphan = actual.appendingPathComponent("\(UUID()).png")
         try Data("orphan".utf8).write(to: orphan)
         let restored = CaptureSessionStore(directory: actual)
@@ -132,7 +129,7 @@ final class CaptureSessionStoreTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(updated.first).isCopied)
         XCTAssertEqual(updated.first?.outputFile?.fingerprint, receipt.fingerprint)
         let invalid = CaptureSnapshot(captureID: record.id, revision: 1, sourceURL: snapshot.sourceURL,
-                                      sourceScale: 2, kind: .area, createdAt: record.createdAt)
+                                      sourceScale: 2, createdAt: record.createdAt)
         do {
             try await store.markCopied(invalid)
             XCTFail("A nonexistent revision cannot be marked copied")

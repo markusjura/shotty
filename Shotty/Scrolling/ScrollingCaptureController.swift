@@ -40,8 +40,7 @@ final class ScrollingCaptureController {
     /// `region` is in global AppKit points, as `CaptureSelector` reports it.
     func start(region: CGRect, displayID: CGDirectDisplayID, settings: CaptureOutputSnapshot, ticket: ClipboardWriter.Ticket) {
         guard !isActive, let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) else { return }
-        let geometry = DisplayGeometry(id: displayID, appKitFrame: screen.frame, captureFrame: CGDisplayBounds(displayID),
-                                       pixelSize: CGSize(width: CGDisplayPixelsWide(displayID), height: CGDisplayPixelsHigh(displayID)))
+        let geometry = DisplayGeometry(appKitFrame: screen.frame, captureFrame: CGDisplayBounds(displayID))
         let topLeft = geometry.capturePoint(fromAppKit: CGPoint(x: region.minX, y: region.maxY))
         let stream = ScrollCaptureStream(limits: settings.scrolling.limits) { [weak self] update in
             Task { @MainActor in self?.handle(update) }

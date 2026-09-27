@@ -59,7 +59,6 @@ final class CaptureSelector {
     private var configuration = SelectionConfiguration()
     private var displays: [SelectionDisplay] = []
     private var windows: [WindowTarget] = []
-    private var windowIndex = 0
     private var selectedWindowID: CGWindowID?
     private var shadowInverted = false
     private var hasPointerInteraction = false
@@ -79,7 +78,6 @@ final class CaptureSelector {
 
     struct WindowTarget {
         let id: CGWindowID
-        let processID: pid_t
         let title: String
         let frame: CGRect
     }
@@ -188,10 +186,9 @@ final class CaptureSelector {
                   let app = window.owningApplication,
                   let display = content.displays.first(where: { $0.frame.intersects(window.frame) }),
                   let screen = screens.first(where: { $0.displayID == display.displayID }) else { return nil }
-            let geometry = DisplayGeometry(id: display.displayID, appKitFrame: screen.frame,
-                captureFrame: display.frame, pixelSize: CGSize(width: display.width, height: display.height))
+            let geometry = DisplayGeometry(appKitFrame: screen.frame, captureFrame: display.frame)
             let topLeft = geometry.appKitPoint(fromCapture: window.frame.origin)
-            return WindowTarget(id: window.windowID, processID: app.processID,
+            return WindowTarget(id: window.windowID,
                 title: [app.applicationName, window.title].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", "),
                 frame: CGRect(x: topLeft.x, y: topLeft.y - window.frame.height,
                               width: window.frame.width, height: window.frame.height))
@@ -319,8 +316,8 @@ final class CaptureSelector {
             let choices = hasPointerInteraction && !underPointer.isEmpty ? underPointer : windows
             guard !choices.isEmpty else { return }
             let current = choices.firstIndex(where: { $0.id == selectedWindowID }) ?? -1
-            windowIndex = (current + (event.modifierFlags.contains(.shift) ? choices.count - 1 : 1)) % choices.count
-            selectWindow(choices[max(0, windowIndex)])
+            let index = (current + (event.modifierFlags.contains(.shift) ? choices.count - 1 : 1)) % choices.count
+            selectWindow(choices[max(0, index)])
         case 123...126 where kind != .window:
             if selection == nil {
                 selection = CGRect(x: pointer.x, y: pointer.y - 100, width: 100, height: 100)

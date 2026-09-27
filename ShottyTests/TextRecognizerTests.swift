@@ -20,8 +20,8 @@ final class TextRecognizerTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: directory) }
         let date = Date(timeIntervalSince1970: 1_790_000_000)
-        let first = try TextRecognizer.saveText("Grüße 👋", in: directory, template: "{type} {date}", date: date)
-        let second = try TextRecognizer.saveText("second", in: directory, template: "{type} {date}", date: date)
+        let first = try TextRecognizer.saveText("Grüße 👋", in: directory, date: date)
+        let second = try TextRecognizer.saveText("second", in: directory, date: date)
         XCTAssertEqual(first.pathExtension, "txt")
         XCTAssertEqual(second.lastPathComponent, first.deletingPathExtension().lastPathComponent + "-2.txt")
         XCTAssertEqual(try String(contentsOf: first, encoding: .utf8), "Grüße 👋")

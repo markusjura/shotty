@@ -56,7 +56,7 @@ final class AppCoordinator {
             guard !isClosing else { return }
             if mode == .dismiss { dismiss(id) }
             else if mode == .saveThenDismiss {
-                let settings = preferences.snapshot(for: .area)
+                let settings = preferences.snapshot()
                 Task { await self.save(id, settings: settings, dismissAfter: true, automatic: true) }
             }
         }
@@ -92,7 +92,7 @@ final class AppCoordinator {
     func capture(_ kind: CaptureKind) {
         guard ready, !isClosing, !isCapturing, auxiliaryCaptureActive?() != true else { NSSound.beep(); return }
         guard CGPreflightScreenCaptureAccess() else { requestCapturePermission(); return }
-        let settings = preferences.snapshot(for: kind)
+        let settings = preferences.snapshot()
         let ticket = clipboard.begin()
         isCapturing = true
         // Ordered out before any pixels are taken, and back once they are, so new cards still appear.
@@ -141,8 +141,6 @@ final class AppCoordinator {
             }
         }
     }
-
-    func cancelCapture() { captureTask?.cancel(); selector.cancel(); if captureTask == nil { isCapturing = false } }
 
     @discardableResult
     func accept(_ image: CGImage, kind: CaptureKind, scale: Double, settings: CaptureOutputSnapshot,
@@ -220,10 +218,10 @@ final class AppCoordinator {
         switch action {
         case .open: openEditor?(id)
         case .copy:
-            let ticket = clipboard.begin(), options = preferences.snapshot(for: .area).exportOptions
+            let ticket = clipboard.begin(), options = preferences.snapshot().exportOptions
             Task { await copy(id, options: options, ticket: ticket) }
         case .save:
-            let settings = preferences.snapshot(for: .area)
+            let settings = preferences.snapshot()
             Task { await save(id, settings: settings, dismissAfter: preferences.thumbnails.dismissesAfterSave) }
         case .saveAs: Task { await saveAs(id) }
         case .dismiss: dismiss(id)
@@ -265,7 +263,7 @@ final class AppCoordinator {
     /// Saves every retained capture as one tracked operation. Failures stay on their cards.
     func saveAll() {
         guard !isClosing, saveAllTask == nil else { NSSound.beep(); return }
-        let settings = preferences.snapshot(for: .area)
+        let settings = preferences.snapshot()
         let ids = records.map(\.id).filter { !dismissed.contains($0) }
         // Holding every capture up front keeps Quit from starting between saves.
         for id in ids { retain(id); thumbnails.update(id, feedback: .waitingToSave) }
@@ -282,14 +280,13 @@ final class AppCoordinator {
         do {
             let snapshot: CaptureSnapshot
             if let requested { snapshot = requested } else { snapshot = try await store.snapshot(for: id) }
-            let settings = preferences.snapshot(for: snapshot.kind)
+            let settings = preferences.snapshot()
             let panel = NSSavePanel()
             panel.allowedContentTypes = [.png, .jpeg]
             panel.canCreateDirectories = true
             panel.directoryURL = settings.saveDirectory
-            panel.nameFieldStringValue = ExportService.filename(
-                stem: ExportService.filenameStem(template: ExportService.defaultFilenameTemplate, date: snapshot.createdAt, kind: snapshot.kind),
-                scale: snapshot.sourceScale, options: settings.exportOptions)
+            panel.nameFieldStringValue = ExportService.filename(stem: ExportService.filenameStem(date: snapshot.createdAt),
+                                                                scale: snapshot.sourceScale, options: settings.exportOptions)
             NSApp.activate()
             guard await panel.begin() == .OK, let destination = panel.url else { return false }
             var options = settings.exportOptions
@@ -360,9 +357,8 @@ final class AppCoordinator {
 
     func filePromise(snapshot: CaptureSnapshot) -> NSFilePromiseProvider {
         let id = snapshot.captureID, token = UUID()
-        let settings = preferences.snapshot(for: snapshot.kind)
-        let promise = CaptureFilePromise(snapshot: snapshot, options: settings.exportOptions,
-                                          exporter: exporter, template: ExportService.defaultFilenameTemplate)
+        let settings = preferences.snapshot()
+        let promise = CaptureFilePromise(snapshot: snapshot, options: settings.exportOptions, exporter: exporter)
         // The source must survive until the promised write finishes or can no longer start.
         retain(id)
         dragOutcomes[token] = DragOutcome(captureID: id, promise: promise)

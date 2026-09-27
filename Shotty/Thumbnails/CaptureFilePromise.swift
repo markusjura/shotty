@@ -22,11 +22,11 @@ final class CaptureFilePromise: NSObject, NSFilePromiseProviderDelegate {
         if state == .pending || state == .cancelled { released?() }
     }
 
-    init(snapshot: CaptureSnapshot, options: ExportOptions, exporter: ExportService, template: String) {
+    init(snapshot: CaptureSnapshot, options: ExportOptions, exporter: ExportService) {
         self.snapshot = snapshot
         self.options = options
         self.exporter = exporter
-        filename = ExportService.filename(stem: ExportService.filenameStem(template: template, date: snapshot.createdAt, kind: snapshot.kind),
+        filename = ExportService.filename(stem: ExportService.filenameStem(date: snapshot.createdAt),
                                           scale: snapshot.sourceScale, options: options)
     }
 

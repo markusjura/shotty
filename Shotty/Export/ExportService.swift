@@ -58,8 +58,6 @@ actor ExportService {
 
     /// Bound an individual decoded raster to 256 MiB of RGBA pixels before decoding.
     static let maximumPixels = 64 * 1_024 * 1_024
-    /// CleanShot's naming, e.g. `image-2026-09-26-14.17.05`; `filename` adds `@2x` for Retina pixels.
-    static let defaultFilenameTemplate = "image-{date}-{time}"
 
     func fingerprint(at url: URL) throws -> FileFingerprint { try FileFingerprint.read(at: url) }
 
@@ -133,10 +131,9 @@ actor ExportService {
     }
 
     /// A no-overwrite rename resolves races with other apps and other export service instances.
-    func export(_ snapshot: CaptureSnapshot, to directory: URL, options: ExportOptions = .init(),
-                filenameTemplate: String = ExportService.defaultFilenameTemplate) throws -> ExportReceipt {
+    func export(_ snapshot: CaptureSnapshot, to directory: URL, options: ExportOptions = .init()) throws -> ExportReceipt {
         let data = try encodedData(snapshot, options: options)
-        let stem = Self.filenameStem(template: filenameTemplate, date: snapshot.createdAt, kind: snapshot.kind)
+        let stem = Self.filenameStem(date: snapshot.createdAt)
         var suffix = 1
         while true {
             try Task.checkCancellation()
@@ -172,28 +169,13 @@ actor ExportService {
         return "\(stem)\(collision == 1 ? "" : "-\(collision)")\(density).\(options.fileExtension)"
     }
 
-    nonisolated static func filenameStem(template: String, date: Date, kind: CaptureKind,
-                                         timeZone: TimeZone = .current) -> String {
+    /// CleanShot's naming, e.g. `image-2026-09-26-14.17.05`; `filename` adds `@2x` for Retina pixels.
+    nonisolated static func filenameStem(date: Date, timeZone: TimeZone = .current) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = timeZone
-        formatter.dateFormat = "yyyy-MM-dd"
-        let day = formatter.string(from: date)
-        formatter.dateFormat = "HH.mm.ss"
-        let time = formatter.string(from: date)
-        let expanded = template.replacingOccurrences(of: "{date}", with: day)
-            .replacingOccurrences(of: "{time}", with: time)
-            .replacingOccurrences(of: "{type}", with: kind.rawValue)
-        let forbidden = CharacterSet(charactersIn: "/:\\").union(.controlCharacters)
-        let safe = expanded.unicodeScalars.map { forbidden.contains($0) ? "-" : String($0) }.joined()
-            .trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
-        // A UTF-8 byte cap leaves room for suffixes and extension on APFS and other common filesystems.
-        var result = ""
-        for character in safe {
-            guard result.utf8.count + String(character).utf8.count <= 180 else { break }
-            result.append(character)
-        }
-        return result.isEmpty ? "image-\(day)-\(time)" : result
+        formatter.dateFormat = "'image-'yyyy-MM-dd-HH.mm.ss"
+        return formatter.string(from: date)
     }
 
     private func verify(_ url: URL, expected: FileFingerprint) throws {

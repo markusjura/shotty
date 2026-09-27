@@ -3,11 +3,11 @@ import Carbon.HIToolbox
 import Observation
 
 /// Where a command's shortcut is active. Only `.global` commands register system-wide.
-enum CommandScope: String, Sendable {
+enum CommandScope: Sendable {
     case global, editorTool, editor
 }
 
-enum CommandGroup: String, CaseIterable, Sendable {
+enum CommandGroup: CaseIterable, Sendable {
     case capture, thumbnails, editor
 
     var title: String {
@@ -173,7 +173,6 @@ final class CommandRegistry {
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let systemShortcuts: () -> Set<Shortcut>
     private(set) var bindings: [CommandID: Shortcut]
-    private(set) var unavailable: Set<CommandID> = []
     /// Global commands whose last registration failed, typically because another app owns the key.
     private(set) var registrationFailures: Set<CommandID> = []
     /// While set, global hotkeys are suspended so the recorder receives every combination.
@@ -243,13 +242,9 @@ final class CommandRegistry {
         return "macOS uses this for its own screenshots. Turn it off in Keyboard Settings to use it here."
     }
 
-    func setAvailable(_ available: Bool, for id: CommandID) {
-        if available { unavailable.remove(id) } else { unavailable.insert(id) }
-    }
-
     func isAvailable(_ id: CommandID) -> Bool {
         _ = contextVersion
-        return recordingCommand == nil && !unavailable.contains(id) && (availability?(id) ?? true)
+        return recordingCommand == nil && (availability?(id) ?? true)
     }
 
     /// AppKit window focus is not observable by SwiftUI menu validation.

@@ -108,19 +108,17 @@ enum KeyNames {
         kVK_ANSI_KeypadEnter: ("⌤", .return),
     ]
 
-    private static let functionKeys = Shortcut.functionKeyCodes
-
     static func name(for keyCode: UInt16) -> String {
         let code = Int(keyCode)
         if let special = special[code] { return special.name }
-        if let index = functionKeys.firstIndex(of: code) { return "F\(index + 1)" }
+        if let index = Shortcut.functionKeyCodes.firstIndex(of: code) { return "F\(index + 1)" }
         return character(for: keyCode).map { String($0).uppercased() } ?? "Key \(keyCode)"
     }
 
     static func keyEquivalent(for keyCode: UInt16) -> KeyEquivalent? {
         let code = Int(keyCode)
         if let special = special[code] { return special.key }
-        if let index = functionKeys.firstIndex(of: code),
+        if let index = Shortcut.functionKeyCodes.firstIndex(of: code),
            let scalar = Unicode.Scalar(NSF1FunctionKey + index) {
             return KeyEquivalent(Character(scalar))
         }

@@ -21,7 +21,7 @@ final class EditorDocument {
     var sourceBounds: CGRect { CGRect(x: 0, y: 0, width: record.pixelWidth, height: record.pixelHeight) }
     var snapshot: CaptureSnapshot {
         CaptureSnapshot(captureID: record.id, revision: revision, sourceURL: record.sourceURL,
-                        sourceScale: record.sourceScale, kind: record.kind, createdAt: record.createdAt, documentState: state)
+                        sourceScale: record.sourceScale, createdAt: record.createdAt, documentState: state)
     }
 
     init(record: CaptureRecord, store: CaptureSessionStore) {

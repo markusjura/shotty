@@ -108,10 +108,10 @@ final class TextCaptureController {
             message = "Text recognized"
         }
         if outputs.contains(.saveText) {
-            let directory = settings.saveDirectory, template = ExportService.defaultFilenameTemplate
+            let directory = settings.saveDirectory
             do {
                 let url = try await Task.detached {
-                    try TextRecognizer.saveText(text, in: directory, template: template, date: createdAt)
+                    try TextRecognizer.saveText(text, in: directory, date: createdAt)
                 }.value
                 details.append("Saved \(url.lastPathComponent).")
             } catch {

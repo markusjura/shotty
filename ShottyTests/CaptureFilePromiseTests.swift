@@ -23,8 +23,7 @@ final class CaptureFilePromiseTests: XCTestCase {
         context.setFillColor(CGColor(red: 0, green: 0.4, blue: 1, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
         let record = try await store.create(image: XCTUnwrap(context.makeImage()), kind: .area, scale: 2)
-        return CaptureFilePromise(snapshot: record.snapshot, options: .init(), exporter: ExportService(),
-                                  template: ExportService.defaultFilenameTemplate)
+        return CaptureFilePromise(snapshot: record.snapshot, options: .init(), exporter: ExportService())
     }
 
     private func requestWrite(_ promise: CaptureFilePromise, provider: NSFilePromiseProvider) async -> (URL, Error?) {

@@ -23,7 +23,7 @@ struct CaptureRecord: Codable, Identifiable, Equatable, Sendable {
 
     var snapshot: CaptureSnapshot {
         CaptureSnapshot(captureID: id, revision: revision, sourceURL: sourceURL, sourceScale: sourceScale,
-                        kind: kind, createdAt: createdAt, documentState: documentState ?? AnnotationDocument())
+                        createdAt: createdAt, documentState: documentState ?? AnnotationDocument())
     }
 }
 
@@ -34,7 +34,6 @@ struct CaptureSnapshot: Equatable, Sendable {
     let revision: Int
     let sourceURL: URL
     let sourceScale: Double
-    let kind: CaptureKind
     let createdAt: Date
     var documentState = AnnotationDocument()
 }
@@ -45,7 +44,7 @@ struct ExportedFile: Codable, Equatable, Sendable {
 }
 
 struct SessionRecovery: Sendable {
-    enum State: String, Codable, Sendable { case empty, retained, interrupted }
+    enum State: String, Codable, Sendable { case empty, interrupted }
     let state: State
     let records: [CaptureRecord]
 }

@@ -267,7 +267,7 @@ final class EditorWindowModel {
         canvas.finishText()
         let ticket = coordinator.clipboard.begin()
         let shouldClose = coordinator.preferences.editor.closesAfterCopy != NSEvent.modifierFlags.contains(.option)
-        let options = coordinator.preferences.snapshot(for: document.record.kind).exportOptions
+        let options = coordinator.preferences.snapshot().exportOptions
         coordinator.retain(document.record.id)
         Task {
             defer { coordinator.release(document.record.id) }
@@ -290,7 +290,7 @@ final class EditorWindowModel {
             defer { busy = false; saveAndClose = false; coordinator.release(document.record.id) }
             do {
                 let snapshot = try await document.flush()
-                let settings = coordinator.preferences.snapshot(for: snapshot.kind)
+                let settings = coordinator.preferences.snapshot()
                 let associated = await coordinator.store.records().first { $0.id == snapshot.captureID }?.outputFile
                 if asNew { guard await coordinator.saveAs(snapshot.captureID, snapshot: snapshot) else { return } }
                 else if let associated {

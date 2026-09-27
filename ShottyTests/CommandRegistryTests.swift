@@ -142,9 +142,10 @@ final class CommandRegistryTests: XCTestCase {
     func testRoutingHonorsAvailabilityRecordingAndTextInputContext() {
         let registry = CommandRegistry(defaults: defaults)
         let shortcut = CommandID.toolArrow.defaultShortcut!
-        registry.setAvailable(false, for: .toolArrow)
+        var arrowAvailable = false
+        registry.availability = { $0 != .toolArrow || arrowAvailable }
         XCTAssertNil(registry.command(matching: shortcut, in: [.editorTool]))
-        registry.setAvailable(true, for: .toolArrow)
+        arrowAvailable = true
         XCTAssertEqual(registry.command(matching: shortcut, in: [.editorTool]), .toolArrow)
         XCTAssertNil(registry.command(matching: shortcut, in: [.editorTool], isTextEditing: true))
         registry.recordingCommand = .captureArea

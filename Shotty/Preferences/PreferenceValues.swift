@@ -265,9 +265,6 @@ struct EditorToolDefaults: Codable, Equatable, Sendable {
     var spotlight = Spotlight()
     var counter = Counter()
 
-    /// Select and Crop have no persisted style.
-    static let styledTools: [EditorTool] = [.arrow, .rectangle, .ellipse, .line, .text, .redact, .spotlight, .counter]
-
     var isValid: Bool {
         let widths = [arrow.width, rectangle.width, ellipse.width, line.width]
         let colors = [arrow.color, rectangle.strokeColor, ellipse.strokeColor, line.color, text.color,

@@ -52,8 +52,8 @@ enum TextRecognizer {
     }
 
     /// Writes UTF-8 text with the image filename rules; existing files get -2, -3, and so on.
-    static func saveText(_ text: String, in directory: URL, template: String, date: Date) throws -> URL {
-        let stem = ExportService.filenameStem(template: template, date: date, kind: .text)
+    static func saveText(_ text: String, in directory: URL, date: Date) throws -> URL {
+        let stem = ExportService.filenameStem(date: date)
         let data = Data(text.utf8)
         var suffix = 1
         while true {

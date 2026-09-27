@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-enum ScrollAxis: String, Sendable {
+enum ScrollAxis: Sendable {
     case vertical, horizontal
 }
 
@@ -11,9 +11,6 @@ struct ScrollViewport {
     let width: Int
     let height: Int
     let bytesPerRow: Int
-
-    func extent(along axis: ScrollAxis) -> Int { axis == .vertical ? height : width }
-    func breadth(along axis: ScrollAxis) -> Int { axis == .vertical ? width : height }
 
     private static let offset: UInt64 = 0xCBF2_9CE4_8422_2325
     private static let prime: UInt64 = 0x0000_0100_0000_01B3
