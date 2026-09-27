@@ -9,11 +9,14 @@ final class ScrollCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate, @un
     private let queue = DispatchQueue(label: "local.markus.Shotty.scrolling", qos: .userInitiated)
     private let limits: ScrollStitcher.Limits
     private let onUpdate: @Sendable (ScrollStitcher.Update) -> Void
-    private var stream: SCStream?
     // Accessed only on `queue`.
     private var stitcher: ScrollStitcher?
     private var colorSpace: CGColorSpace?
     private let lock = NSLock()
+    // Guarded by `lock`.
+    private var stream: SCStream?
+    /// Set once `finish` or `cancel` runs, so a start still in flight leaves nothing running.
+    private var stopped = false
     private var knownAxis: ScrollAxis?
 
     /// The axis the first movement established, nil before it. Readable from any thread.
@@ -26,6 +29,7 @@ final class ScrollCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate, @un
     }
 
     /// `region` is in points from the display's top-left corner. Shotty's own windows are excluded.
+    /// Captures nothing if `finish` or `cancel` runs first.
     func start(displayID: CGDirectDisplayID, region: CGRect) async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
@@ -48,14 +52,20 @@ final class ScrollCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate, @un
         configuration.colorSpaceName = CGColorSpace.displayP3
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
-        self.stream = stream
+        let proceeds = lock.withLock {
+            guard !stopped else { return false }
+            self.stream = stream
+            return true
+        }
+        guard proceeds else { return }
         try await stream.startCapture()
+        // A stop that ran during startCapture may have failed, so stop the stream here instead.
+        if lock.withLock({ stopped }) { try? await stream.stopCapture() }
     }
 
     /// Stops capturing and returns the stitched image, or nil if no frame arrived.
     func finish() async -> CGImage? {
-        try? await stream?.stopCapture()
-        stream = nil
+        await stop()
         return queue.sync {
             defer { stitcher = nil }
             guard let colorSpace else { return nil }
@@ -64,9 +74,17 @@ final class ScrollCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate, @un
     }
 
     func cancel() async {
-        try? await stream?.stopCapture()
-        stream = nil
+        await stop()
         queue.sync { stitcher = nil }
+    }
+
+    /// Marks the capture stopped, then stops any started stream outside the lock.
+    private func stop() async {
+        let stream = lock.withLock {
+            stopped = true
+            return self.stream.take()
+        }
+        try? await stream?.stopCapture()
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
