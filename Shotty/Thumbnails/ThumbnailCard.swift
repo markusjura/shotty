@@ -10,7 +10,8 @@ struct ThumbnailCard: View {
     var body: some View {
         ThumbnailImage(card: card, coordinator: coordinator)
             .frame(height: ThumbnailLayout.previewHeight(width: coordinator.width))
-            .transition(.opacity)
+            // A card fades in and out with a slight scale; the cards around it stay put.
+            .transition(.opacity.combined(with: .scale(scale: 0.96)))
     }
 }
 

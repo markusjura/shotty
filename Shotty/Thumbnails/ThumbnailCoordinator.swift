@@ -107,7 +107,7 @@ final class ThumbnailCoordinator {
     var placement: ThumbnailPlacement { preferences.thumbnails.placement }
     var width: CGFloat { preferences.thumbnails.size.width }
 
-    func refresh(animated: Bool = false) {
+    func refresh() {
         guard !hidden, !hiddenForCapture, !cards.isEmpty else {
             stopTracking()
             showingOverflow = false
@@ -116,7 +116,7 @@ final class ThumbnailCoordinator {
         }
         if panel == nil { panel = makePanel() }
         startTracking()
-        place(animated: animated)
+        place()
         panel?.orderFrontRegardless()
     }
 
@@ -127,7 +127,7 @@ final class ThumbnailCoordinator {
         let settings = preferences.thumbnails
         if settings.autoClose != .never { countdown.start(id, seconds: TimeInterval(settings.autoCloseDelaySeconds)) }
         runCountdown()
-        refresh(animated: true)
+        refresh()
     }
 
     func update(_ id: UUID, feedback: Feedback) {
@@ -161,7 +161,7 @@ final class ThumbnailCoordinator {
         countdown.cancel(id)
         cards.removeAll { $0.id == id }
         if focusRequest == id { focusRequest = nil }
-        refresh(animated: true)
+        refresh()
     }
 
     /// Counted lock for app-owned interactions such as a Save As panel.
@@ -235,8 +235,13 @@ final class ThumbnailCoordinator {
         panel.level = Chrome.floatingLevel
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        // Cards animate themselves; AppKit's window animation would zoom the whole stack.
+        panel.animationBehavior = .none
         panel.press = { [weak self] active in self?.setInteraction(.press, active) }
-        panel.contentView = NSHostingView(rootView: ThumbnailStack(coordinator: self))
+        let content = NSHostingView(rootView: ThumbnailStack(coordinator: self))
+        // `place` alone sizes the panel; the stack pins itself to the anchored edge inside it.
+        content.sizingOptions = []
+        panel.contentView = content
         panel.keyChanged = { [weak self] isKey in self?.setInteraction(.keyboard, isKey) }
         return panel
     }
@@ -300,7 +305,7 @@ final class ThumbnailCoordinator {
         }
     }
 
-    private func place(animated: Bool = false) {
+    private func place() {
         guard let panel, let screen = resolveScreen() else { return }
         targetDisplay = screen.displayID
         // visibleFrame excludes the menu bar, notch area, and Dock. The side and bottom insets match
@@ -311,24 +316,10 @@ final class ThumbnailCoordinator {
         let heights = Array(repeating: ThumbnailLayout.previewHeight(width: width), count: cards.count)
         visibleCount = ThumbnailLayout.visibleCount(heights: heights, available: frame.height)
         if visibleCount == cards.count { showingOverflow = false }
-        var rows = heights.prefix(visibleCount).map { $0 }
-        if visibleCount < cards.count { rows.append(ThumbnailLayout.overflowRowHeight) }
-        let height = min(frame.height, max(1, rows.reduce(0, +) + ThumbnailLayout.gap * CGFloat(max(0, rows.count - 1))))
-        let y: CGFloat = switch placement {
-        case .topLeft, .topRight: frame.maxY - height
-        case .leftCenter, .rightCenter: frame.midY - height / 2
-        case .bottomLeft, .bottomRight: frame.minY
-        }
         let x = ThumbnailLayout.anchoredLeft(placement) ? frame.minX : frame.maxX - width
-        let destination = CGRect(x: x, y: y, width: width, height: height)
-        if animated, panel.isVisible, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = Chrome.moveDuration
-                panel.animator().setFrame(destination, display: true)
-            }
-        } else {
-            panel.setFrame(destination, display: true)
-        }
+        // The panel spans the whole column and keeps its size as cards come and go; its transparent
+        // part passes clicks through. Resizing it per card would move the cards under it.
+        panel.setFrame(CGRect(x: x, y: frame.minY, width: width, height: frame.height), display: true)
     }
 }
 
@@ -367,8 +358,18 @@ private struct ThumbnailStack: View {
             overflow
         }
         .frame(width: coordinator.width)
-        .animation(reduceMotion ? nil : .easeInOut(duration: Chrome.moveDuration), value: coordinator.cards.map(\.id))
+        .animation(reduceMotion ? nil : .smooth(duration: Chrome.moveDuration), value: coordinator.cards.map(\.id))
         .onHover { coordinator.setHovering($0) }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+    }
+
+    /// Cards hug the anchored edge of the full-height panel, so existing cards never move when one is added.
+    private var alignment: Alignment {
+        switch coordinator.placement {
+        case .topLeft, .topRight: .top
+        case .leftCenter, .rightCenter: .center
+        case .bottomLeft, .bottomRight: .bottom
+        }
     }
 
     @ViewBuilder private var overflow: some View {
