@@ -176,6 +176,7 @@ final class ThumbnailCoordinator {
         hidden = false
         refresh()
         focusRequest = newest.id
+        panel?.acceptsKey = true
         panel?.makeKey()
     }
 
@@ -338,9 +339,12 @@ final class ThumbnailCoordinator {
 final class ThumbnailPanel: NSPanel {
     var press: ((Bool) -> Void)?
     var keyChanged: ((Bool) -> Void)?
+    /// Set by `focusStack` until the panel resigns key. Otherwise AppKit would pass key status to the
+    /// stack when a capture overlay closes, and typing meant for the frontmost app would land here.
+    var acceptsKey = false
     override func becomeKey() { super.becomeKey(); keyChanged?(true) }
-    override func resignKey() { super.resignKey(); keyChanged?(false) }
-    override var canBecomeKey: Bool { true }
+    override func resignKey() { super.resignKey(); acceptsKey = false; keyChanged?(false) }
+    override var canBecomeKey: Bool { acceptsKey }
     override var canBecomeMain: Bool { false }
     override func sendEvent(_ event: NSEvent) {
         switch event.type {
