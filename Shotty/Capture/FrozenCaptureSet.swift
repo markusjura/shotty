@@ -4,21 +4,18 @@ import ScreenCaptureKit
 import os
 
 struct FrozenCaptureLimits: Sendable {
-    var maximumResidentBytes = 256 * 1_024 * 1_024
+    /// One raster. A shadowed full-screen window on a 5K display needs about 65 MiB.
+    var maximumRasterBytes = 128 * 1_024 * 1_024
+    /// Every raster of one set, stored in its private scratch directory.
     var maximumDiskBytes = 1_024 * 1_024 * 1_024
     var maximumWindows = 80
     var maximumDimension = 16_384
-    /// Internal profiling control, never a product setting.
-    var maximumConcurrentCaptures = 3
 
-    /// Covers the captured raster plus the provider copy used to write it. Framework
-    /// and WindowServer allocations are outside this application-owned buffer budget.
+    /// Returns the raster's byte count after checking its dimensions and size.
     func validateRaster(width: Int, height: Int, bytesPerRow: Int) throws -> Int {
         let (bytes, overflow) = bytesPerRow.multipliedReportingOverflow(by: height)
-        guard width > 0, height > 0, bytesPerRow > 0, width <= maximumDimension,
-              height <= maximumDimension, !overflow else { throw FrozenCaptureFailure.resourceLimit }
-        guard maximumResidentBytes > 1_024 * 1_024,
-              bytes <= (maximumResidentBytes - 1_024 * 1_024) / 2 else { throw FrozenCaptureFailure.resourceLimit }
+        guard width > 0, height > 0, bytesPerRow > 0, width <= maximumDimension, height <= maximumDimension,
+              !overflow, bytes <= maximumRasterBytes else { throw FrozenCaptureFailure.resourceLimit }
         return bytes
     }
 
@@ -26,7 +23,7 @@ struct FrozenCaptureLimits: Sendable {
     /// SCScreenshotManager `.sdr` output measured 8 bits per component, 32 bits per pixel,
     /// 128-byte row alignment and at most 224 px of shadow padding. This rounds rows up
     /// to 256 bytes and pads shadows by 256 px; `FrozenRasterFile.store` still validates
-    /// the actual raster and provider bytes after capture.
+    /// the actual raster after capture.
     func validateSDRCapture(pointSize: CGSize, scale: Double, shadow: Bool) throws -> Int {
         let padding = shadow ? 256.0 : 0
         let width = ceil(Double(pointSize.width) * scale + padding)
@@ -87,73 +84,13 @@ struct FrozenDisplaySnapshot: Sendable {
     let raster: FrozenRasterDescriptor
 }
 
-/// Reservations include each in-flight raster, its provider copy, profile and up to
-/// 1 MiB of provider allocation padding. Completed profiles remain charged separately.
-struct FrozenCaptureBatch: Sendable {
-    struct Reservation: Sendable {
-        let index: Int
-        let rasterBytes: Int
-        let residentBytes: Int
-    }
-
-    let reservations: [Reservation]
-    let residentBytes: Int
-
-    init(estimates: ArraySlice<Int>, retainedProfileBytes: Int, storedDiskBytes: Int, limits: FrozenCaptureLimits) throws {
-        guard (1...3).contains(limits.maximumConcurrentCaptures),
-              retainedProfileBytes >= 0, retainedProfileBytes <= limits.maximumResidentBytes else {
-            throw FrozenCaptureFailure.resourceLimit
-        }
-        guard storedDiskBytes >= 0, storedDiskBytes <= limits.maximumDiskBytes else { throw FrozenCaptureFailure.diskLimit }
-        let profileAllowance = 1_024 * 1_024
-        var memory = limits.maximumResidentBytes - retainedProfileBytes
-        var disk = limits.maximumDiskBytes - storedDiskBytes
-        var reservations: [Reservation] = []
-        for index in estimates.indices {
-            if reservations.count == limits.maximumConcurrentCaptures { break }
-            let bytes = estimates[index]
-            guard bytes > 0, memory > profileAllowance, bytes <= (memory - profileAllowance) / 2 else {
-                if reservations.isEmpty { throw FrozenCaptureFailure.resourceLimit }
-                break
-            }
-            guard bytes <= disk else {
-                if reservations.isEmpty { throw FrozenCaptureFailure.diskLimit }
-                break
-            }
-            let minimum = bytes * 2 + profileAllowance
-            let reserved = minimum + min(profileAllowance, memory - minimum)
-            reservations.append(Reservation(index: index, rasterBytes: bytes, residentBytes: reserved))
-            memory -= reserved
-            disk -= bytes
-        }
-        self.reservations = reservations
-        residentBytes = limits.maximumResidentBytes - retainedProfileBytes - memory
-    }
-
-    /// Structured cancellation waits for every sibling before the outer transaction
-    /// deletes files. Only metadata returns from an operation; native images stay local.
-    func run<Result: Sendable>(_ operation: @escaping @Sendable (Reservation) async throws -> Result) async throws -> [Result] {
-        try Task.checkCancellation()
-        return try await withThrowingTaskGroup(of: (Int, Result).self) { group in
-            for reservation in reservations {
-                group.addTask {
-                    try Task.checkCancellation()
-                    return (reservation.index, try await operation(reservation))
-                }
-            }
-            var results: [(Int, Result)] = []
-            for try await result in group { results.append(result) }
-            try Task.checkCancellation()
-            return results.sorted { $0.0 < $1.0 }.map(\.1)
-        }
-    }
-}
-
 /// All acquisition finishes before this value is returned. An overlay and its
 /// eventual export must both load the same descriptor, never capture another frame.
 /// Call close at session end. Deinitialization also removes the private directory.
 actor FrozenCaptureSet {
     private static let logger = Logger(subsystem: "local.markus.Shotty", category: "FrozenCapture")
+    /// Captures in flight at once.
+    private static let concurrentCaptures = 3
     nonisolated let windows: [FrozenWindowSnapshot]
     nonisolated let displays: [FrozenDisplaySnapshot]
     private let directory: URL
@@ -168,8 +105,7 @@ actor FrozenCaptureSet {
     deinit { try? FileManager.default.removeItem(at: directory) }
 
     /// Freezes every display and, with `includingWindows`, every eligible window with and without
-    /// its shadow. At most three acquisitions run together, each with a reserved share of both
-    /// budgets. Large rasters fall back to sequential capture when necessary.
+    /// its shadow, with up to `concurrentCaptures` at once. The stored set must fit `maximumDiskBytes`.
     /// Shotty's own windows stay visible, such as Settings and thumbnails; only the capture
     /// overlays in `excludingWindowIDs` are left out.
     static func acquire(includingWindows: Bool, excludingWindowIDs: Set<CGWindowID>) async throws -> FrozenCaptureSet {
@@ -199,10 +135,6 @@ actor FrozenCaptureSet {
             resourceValues.isExcludedFromBackup = true
             var privateDirectory = directory
             try privateDirectory.setResourceValues(resourceValues)
-            var windows: [FrozenWindowSnapshot] = []
-            var displays: [FrozenDisplaySnapshot] = []
-            var diskBytes = 0
-            var profileBytes = 0
             var jobs: [CaptureJob] = []
             for window in selectedWindows {
                 // The unshadowed raster previews the window exactly on its frame; Option at
@@ -217,8 +149,7 @@ actor FrozenCaptureSet {
                 let filter = SCContentFilter(display: display, excludingWindows: overlays)
                 jobs.append(CaptureJob(filter: filter, shadow: false, target: .display(display.displayID, display.frame)))
             }
-            let requests = jobs
-            let estimates = try requests.map { job in
+            let estimates = try jobs.map { job in
                 do {
                     return try limits.validateSDRCapture(pointSize: job.filter.contentRect.size,
                                                          scale: Double(job.filter.pointPixelScale), shadow: job.shadow)
@@ -227,38 +158,39 @@ actor FrozenCaptureSet {
                     throw error
                 }
             }
-            var nextIndex = 0
-            while nextIndex < requests.count {
-                try Task.checkCancellation()
-                let batch: FrozenCaptureBatch
-                do {
-                    batch = try FrozenCaptureBatch(estimates: estimates[nextIndex...], retainedProfileBytes: profileBytes,
-                                                   storedDiskBytes: diskBytes, limits: limits)
-                } catch {
-                    logger.error("Frozen batch rejected \(requests[nextIndex].diagnosticLabel, privacy: .public) estimate=\(estimates[nextIndex]) retainedProfiles=\(profileBytes) storedDisk=\(diskBytes)")
-                    throw error
-                }
-                let rasters = try await batch.run { reservation in
-                    let job = requests[reservation.index]
-                    var availableLimits = limits
-                    availableLimits.maximumResidentBytes = reservation.residentBytes
-                    return try await capture(filter: job.filter, shadow: job.shadow, directory: directory,
-                                             remainingDiskBytes: reservation.rasterBytes, limits: availableLimits,
-                                             isWindow: job.isWindow, label: job.diagnosticLabel)
-                }
-                for (reservation, raster) in zip(batch.reservations, rasters) {
-                    let job = requests[reservation.index]
-                    diskBytes += raster.byteCount
-                    profileBytes += raster.colorSpace.count
-                    switch job.target {
-                    case .window(let id, let frame):
-                        windows.append(FrozenWindowSnapshot(windowID: id, frame: frame, pointPixelScale: job.filter.pointPixelScale,
-                                                            includesShadow: job.shadow, raster: raster))
-                    case .display(let id, let frame):
-                        displays.append(FrozenDisplaySnapshot(displayID: id, frame: frame, pointPixelScale: job.filter.pointPixelScale, raster: raster))
+            // Each capture may store at most its estimate and returns the unused rest when it finishes.
+            // Leaving the group, even by throwing, waits for every capture, so the cleanup below never
+            // deletes files that a capture still writes.
+            let rasters = try await withThrowingTaskGroup(of: (Int, FrozenRasterDescriptor).self) { group in
+                var rasters: [(Int, FrozenRasterDescriptor)] = []
+                // Stored bytes of finished captures plus the estimates of running ones.
+                var diskBytes = 0
+                for (index, (job, estimate)) in zip(jobs, estimates).enumerated() {
+                    while index - rasters.count >= concurrentCaptures || diskBytes + estimate > limits.maximumDiskBytes,
+                          let (done, raster) = try await group.next() {
+                        diskBytes -= estimates[done] - raster.byteCount
+                        rasters.append((done, raster))
                     }
+                    guard diskBytes + estimate <= limits.maximumDiskBytes else {
+                        logger.error("Frozen set rejected \(job.diagnosticLabel, privacy: .public) estimate=\(estimate) disk=\(diskBytes)")
+                        throw FrozenCaptureFailure.diskLimit
+                    }
+                    diskBytes += estimate
+                    group.addTask { (index, try await capture(job, directory: directory, remainingDiskBytes: estimate, limits: limits)) }
                 }
-                nextIndex += batch.reservations.count
+                for try await raster in group { rasters.append(raster) }
+                return rasters.sorted { $0.0 < $1.0 }.map(\.1)
+            }
+            var windows: [FrozenWindowSnapshot] = []
+            var displays: [FrozenDisplaySnapshot] = []
+            for (job, raster) in zip(jobs, rasters) {
+                switch job.target {
+                case .window(let id, let frame):
+                    windows.append(FrozenWindowSnapshot(windowID: id, frame: frame, pointPixelScale: job.filter.pointPixelScale,
+                                                        includesShadow: job.shadow, raster: raster))
+                case .display(let id, let frame):
+                    displays.append(FrozenDisplaySnapshot(displayID: id, frame: frame, pointPixelScale: job.filter.pointPixelScale, raster: raster))
+                }
             }
             try Task.checkCancellation()
             // Prevent binding invocation-time frames to pixels acquired after a move.
@@ -319,7 +251,7 @@ actor FrozenCaptureSet {
 
     /// ScreenCaptureKit does not annotate SCContentFilter as Sendable. Each job owns
     /// a distinct filter, configured before launch and never mutated or shared with
-    /// another capture. Parent-side reads happen before launch or after the batch joins.
+    /// another capture. Parent-side reads happen before launch or after the group joins.
     private struct CaptureJob: @unchecked Sendable {
         enum Target: Sendable {
             case window(CGWindowID, CGRect)
@@ -342,27 +274,23 @@ actor FrozenCaptureSet {
         }
     }
 
-    private static func capture(filter: SCContentFilter, shadow: Bool, directory: URL,
-                                remainingDiskBytes: Int, limits: FrozenCaptureLimits,
-                                isWindow: Bool, label: String) async throws -> FrozenRasterDescriptor {
+    private static func capture(_ job: CaptureJob, directory: URL, remainingDiskBytes: Int,
+                                limits: FrozenCaptureLimits) async throws -> FrozenRasterDescriptor {
         try Task.checkCancellation()
-        let estimatedBytes = try limits.validateSDRCapture(pointSize: filter.contentRect.size,
-                                                           scale: Double(filter.pointPixelScale), shadow: shadow)
-        guard estimatedBytes <= remainingDiskBytes else { throw FrozenCaptureFailure.diskLimit }
         let configuration = SCScreenshotConfiguration()
         configuration.showsCursor = false
-        configuration.ignoreShadows = !shadow
+        configuration.ignoreShadows = !job.shadow
         // Window capture is the selected window only. Capturing a child window with children
         // included returns its parent group, which no longer matches the window's frame.
         configuration.includeChildWindows = false
         configuration.dynamicRange = .sdr
         // Zero dimensions retain ScreenCaptureKit's native-size output, including shadows.
-        let output = try await SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: configuration)
+        let output = try await SCScreenshotManager.captureScreenshot(contentFilter: job.filter, configuration: configuration)
         try Task.checkCancellation()
         guard let image = output.sdrImage else { throw CaptureFailure.noImage }
         // The selection overlay draws unshadowed rasters exactly onto the window frame.
-        if isWindow, !shadow, !matchesWindowFrame(image, filter: filter) {
-            logger.error("Frozen window raster does not match its frame \(label, privacy: .public) actual=\(image.width)x\(image.height)")
+        if job.isWindow, !job.shadow, !matchesWindowFrame(image, filter: job.filter) {
+            logger.error("Frozen window raster does not match its frame \(job.diagnosticLabel, privacy: .public) actual=\(image.width)x\(image.height)")
             throw FrozenCaptureFailure.targetChanged
         }
         do {
@@ -372,8 +300,7 @@ actor FrozenCaptureSet {
         } catch let error as FrozenCaptureFailure {
             // Compares the pre-capture estimate with what ScreenCaptureKit returned, for example
             // when child windows or shadows extend the image beyond the window's own frame.
-            let provider = image.dataProvider?.data.map(CFDataGetLength) ?? -1
-            logger.error("Frozen raster rejected \(label, privacy: .public) estimate=\(estimatedBytes) actual=\(image.width)x\(image.height) row=\(image.bytesPerRow) bytes=\(image.bytesPerRow * image.height) provider=\(provider) reservation=\(limits.maximumResidentBytes) disk=\(remainingDiskBytes) error=\(String(describing: error), privacy: .public)")
+            logger.error("Frozen raster rejected \(job.diagnosticLabel, privacy: .public) estimate=\(remainingDiskBytes) actual=\(image.width)x\(image.height) row=\(image.bytesPerRow) bytes=\(image.bytesPerRow * image.height) error=\(String(describing: error), privacy: .public)")
             throw error
         }
     }
@@ -396,13 +323,10 @@ enum FrozenRasterFile {
         }
         guard let raw = image.dataProvider?.data else { throw FrozenCaptureFailure.rasterFormat("missing provider bytes; \(format)") }
         let providerByteCount = CFDataGetLength(raw)
+        // ScreenCaptureKit's provider may include extra allocation pages after the last scanline;
+        // only the raster is stored.
         guard providerByteCount >= byteCount else {
-            throw FrozenCaptureFailure.rasterFormat("provider has \(CFDataGetLength(raw)) bytes, expected \(byteCount); \(format)")
-        }
-        // ScreenCaptureKit's provider may include extra allocation pages after the
-        // last scanline. Account for those resident bytes, but persist only the raster.
-        guard providerByteCount <= limits.maximumResidentBytes - 1_024 * 1_024 - byteCount else {
-            throw FrozenCaptureFailure.resourceLimit
+            throw FrozenCaptureFailure.rasterFormat("provider has \(providerByteCount) bytes, expected \(byteCount); \(format)")
         }
         let profile = try PropertyListSerialization.data(fromPropertyList: space, format: .binary, options: 0)
         guard profile.count <= 1_024 * 1_024 else { throw FrozenCaptureFailure.rasterFormat("color profile exceeds 1 MiB; \(format)") }

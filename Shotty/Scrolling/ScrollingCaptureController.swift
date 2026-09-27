@@ -110,7 +110,6 @@ final class ScrollingCaptureController {
             await end()
             guard let image, let coordinator else { return }
             await coordinator.accept(image, kind: .scrolling, scale: session.scale, settings: session.settings, ticket: session.ticket)
-            malloc_zone_pressure_relief(nil, 0)
         }
     }
 
@@ -138,11 +137,6 @@ final class ScrollingCaptureController {
     }
 
     private func end() async {
-        defer {
-            // Stitching allocates and frees hundreds of megabytes; hand the emptied pages back
-            // instead of leaving them cached in this idle menu bar app.
-            malloc_zone_pressure_relief(nil, 0)
-        }
         driver?.cancel()
         driver = nil
         scrollMonitors.forEach(NSEvent.removeMonitor)

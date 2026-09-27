@@ -4,89 +4,6 @@ import XCTest
 @testable import Shotty
 
 final class FrozenCaptureSetTests: XCTestCase {
-    func testProfilingLimitCanForceSequentialAcquisitionWithoutChangingReservations() throws {
-        let estimates = [1_024, 1_024, 1_024]
-        let sequential = try FrozenCaptureBatch(estimates: estimates[...], retainedProfileBytes: 0, storedDiskBytes: 0,
-                                                limits: FrozenCaptureLimits(maximumConcurrentCaptures: 1))
-        let parallel = try FrozenCaptureBatch(estimates: estimates[...], retainedProfileBytes: 0, storedDiskBytes: 0, limits: .init())
-        XCTAssertEqual(sequential.reservations.count, 1)
-        XCTAssertEqual(parallel.reservations.count, 3)
-        XCTAssertEqual(sequential.reservations[0].residentBytes, parallel.reservations[0].residentBytes)
-        XCTAssertThrowsError(try FrozenCaptureBatch(estimates: estimates[...], retainedProfileBytes: 0, storedDiskBytes: 0,
-                                                    limits: FrozenCaptureLimits(maximumConcurrentCaptures: 0)))
-    }
-
-    func testBatchBoundsConcurrencyAndChargesBothInFlightBuffersAndRetainedProfiles() throws {
-        let mib = 1_024 * 1_024
-        let estimates = [32 * mib, 32 * mib, 32 * mib, 32 * mib]
-        let batch = try FrozenCaptureBatch(estimates: estimates[...], retainedProfileBytes: mib,
-                                           storedDiskBytes: 100 * mib, limits: .init())
-        XCTAssertEqual(batch.reservations.map(\.index), [0, 1, 2])
-        XCTAssertEqual(batch.residentBytes, 198 * mib)
-        XCTAssertLessThanOrEqual(batch.residentBytes + mib, FrozenCaptureLimits().maximumResidentBytes)
-        for reservation in batch.reservations {
-            XCTAssertGreaterThanOrEqual(reservation.residentBytes, reservation.rasterBytes * 2 + mib)
-        }
-        let large = try FrozenCaptureBatch(estimates: [80 * mib, 80 * mib][...], retainedProfileBytes: 0,
-                                           storedDiskBytes: 0, limits: .init())
-        XCTAssertEqual(large.reservations.count, 1, "Large images must fall back to sequential acquisition")
-    }
-
-    func testBatchUsesOnlyUncommittedDiskAndMemoryWithoutIntegerOverflow() throws {
-        let mib = 1_024 * 1_024
-        let limits = FrozenCaptureLimits(maximumResidentBytes: 16 * mib, maximumDiskBytes: 10 * mib)
-        let estimates = [3 * mib, 3 * mib, 3 * mib]
-        let batch = try FrozenCaptureBatch(estimates: estimates[1...], retainedProfileBytes: mib,
-                                           storedDiskBytes: 4 * mib, limits: limits)
-        XCTAssertEqual(batch.reservations.map(\.index), [1, 2])
-        XCTAssertEqual(batch.reservations.reduce(0) { $0 + $1.rasterBytes }, 6 * mib)
-        XCTAssertEqual(batch.residentBytes + mib, limits.maximumResidentBytes)
-        XCTAssertThrowsError(try FrozenCaptureBatch(estimates: [Int.max][...], retainedProfileBytes: 0, storedDiskBytes: 0, limits: .init()))
-        XCTAssertThrowsError(try FrozenCaptureBatch(estimates: [3 * mib][...], retainedProfileBytes: 0, storedDiskBytes: 8 * mib, limits: limits)) { error in
-            guard case FrozenCaptureFailure.diskLimit = error else { return XCTFail("Expected the disk reservation limit") }
-        }
-    }
-
-    func testBatchReturnsMetadataInRequestOrderDespiteConcurrentCompletion() async throws {
-        let batch = try FrozenCaptureBatch(estimates: [1_024, 1_024, 1_024][...], retainedProfileBytes: 0, storedDiskBytes: 0, limits: .init())
-        let result = try await batch.run { reservation in
-            try await Task.sleep(for: .milliseconds((3 - reservation.index) * 5))
-            return reservation.index
-        }
-        XCTAssertEqual(result, [0, 1, 2])
-    }
-
-    func testCancelledBatchWaitsForAllCaptureOperationsBeforeReturning() async throws {
-        actor Finished {
-            var count = 0
-            func record() { count += 1 }
-        }
-        let finished = Finished()
-        let started = expectation(description: "all reserved captures started")
-        started.expectedFulfillmentCount = 3
-        let batch = try FrozenCaptureBatch(estimates: [1_024, 1_024, 1_024][...], retainedProfileBytes: 0, storedDiskBytes: 0, limits: .init())
-        let operation = Task {
-            try await batch.run { reservation in
-                started.fulfill()
-                do {
-                    try await Task.sleep(for: .seconds(30))
-                    return reservation.index
-                } catch {
-                    await finished.record()
-                    throw error
-                }
-            }
-        }
-        await fulfillment(of: [started], timeout: 2)
-        operation.cancel()
-        do {
-            _ = try await operation.value
-            XCTFail("Cancellation must abort the complete batch")
-        } catch is CancellationError {}
-        let count = await finished.count
-        XCTAssertEqual(count, 3, "The transaction must not delete its directory while a sibling can still write")
-    }
-
     func testRawRoundTripPreservesPixelsPaddingAndColorSpace() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -143,26 +60,13 @@ final class FrozenCaptureSetTests: XCTestCase {
         XCTAssertEqual(restored.colorSpace?.copyICCData() as Data?, source.colorSpace?.copyICCData() as Data?)
     }
 
-    func testTrailingProviderBytesStillCountAgainstResidentLimit() throws {
-        let directory = try temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let source = try fixture(trailingBytes: 6_656)
-        let rasterBytes = source.bytesPerRow * source.height
-        let limits = FrozenCaptureLimits(maximumResidentBytes: 1_024 * 1_024 + rasterBytes * 2)
-        XCTAssertThrowsError(try FrozenRasterFile.store(source, directory: directory,
-                                                        remainingDiskBytes: 1_000_000, limits: limits)) { error in
-            guard case FrozenCaptureFailure.resourceLimit = error else { return XCTFail("Expected the resident limit") }
-        }
-        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
-    }
-
-    func testDiskAndResidentLimitsRejectBeforeCreatingFiles() throws {
+    func testDiskAndRasterLimitsRejectBeforeCreatingFiles() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let source = try fixture()
         XCTAssertThrowsError(try FrozenRasterFile.store(source, directory: directory, remainingDiskBytes: 1, limits: .init()))
         XCTAssertThrowsError(try FrozenRasterFile.store(source, directory: directory, remainingDiskBytes: 1_000_000,
-                                                        limits: FrozenCaptureLimits(maximumResidentBytes: 1_024 * 1_024)))
+                                                        limits: FrozenCaptureLimits(maximumRasterBytes: 100)))
         XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
         XCTAssertThrowsError(try FrozenCaptureLimits().validateRaster(width: 1, height: 2, bytesPerRow: Int.max))
     }
