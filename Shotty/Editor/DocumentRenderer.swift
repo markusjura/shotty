@@ -168,8 +168,8 @@ final class DocumentRenderer {
         context.closePath(); context.fillPath()
     }
 
-    /// Each effect samples the current composition once. Crop only the padded tile in Core Image,
-    /// retaining global coordinates so resizing a region never shifts its pixel grid.
+    /// Each effect samples the current composition once, in global coordinates, so moving or
+    /// resizing a region never shifts its pixel grid.
     private func filteredRegion(_ region: CGRect, style: EditorToolDefaults.Redact, context: CGContext,
                                 imageBounds: CGRect, workingBounds: CGRect, colorSpace: CGColorSpace) throws -> CGImage {
         guard let composition = context.makeImage() else { throw Failure.rendering }
@@ -177,18 +177,31 @@ final class DocumentRenderer {
             .transformed(by: CGAffineTransform(translationX: workingBounds.minX, y: imageBounds.height - workingBounds.maxY))
         let ciRegion = CGRect(x: region.minX, y: imageBounds.height - region.maxY, width: region.width, height: region.height)
         let amount = Self.effectAmount(style)
-        let padding = Self.effectPadding(style)
-        let tile = source.clampedToExtent().cropped(to: ciRegion.insetBy(dx: -padding, dy: -padding))
         let filtered: CIImage
         if style.style == .pixelate {
-            filtered = tile.applyingFilter("CIPixellate", parameters: [
+            filtered = source.clampedToExtent().applyingFilter("CIPixellate", parameters: [
                 kCIInputScaleKey: amount,
                 kCIInputCenterKey: CIVector(x: amount / 2, y: imageBounds.height - amount / 2)
             ])
-        } else { filtered = tile.applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: amount]) }
-        guard let output = imageContext.createCGImage(filtered.cropped(to: ciRegion), from: ciRegion,
-                                                      format: .RGBA8, colorSpace: colorSpace) else { throw Failure.rendering }
-        return output
+        } else { filtered = source.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: amount]) }
+        // Core Image averages a pixelation block, and blurs at a scale, over the requested output
+        // only. Requesting a margin beyond the region makes edge blocks whole, so moving or
+        // resizing a redaction never changes the pixels it keeps.
+        let padding = Self.effectPadding(style)
+        let expanded = ciRegion.insetBy(dx: -padding, dy: -padding).integral
+        guard let output = imageContext.createCGImage(filtered, from: expanded, format: .RGBA8, colorSpace: colorSpace),
+              let cropped = output.cropping(to: CGRect(x: ciRegion.minX - expanded.minX, y: expanded.maxY - ciRegion.maxY,
+                                                       width: ciRegion.width, height: ciRegion.height))
+        else { throw Failure.rendering }
+        return cropped
+    }
+
+    /// A pixelate or blur redaction over the whole image. Effects sample on one global grid, so
+    /// any region of this layer equals what `render` draws for a redaction there over plain image
+    /// pixels, and the editor can show redactions live from it.
+    func effectLayer(source: CGImage, style: EditorToolDefaults.Redact) throws -> CGImage {
+        let bounds = CGRect(x: 0, y: 0, width: source.width, height: source.height)
+        return try render(source: source, state: AnnotationDocument(annotations: [Annotation(content: .redact(rect: bounds, style: style))]))
     }
 
     private func drawSpotlights(_ openings: [(CGRect, EditorToolDefaults.Spotlight)], in context: CGContext,
@@ -214,7 +227,8 @@ final class DocumentRenderer {
         context.fill(bounds)
     }
 
-    private static func effectAmount(_ style: EditorToolDefaults.Redact) -> CGFloat {
+    /// Pixelation block size or blur radius in image pixels.
+    static func effectAmount(_ style: EditorToolDefaults.Redact) -> CGFloat {
         style.style == .pixelate ? (4 + style.strength * 44).rounded() : 2 + style.strength * 28
     }
 

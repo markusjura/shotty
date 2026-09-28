@@ -284,4 +284,39 @@ final class EditorDocumentTests: XCTestCase {
         XCTAssertEqual(canvas.nextCounter, 3, "Once the picked number met the default, it follows the image again")
         _ = try await document.flush()
     }
+
+    /// Before the background render of a redaction arrives, the canvas must not show what it hides.
+    func testRedactionHidesContentBeforeItsRenderArrives() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("shotty-redact-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = CaptureSessionStore(directory: directory)
+        // Black and white 4-pixel stripes: legible detail that pixelation must flatten.
+        let stripes = try XCTUnwrap(CGContext(data: nil, width: 64, height: 64, bitsPerComponent: 8, bytesPerRow: 256,
+                                              space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        stripes.setFillColor(RGBAColor.white.cgColor); stripes.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+        stripes.setFillColor(RGBAColor.black.cgColor)
+        for x in stride(from: 0, to: 64, by: 8) { stripes.fill(CGRect(x: x, y: 0, width: 4, height: 64)) }
+        let record = try await store.create(image: XCTUnwrap(stripes.makeImage()), kind: .area, scale: 2)
+        let suite = "shotty-redact-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let document = EditorDocument(record: record, store: store)
+        let canvas = EditorCanvas(document: document, source: try await store.image(for: record.id),
+                                  preferences: AppPreferences(defaults: defaults), commands: CommandRegistry(defaults: defaults))
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 200, height: 200), styleMask: .borderless,
+                              backing: .buffered, defer: true)
+        window.contentView?.addSubview(canvas)
+        document.commit(AnnotationDocument(annotations: [Annotation(content: .redact(rect: CGRect(x: 0, y: 0, width: 64, height: 64),
+                                                                                     style: .init()))]))
+        canvas.documentChanged()  // Starts the background render, which cannot finish before the draw below.
+
+        let image = CGRect(x: EditorCanvas.margin, y: EditorCanvas.margin, width: 32, height: 32).insetBy(dx: 2, dy: 2)
+        let bitmap = try XCTUnwrap(canvas.bitmapImageRepForCachingDisplay(in: image))
+        canvas.cacheDisplay(in: image, to: bitmap)
+        let row = bitmap.pixelsHigh / 2
+        let levels = (0..<bitmap.pixelsWide).compactMap { bitmap.colorAt(x: $0, y: row)?.usingColorSpace(.sRGB)?.brightnessComponent }
+        XCTAssertLessThan((levels.max() ?? 1) - (levels.min() ?? 0), 0.5, "The stripes under the redaction show through")
+        _ = try await document.flush()
+    }
 }

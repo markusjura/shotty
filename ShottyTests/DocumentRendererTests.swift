@@ -134,6 +134,25 @@ final class DocumentRendererTests: XCTestCase {
         XCTAssertEqual(try rgba(tile), try rgba(expected))
     }
 
+    /// The editor draws live redactions from the whole-image effect layer. It must equal the exact
+    /// render, or the redaction visibly changes when the exact render replaces it.
+    /// The editor draws live redactions from the whole-image effect layer. It must equal the exact
+    /// render, or the redaction visibly changes when the exact render replaces it.
+    func testEffectLayerMatchesTheRenderedRedaction() throws {
+        let original = try source()
+        let renderer = DocumentRenderer()
+        let region = CGRect(x: 13, y: 21, width: 50, height: 37)
+        for style in [EditorToolDefaults.Redact(style: .pixelate, strength: 0.2), .init(style: .blur, strength: 0.3)] {
+            let rendered = try renderer.render(source: original, state: AnnotationDocument(annotations: [
+                Annotation(content: .redact(rect: region, style: style))
+            ]), region: region)
+            let layer = try XCTUnwrap(renderer.effectLayer(source: original, style: style).cropping(to: region))
+            // Blur may round differently by one level.
+            let difference = zip(try rgba(layer), try rgba(rendered)).map { abs(Int($0) - Int($1)) }.max() ?? 0
+            XCTAssertLessThanOrEqual(difference, style.style == .pixelate ? 0 : 1, "\(style.style)")
+        }
+    }
+
     private func rgba(_ image: CGImage) throws -> [UInt8] {
         var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
         let success = bytes.withUnsafeMutableBytes { data in

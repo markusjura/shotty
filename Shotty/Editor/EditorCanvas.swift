@@ -21,6 +21,8 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
             finishText()
             cancelGesture(restoreSelection: true)
             if tool != .crop { cropAspect = nil }
+            // Render the effect before the first drag, so a new redaction looks final at once.
+            if tool == .redact { warmEffectLayers(for: preferences.editor.tools.redact) }
             cropDraft = tool == .crop ? CropGeometry.applyingAspect(cropAspect, to: document.state.crop ?? sourceBounds, within: sourceBounds) : nil
             viewportMayHaveChanged()
             updateCursor()
@@ -334,17 +336,83 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
             drawImage(source, in: sourceBounds, context: context)
             drawVectors(overlay, context: context)
             // The latest finished patches lag by one render; they replace most of the fallback.
+            // They may show source where a redaction now is, so redraw from the first redaction up.
             if patchKey?.base == previewGeneration {
                 for patch in patches where patch.rect.intersects(rect) { drawImage(patch.image, in: patch.rect, context: context) }
+                if let first = overlay.firstIndex(where: { $0.tool == .redact }) {
+                    drawVectors(Array(overlay[first...]), context: context)
+                }
             }
             context.restoreGState()
         }
         schedulePatches(key: key, rects: dirty)
     }
 
+    /// Vectors, with stand-ins for redactions, which only the background renderer draws exactly.
     private func drawVectors(_ annotations: [Annotation], context: CGContext) {
-        for annotation in annotations where annotation.tool != .counter { DocumentRenderer.drawAnnotation(annotation, in: context) }
+        for annotation in annotations where annotation.tool != .counter {
+            if case .redact(let rect, let style) = annotation.content { drawRedactionStandIn(rect, style: style, context: context) }
+            else { DocumentRenderer.drawAnnotation(annotation, in: context) }
+        }
         for annotation in annotations where annotation.tool == .counter { DocumentRenderer.drawAnnotation(annotation, in: context) }
+    }
+
+    /// Draws a redaction from its whole-image effect layer, which matches the exact render, so a
+    /// redaction looks final at once and never reveals what it covers. While a new style or
+    /// strength renders, another cached layer stands in, which still hides the content.
+    private func drawRedactionStandIn(_ rect: CGRect, style: EditorToolDefaults.Redact, context: CGContext) {
+        let region = rect.standardized.integral.intersection(sourceBounds)
+        guard !region.isEmpty else { return }
+        context.saveGState(); defer { context.restoreGState() }
+        context.clip(to: region)
+        if style.style == .solid {
+            var color = style.solidColor; color.alpha = 1
+            context.setFillColor(color.cgColor); context.fill(region)
+        } else if let layer = effectLayer(for: style) ?? effectLayers.first(where: { $0.key.style == style.style })?.value
+                    ?? effectLayers.values.first {
+            drawImage(layer, in: sourceBounds, context: context)
+        } else {
+            context.setFillColor(NSColor.gray.cgColor); context.fill(region)
+        }
+        warmEffectLayers(for: style)
+    }
+
+    /// Pixelate and blur at `style`'s strength, so switching between them shows the other at once.
+    private static func effectVariants(of style: EditorToolDefaults.Redact) -> [EditorToolDefaults.Redact] {
+        [RedactStyle.pixelate, .blur].map { var variant = style; variant.style = $0; return variant }
+    }
+
+    private func warmEffectLayers(for style: EditorToolDefaults.Redact) {
+        for variant in Self.effectVariants(of: style) { effectLayer(for: variant) }
+    }
+
+    private struct EffectKey: Hashable { let style: RedactStyle; let amount: CGFloat }
+    private var effectLayers: [EffectKey: CGImage] = [:]
+    private var pendingEffectLayers = Set<EffectKey>()
+
+    /// The cached layer for `style`, or nil while it renders in the background. When a new layer
+    /// arrives, layers that no redaction or the redact tool's current strength uses are released.
+    @discardableResult
+    private func effectLayer(for style: EditorToolDefaults.Redact) -> CGImage? {
+        let key = EffectKey(style: style.style, amount: DocumentRenderer.effectAmount(style))
+        if let layer = effectLayers[key] { return layer }
+        guard style.style != .solid, pendingEffectLayers.insert(key).inserted else { return nil }
+        let source = source, renderer = previewRenderer
+        Task { [weak self] in
+            let layer = try? await renderer.effectLayer(source: source, style: style)
+            guard let self else { return }
+            pendingEffectLayers.remove(key)
+            guard let layer else { return }
+            var used: [EditorToolDefaults.Redact] = visibleState.annotations.compactMap {
+                if case .redact(_, let style) = $0.content { style } else { nil }
+            }
+            if tool == .redact { used.append(preferences.editor.tools.redact) }
+            let keep = Set(used.flatMap(Self.effectVariants).map { EffectKey(style: $0.style, amount: DocumentRenderer.effectAmount($0)) })
+            effectLayers = effectLayers.filter { keep.contains($0.key) }
+            effectLayers[key] = layer
+            needsDisplay = true
+        }
+        return nil
     }
 
     private static func hasEffects(_ annotations: [Annotation]) -> Bool {
@@ -1037,6 +1105,10 @@ private actor EditorPreviewRenderer {
 
     func render(source: CGImage, annotations: [Annotation]) throws -> CGImage {
         try renderer.render(source: source, state: AnnotationDocument(annotations: annotations, crop: nil))
+    }
+
+    func effectLayer(source: CGImage, style: EditorToolDefaults.Redact) throws -> CGImage {
+        try renderer.effectLayer(source: source, style: style)
     }
 
     func render(source: CGImage, annotations: [Annotation], regions: [CGRect]) throws -> [(rect: CGRect, image: CGImage)] {
