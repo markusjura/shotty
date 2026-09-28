@@ -10,20 +10,14 @@ Use the narrowest scope that validates the change. Debug builds and tests share 
 xcodebuild -project Shotty.xcodeproj -scheme Shotty -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/acceptance-tests
 ```
 
-- `<base> build` builds the Debug app.
+- `<base> build` builds the Debug app without launching it.
 - `<base> test -only-testing:ShottyTests/<TestClass>` runs one test class.
-- `<base> test` runs all unit tests in about 10 s. Run it in the foreground.
-- `open .build/acceptance-tests/Build/Products/Debug/Shotty.app` launches the Debug build.
+- `<base> test` runs all unit tests in about 10 s. Run it in the foreground. It quits a running Debug build.
+- `Scripts/run.sh dev` rebuilds and relaunches the Debug build. Debug is unoptimized, so measure performance with a Release build.
 - `osascript -e 'tell application id "local.markus.Shotty" to quit'` quits whichever build is running.
 - `Scripts/ui/shotty-ui <command>` drives and measures the running app. See below.
 
 Package and install only when I ask. Bump `CURRENT_PROJECT_VERSION` first, commit, quit Shotty, then run `Scripts/package.sh` and `Scripts/install.sh .build/releases/<zip>`.
-
-## Running the app
-
-- Run either the Debug build (`.build/acceptance-tests/Build/Products/Debug/Shotty.app`) or the installed `/Applications/Shotty.app`, never both. They share preferences, the capture session, and hotkeys.
-- Quit with the command above. Killing the process leaves the session open, and the next launch asks "Restore your captures?". Dismiss that with `Scripts/ui/shotty-ui button Discard`.
-- The test run also quits a running Debug build.
 
 ## Verifying UI changes
 
@@ -38,7 +32,9 @@ Package and install only when I ask. Bump `CURRENT_PROJECT_VERSION` first, commi
 - `drag` holds before and after moving, so drop targets such as Finder accept it. A capture selection needs only a few steps.
 - Use Computer Use for exploratory checks, judging how something looks, or apps the tool can't drive. For repeatable checks, the tool is faster and cheaper.
 
-Clean up after testing. Dismiss test thumbnails with `menu View "Dismiss All"`, move test captures in `~/Desktop` and `~/Downloads` to the Trash, and clear the clipboard.
+### Clean up
+
+Save test captures only to `~/Downloads`. Afterwards, quit Shotty, move the test files to the Trash, and clear the clipboard.
 
 ## AppKit pitfalls
 
