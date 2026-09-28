@@ -135,7 +135,8 @@ final class CaptureSelector {
             panel.contentView = view
             panels.append(panel)
             panel.orderFrontRegardless()
-            if display.frame.contains(pointer) { panel.makeKey(); panel.makeFirstResponder(view) }
+            // Inclusive of the top edge, where the pointer rests after using the menu bar.
+            if NSMouseInRect(pointer, display.frame, false) { panel.makeKey(); panel.makeFirstResponder(view) }
         }
         updateCursor()
         updatePointer(pointer, modifiers: [])
@@ -468,6 +469,8 @@ final class CaptureSelector {
     }
 
     var accessibleWindowTitle: String? { windows.first { $0.id == selectedWindowID }?.title }
+    /// Adjust Selection keeps keyboard focus while its fields are in use.
+    var adjustmentIsKey: Bool { adjustmentPanel?.isKeyWindow == true }
 
     private func showAdjustment() {
         guard adjustmentPanel == nil, let selection else { return }
@@ -620,15 +623,21 @@ private final class SelectionView: NSView {
     }
     override func resetCursorRects() { addCursorRect(bounds, cursor: selector.cursor) }
     override func cursorUpdate(with event: NSEvent) { selector.updateCursor() }
-    /// Keyboard focus follows the pointer across displays. Only the key panel of an inactive app
-    /// can set the cursor, and a press on a non-key panel would only make it key, not start a drag.
-    /// Focus moves only between selection surfaces, so typing in Adjust Selection keeps its field.
+    /// Keyboard focus follows the pointer across displays, taking it from any other Shotty window,
+    /// such as an open editor, but not from Adjust Selection while its fields are in use. Only the key
+    /// panel of an inactive app can set the cursor, and Escape and Return must reach the selection.
     override func mouseEntered(with event: NSEvent) {
-        if NSApp.keyWindow == nil || NSApp.keyWindow?.contentView is SelectionView {
-            window?.makeKey()
-            window?.makeFirstResponder(self)
-        }
+        if !selector.adjustmentIsKey { takeKeyFocus() }
         selector.updateCursor()
+    }
+    /// A press starts the selection even on a panel that is not key yet; otherwise the first press
+    /// would only make it key and the overlay would sit there with a frozen readout.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    private func takeKeyFocus() {
+        guard let window, !window.isKeyWindow else { return }
+        window.makeKey()
+        window.makeFirstResponder(self)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -731,7 +740,10 @@ private final class SelectionView: NSView {
         selector.updateCursor()
         selector.mouseMoved(at: point(event), modifiers: event.modifierFlags)
     }
-    override func mouseDown(with event: NSEvent) { selector.mouseDown(at: point(event), modifiers: event.modifierFlags) }
+    override func mouseDown(with event: NSEvent) {
+        takeKeyFocus()
+        selector.mouseDown(at: point(event), modifiers: event.modifierFlags)
+    }
     override func mouseDragged(with event: NSEvent) { selector.updatePointer(point(event), modifiers: event.modifierFlags) }
     override func mouseUp(with event: NSEvent) { selector.mouseUp(at: point(event), modifiers: event.modifierFlags) }
     override func flagsChanged(with event: NSEvent) { selector.modifiersChanged(event.modifierFlags) }
