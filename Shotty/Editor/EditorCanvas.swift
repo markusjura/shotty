@@ -800,13 +800,20 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         commit(state, actionName: "Delete Objects"); selected = []
     }
     func duplicateSelected() {
+        let objects = document.state.annotations.filter { selected.contains($0.id) }
+        guard !objects.isEmpty else { return }
+        insertCopies(of: objects, steps: 1, actionName: "Duplicate Objects")
+    }
+
+    /// Adds copies of `objects` shifted down and right by `steps` offsets of 16 points on screen,
+    /// kept inside the image, and selects them.
+    private func insertCopies(of objects: [Annotation], steps: Int, actionName: String) {
+        guard let union = EditorGeometry.union(objects) else { return }
+        let step = 16 / zoom * CGFloat(steps)
+        let offset = EditorGeometry.clampedOffset(CGSize(width: step, height: step), moving: union, within: viewport)
         var state = document.state
-        let copies = state.annotations.filter { selected.contains($0.id) }.map { annotation -> Annotation in
-            let offset = EditorGeometry.clampedOffset(CGSize(width: 12, height: 12), moving: annotation.bounds, within: viewport)
-            var copy = annotation.translated(by: offset); copy.id = UUID(); return copy
-        }
-        guard !copies.isEmpty else { return }
-        state.annotations += copies; commit(state, actionName: "Duplicate Objects"); selected = Set(copies.map(\.id))
+        let copies = objects.map { annotation -> Annotation in var copy = annotation.translated(by: offset); copy.id = UUID(); return copy }
+        state.annotations += copies; commit(state, actionName: actionName); selected = Set(copies.map(\.id))
     }
     func arrange(_ arrangement: EditorArrangement) {
         var state = document.state
@@ -933,18 +940,23 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
     private static let pasteboardType = NSPasteboard.PasteboardType("local.markus.Shotty.annotations")
     @objc func copy(_ sender: Any?) {
         guard let data = try? JSONEncoder().encode(document.state.annotations.filter { selected.contains($0.id) }) else { return }
-        NSPasteboard.general.clearContents(); NSPasteboard.general.setData(data, forType: Self.pasteboardType)
+        pasteboard.clearContents(); pasteboard.setData(data, forType: Self.pasteboardType)
     }
+    /// Pastes below and to the right of the copied objects, so the copy is visible. Repeated pastes
+    /// of the same copy cascade, as in Keynote and Figma. Copies stay inside the visible image,
+    /// even when copied from a larger capture.
     @objc func paste(_ sender: Any?) {
-        guard let data = NSPasteboard.general.data(forType: Self.pasteboardType),
+        guard let data = pasteboard.data(forType: Self.pasteboardType),
               let objects = try? JSONDecoder().decode([Annotation].self, from: data), objects.allSatisfy(\.isValid),
-              let union = EditorGeometry.union(objects) else { return }
-        // Pasted objects stay inside the visible image even when copied from a larger capture.
-        let offset = EditorGeometry.clampedOffset(.zero, moving: union, within: viewport)
-        var state = document.state
-        let copies = objects.map { annotation -> Annotation in var copy = annotation.translated(by: offset); copy.id = UUID(); return copy }
-        state.annotations += copies; commit(state, actionName: "Paste Objects"); selected = Set(copies.map(\.id))
+              !objects.isEmpty else { return }
+        pasteCount = pasteCount.change == pasteboard.changeCount ? (pasteboard.changeCount, pasteCount.count + 1)
+                                                                 : (pasteboard.changeCount, 1)
+        insertCopies(of: objects, steps: pasteCount.count, actionName: "Paste Objects")
     }
+    /// How often the pasteboard's current contents were pasted, to cascade repeated pastes.
+    private var pasteCount = (change: -1, count: 0)
+    /// The general pasteboard; tests use a private one.
+    var pasteboard = NSPasteboard.general
     @objc func cut(_ sender: Any?) { copy(sender); deleteSelected() }
 
     // MARK: Text

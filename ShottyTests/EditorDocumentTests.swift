@@ -373,4 +373,27 @@ final class EditorDocumentTests: XCTestCase {
         XCTAssertTrue(window.contentView?.hitTest(canvas.convert(right, to: window.contentView)) === canvas)
         _ = try await document.flush()
     }
+
+    /// Pastes land below and to the right of the copy, cascade when repeated, and stay inside the image.
+    func testPasteOffsetsAndCascadesInsideTheImage() async throws {
+        let (directory, store, record) = try await fixture()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let suite = "shotty-paste-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let original = Annotation(content: .rectangle(rect: CGRect(x: 4, y: 4, width: 10, height: 10), style: .init()))
+        let document = EditorDocument(record: record, store: store)
+        document.commit(AnnotationDocument(annotations: [original]))
+        let canvas = EditorCanvas(document: document, source: try await store.image(for: record.id),
+                                  preferences: AppPreferences(defaults: defaults), commands: CommandRegistry(defaults: defaults))
+        canvas.pasteboard = NSPasteboard(name: NSPasteboard.Name(suite))
+        defer { canvas.pasteboard.releaseGlobally() }
+        canvas.selected = [original.id]
+        canvas.copy(nil)
+        canvas.paste(nil); canvas.paste(nil)
+        // 16 points per step at the initial 50% zoom is 32 image pixels; the second paste stops at the edge.
+        XCTAssertEqual(document.state.annotations.map(\.bounds.origin), [CGPoint(x: 4, y: 4), CGPoint(x: 36, y: 36), CGPoint(x: 54, y: 54)])
+        XCTAssertEqual(canvas.selected, [document.state.annotations[2].id])
+        _ = try await document.flush()
+    }
 }
