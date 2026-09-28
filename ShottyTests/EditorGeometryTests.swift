@@ -5,10 +5,10 @@ final class EditorGeometryTests: XCTestCase {
     private let limit = CGRect(x: 0, y: 0, width: 1000, height: 800)
 
     func testNearestVisibleOutlineWinsAndHollowInteriorsDoNotBlock() {
-        let hollow = Annotation(content: .rectangle(rect: CGRect(x: 0, y: 0, width: 400, height: 400), style: .init()))
+        let hollow = Annotation(content: .rectangle(rect: CGRect(x: 0, y: 0, width: 400, height: 400), style: .init(width: 4)))
         var filledStyle = EditorToolDefaults.Rectangle(); filledStyle.fillColor = .black
         let filled = Annotation(content: .rectangle(rect: CGRect(x: 100, y: 100, width: 50, height: 50), style: filledStyle))
-        let line = Annotation(content: .line(start: CGPoint(x: 10, y: 200), end: CGPoint(x: 390, y: 200), style: .init()))
+        let line = Annotation(content: .line(start: CGPoint(x: 10, y: 200), end: CGPoint(x: 390, y: 200), style: .init(width: 4)))
         let annotations = [filled, hollow, line]
         // Inside the topmost hollow rectangle, the filled rectangle beneath is still hit.
         XCTAssertEqual(EditorGeometry.hit(CGPoint(x: 120, y: 120), in: annotations, tolerance: 6)?.id, filled.id)
@@ -19,7 +19,7 @@ final class EditorGeometryTests: XCTestCase {
     }
 
     func testCurvedArrowHitsAlongItsDrawnCurve() {
-        var style = EditorToolDefaults.Arrow(); style.style = .curved
+        var style = EditorToolDefaults.Arrow(width: 4); style.style = .curved
         let start = CGPoint(x: 0, y: 0), end = CGPoint(x: 200, y: 0)
         let arrow = Annotation(content: .arrow(start: start, end: end, bend: nil, style: style))
         let control = EditorGeometry.defaultBend(start: start, end: end)
@@ -45,7 +45,7 @@ final class EditorGeometryTests: XCTestCase {
         let redact = Annotation(content: .redact(rect: CGRect(x: 900, y: 10, width: 50, height: 50), style: .init()))
         let wider = EditorGeometry.resized(redact, handle: .edges(.right), delta: CGVector(dx: 300, dy: 40), limit: limit)
         XCTAssertEqual(wider.bounds, CGRect(x: 900, y: 10, width: 100, height: 50))
-        var style = EditorToolDefaults.Arrow(); style.style = .curved
+        var style = EditorToolDefaults.Arrow(width: 4); style.style = .curved
         let arrow = Annotation(content: .arrow(start: .zero, end: CGPoint(x: 100, y: 0), bend: nil, style: style))
         let bent = EditorGeometry.resized(arrow, handle: .point(2), delta: CGVector(dx: 0, dy: -5000), limit: limit)
         guard case .arrow(_, _, let bend?, _) = bent.content else { return XCTFail("Dragging the bend handle stores a bend") }

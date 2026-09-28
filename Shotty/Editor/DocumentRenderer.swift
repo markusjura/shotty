@@ -90,24 +90,32 @@ final class DocumentRenderer {
             context.setFillColor(style.color.cgColor)
             context.setLineWidth(style.width)
             let control = bend ?? EditorGeometry.defaultBend(start: start, end: end)
-            context.move(to: start)
-            if style.style == .curved { context.addQuadCurve(to: end, control: control) }
-            else { context.addLine(to: end) }
-            context.strokePath()
-            arrowhead(at: end, from: style.style == .curved ? control : start, width: style.width, context: context)
+            let tail = style.style == .curved ? control : start
+            // The shaft stops at each head's base; its round cap would otherwise bulge past the tip.
+            let shaftEnd = arrowheadBase(at: end, from: tail, width: style.width)
+            let shaftStart = style.style == .double ? arrowheadBase(at: start, from: end, width: style.width) : start
+            if hypot(end.x - start.x, end.y - start.y) > hypot(end.x - shaftEnd.x, end.y - shaftEnd.y) * (style.style == .double ? 2 : 1) {
+                context.move(to: shaftStart)
+                if style.style == .curved { context.addQuadCurve(to: shaftEnd, control: control) }
+                else { context.addLine(to: shaftEnd) }
+                context.strokePath()
+            }
+            arrowhead(at: end, from: tail, width: style.width, context: context)
             if style.style == .double { arrowhead(at: start, from: end, width: style.width, context: context) }
         case .line(let start, let end, let style):
             context.setStrokeColor(style.color.cgColor)
             context.setLineWidth(style.width)
             context.move(to: start); context.addLine(to: end); context.strokePath()
         case .rectangle(let rect, let style):
-            let rect = rect.standardized
-            let radius = min(style.cornerRadius, min(rect.width, rect.height) / 2)
-            let path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
-            drawShape(path, stroke: style.strokeColor, fill: style.fillColor, width: style.width, context: context)
+            // A filled rectangle is only its fill, like CleanShot's; the stroke width does not grow it.
+            if let fill = style.fillColor {
+                context.setFillColor(fill.cgColor); context.fill(rect.standardized)
+            } else {
+                context.setStrokeColor(style.strokeColor.cgColor); context.setLineWidth(style.width); context.stroke(rect.standardized)
+            }
         case .ellipse(let rect, let style):
-            drawShape(CGPath(ellipseIn: rect.standardized, transform: nil), stroke: style.strokeColor,
-                      fill: style.fillColor, width: style.width, context: context)
+            context.setStrokeColor(style.strokeColor.cgColor); context.setLineWidth(style.width)
+            context.strokeEllipse(in: rect.standardized)
         case .text(let rect, let text, let style):
             drawText(text, rect: rect.standardized, style: style, context: context)
         case .redact: break
@@ -144,18 +152,16 @@ final class DocumentRenderer {
         }
     }
 
-    private static func drawShape(_ path: CGPath, stroke: RGBAColor, fill: RGBAColor?, width: Double, context: CGContext) {
-        context.addPath(path)
-        context.setStrokeColor(stroke.cgColor)
-        context.setLineWidth(width)
-        if let fill { context.setFillColor(fill.cgColor); context.drawPath(using: .fillStroke) }
-        else { context.strokePath() }
+    /// The center of the head's back edge, where the shaft ends.
+    private static func arrowheadBase(at point: CGPoint, from tail: CGPoint, width: Double) -> CGPoint {
+        let angle = atan2(point.y - tail.y, point.x - tail.x), length = max(9, width * 3.5)
+        return CGPoint(x: point.x - cos(angle) * length, y: point.y - sin(angle) * length)
     }
 
     private static func arrowhead(at point: CGPoint, from tail: CGPoint, width: Double, context: CGContext) {
         let angle = atan2(point.y - tail.y, point.x - tail.x)
-        let length = max(9, width * 3.5), halfWidth = max(4, width * 1.5)
-        let base = CGPoint(x: point.x - cos(angle) * length, y: point.y - sin(angle) * length)
+        let halfWidth = max(4, width * 1.5)
+        let base = arrowheadBase(at: point, from: tail, width: width)
         context.move(to: point)
         context.addLine(to: CGPoint(x: base.x - sin(angle) * halfWidth, y: base.y + cos(angle) * halfWidth))
         context.addLine(to: CGPoint(x: base.x + sin(angle) * halfWidth, y: base.y - cos(angle) * halfWidth))

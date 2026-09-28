@@ -487,7 +487,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         if let result, result != document.state, travelled >= 3 {
             switch finished {
             case .draw(let id):
-                commit(result, actionName: "Draw \(tool.rawValue.capitalized)")
+                commit(result, actionName: "Draw \(CommandID.tool(tool).title)")
                 if document.state.annotations.contains(where: { $0.id == id }) { selected = [id] }
             case .move(_, let duplicated): commit(result, actionName: duplicated ? "Duplicate Objects" : "Move Objects")
             default: commit(result, actionName: "Transform Objects")
@@ -563,6 +563,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         case .arrow: content = .arrow(start: start, end: endpoint, bend: nil, style: defaults.arrow)
         case .line: content = .line(start: start, end: endpoint, style: defaults.line)
         case .rectangle: content = .rectangle(rect: rect, style: defaults.rectangle)
+        case .filledRectangle: content = .rectangle(rect: rect, style: defaults.filledRectangle)
         case .ellipse: content = .ellipse(rect: rect, style: defaults.ellipse)
         case .redact: content = .redact(rect: rect.integral.intersection(viewport), style: defaults.redact)
         case .spotlight: content = .spotlight(rect: rect, style: defaults.spotlight)
@@ -797,7 +798,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
             switch annotation.content {
             case .text(_, let text, _): name = "Text: \(text.prefix(100))"
             case .counter(_, let number, _): name = "Counter \(number)"
-            default: name = annotation.tool.rawValue.capitalized
+            default: name = CommandID.tool(annotation.tool).title
             }
             element.setAccessibilityLabel(name)
             element.setAccessibilityValue("X \(Int(annotation.bounds.minX)), Y \(Int(annotation.bounds.minY)), width \(Int(annotation.bounds.width)), height \(Int(annotation.bounds.height)) pixels")

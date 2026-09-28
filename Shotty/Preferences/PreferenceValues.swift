@@ -27,7 +27,17 @@ struct RGBAColor: Codable, Equatable, Sendable {
 
     static let white = RGBAColor(red: 1, green: 1, blue: 1)
     static let black = RGBAColor(red: 0, green: 0, blue: 0)
-    static let annotationRed = RGBAColor(red: 1, green: 0.231, blue: 0.188)
+    static let annotationRed = RGBAColor(red: 0.976, green: 0.204, blue: 0.259)
+    static let annotationBlue = RGBAColor(red: 0, green: 0.48, blue: 1)
+
+    /// CleanShot X's annotation colors, in its menu order.
+    static let annotationPalette: [(name: String, color: RGBAColor)] = [
+        ("Black", .black), ("Red", .annotationRed), ("Orange", RGBAColor(red: 1, green: 0.549, blue: 0)),
+        ("Yellow", RGBAColor(red: 1, green: 0.882, blue: 0)), ("Green", RGBAColor(red: 0.25, green: 0.84, blue: 0.32)),
+        ("Teal", RGBAColor(red: 0.18, green: 0.81, blue: 0.76)), ("Blue", .annotationBlue),
+        ("Purple", RGBAColor(red: 0.54, green: 0.32, blue: 1)), ("Pink", RGBAColor(red: 1, green: 0.18, blue: 0.42)),
+        ("White", .white),
+    ]
 
     var isValid: Bool { [red, green, blue, alpha].allSatisfy { (0...1).contains($0) } }
 
@@ -184,8 +194,12 @@ struct ThumbnailPreferences: Codable, Equatable, Sendable {
 
 // MARK: - Editor
 
+/// Declared in toolbar order, which follows CleanShot X.
 enum EditorTool: String, Codable, CaseIterable, Sendable {
-    case select, arrow, rectangle, ellipse, line, text, redact, spotlight, counter, crop
+    case select, rectangle, filledRectangle, ellipse, line, arrow, text, redact, spotlight, counter, crop
+
+    /// Tools that create objects. The editor reopens with the last one used.
+    var isDrawing: Bool { self != .select && self != .crop }
 }
 
 enum ArrowStyle: String, Codable, CaseIterable, Sendable { case standard, double, curved }
@@ -195,40 +209,42 @@ enum TextTreatment: String, Codable, CaseIterable, Sendable { case plain, outlin
 enum RedactStyle: String, Codable, CaseIterable, Sendable { case pixelate, blur, solid }
 enum SpotlightShape: String, Codable, CaseIterable, Sendable { case rectangle, roundedRectangle, ellipse }
 
-/// New-object defaults per tool. Widths and sizes are image pixels, independent of zoom.
+/// New-object defaults. As in CleanShot, one color and one stroke width serve every tool; the
+/// per-tool style properties combine them with the options that belong to that tool alone.
+/// Widths and sizes are image pixels, independent of zoom.
 struct EditorToolDefaults: Codable, Equatable, Sendable {
     static let widthRange = 1.0...64.0
-    /// The editor's thickness choices.
-    static let widthPresets: [Double] = [2, 4, 6, 10, 16]
-    static let roundedCornerRadius = 16.0
+    /// CleanShot's six stroke widths (1, 3, 7, 10, 15, and 25 pt) in Retina pixels.
+    static let widthPresets: [Double] = [2, 6, 14, 20, 30, 50]
+
+    // Per-object styles. Annotations store these, so their fields must stay decodable.
 
     struct Arrow: Codable, Equatable, Sendable {
-        var color = RGBAColor.annotationRed
-        var width = 4.0
+        var color = RGBAColor.annotationBlue
+        var width = 20.0
         var style = ArrowStyle.standard
     }
 
+    /// A filled rectangle fills with its outline color.
     struct Rectangle: Codable, Equatable, Sendable {
-        var strokeColor = RGBAColor.annotationRed
-        var width = 4.0
+        var strokeColor = RGBAColor.annotationBlue
+        var width = 20.0
         var fillColor: RGBAColor?
-        var cornerRadius = 0.0
     }
 
     struct Ellipse: Codable, Equatable, Sendable {
-        var strokeColor = RGBAColor.annotationRed
-        var width = 4.0
-        var fillColor: RGBAColor?
+        var strokeColor = RGBAColor.annotationBlue
+        var width = 20.0
     }
 
     struct Line: Codable, Equatable, Sendable {
-        var color = RGBAColor.annotationRed
-        var width = 4.0
+        var color = RGBAColor.annotationBlue
+        var width = 20.0
     }
 
     struct Text: Codable, Equatable, Sendable {
         static let sizeRange = 8.0...200.0
-        var color = RGBAColor.annotationRed
+        var color = RGBAColor.annotationBlue
         var size = 24.0
         var weight = TextWeight.semibold
         var design = TextDesign.system
@@ -250,27 +266,62 @@ struct EditorToolDefaults: Codable, Equatable, Sendable {
 
     struct Counter: Codable, Equatable, Sendable {
         static let sizeRange = 12.0...96.0
-        var color = RGBAColor.annotationRed
+        var color = RGBAColor.annotationBlue
         var size = 28.0
     }
 
-    var arrow = Arrow()
-    var rectangle = Rectangle()
-    var ellipse = Ellipse()
-    var line = Line()
-    var text = Text()
+    // Stored defaults.
+
+    var color = RGBAColor.annotationBlue
+    /// The fourth of the six presets, CleanShot's medium.
+    var width = 20.0
+    var arrowStyle = ArrowStyle.standard
+    var textSize = 24.0
+    var textWeight = TextWeight.semibold
+    var textDesign = TextDesign.system
+    var textTreatment = TextTreatment.plain
     var redact = Redact()
     var spotlight = Spotlight()
-    var counter = Counter()
+    var counterSize = 28.0
+
+    // The style of a new object of each kind. Setting one adopts its color and width.
+
+    var arrow: Arrow {
+        get { Arrow(color: color, width: width, style: arrowStyle) }
+        set { color = newValue.color; width = newValue.width; arrowStyle = newValue.style }
+    }
+    var rectangle: Rectangle {
+        get { Rectangle(strokeColor: color, width: width) }
+        set { color = newValue.strokeColor; width = newValue.width }
+    }
+    var filledRectangle: Rectangle {
+        get { Rectangle(strokeColor: color, width: width, fillColor: color) }
+        set { color = newValue.strokeColor; width = newValue.width }
+    }
+    var ellipse: Ellipse {
+        get { Ellipse(strokeColor: color, width: width) }
+        set { color = newValue.strokeColor; width = newValue.width }
+    }
+    var line: Line {
+        get { Line(color: color, width: width) }
+        set { color = newValue.color; width = newValue.width }
+    }
+    var text: Text {
+        get { Text(color: color, size: textSize, weight: textWeight, design: textDesign, treatment: textTreatment) }
+        set {
+            color = newValue.color; textSize = newValue.size; textWeight = newValue.weight
+            textDesign = newValue.design; textTreatment = newValue.treatment
+        }
+    }
+    var counter: Counter {
+        get { Counter(color: color, size: counterSize) }
+        set { color = newValue.color; counterSize = newValue.size }
+    }
 
     var isValid: Bool {
-        let widths = [arrow.width, rectangle.width, ellipse.width, line.width]
-        let colors = [arrow.color, rectangle.strokeColor, ellipse.strokeColor, line.color, text.color,
-                      redact.solidColor, counter.color] + [rectangle.fillColor, ellipse.fillColor].compactMap { $0 }
-        return widths.allSatisfy(Self.widthRange.contains) && colors.allSatisfy(\.isValid)
-            && rectangle.cornerRadius >= 0 && rectangle.cornerRadius.isFinite
-            && Text.sizeRange.contains(text.size) && (0...1).contains(redact.strength)
-            && Spotlight.dimRange.contains(spotlight.dimPercent) && Counter.sizeRange.contains(counter.size)
+        Self.widthRange.contains(width) && color.isValid && redact.solidColor.isValid
+            && Text.sizeRange.contains(textSize) && (0...1).contains(redact.strength)
+            && Spotlight.dimRange.contains(spotlight.dimPercent) && Counter.sizeRange.contains(counterSize)
     }
 }
 
@@ -278,6 +329,8 @@ struct EditorPreferences: Codable, Equatable, Sendable {
     var closesAfterCopy = false
     var closesAfterSave = false
     var tools = EditorToolDefaults()
+    /// The last drawing tool, selected when an editor opens.
+    var tool = EditorTool.rectangle
 
-    var isValid: Bool { tools.isValid }
+    var isValid: Bool { tools.isValid && tool.isDrawing }
 }

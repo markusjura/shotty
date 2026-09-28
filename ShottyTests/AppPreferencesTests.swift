@@ -24,14 +24,14 @@ final class AppPreferencesTests: XCTestCase {
         preferences.capture.outputScale = .logical
         preferences.thumbnails.display = .display(uuid: "ABC", name: "Studio Display")
         preferences.general.showsMenuBarIcon = false
-        preferences.editor.tools.arrow.width = 9
+        preferences.editor.tools.width = 9
 
         preferences.capture.outputs = []
         preferences.text.outputs = []
         preferences.text.detectsLanguageAutomatically = false
         preferences.scrolling.maximumAxisPixels = 40_000
         preferences.thumbnails.autoCloseDelaySeconds = 0
-        preferences.editor.tools.arrow.width = 0
+        preferences.editor.tools.width = 0
 
         let reloaded = AppPreferences(defaults: defaults)
         XCTAssertEqual(reloaded.capture.outputs, [.copyImage, .saveImage])
@@ -39,7 +39,7 @@ final class AppPreferencesTests: XCTestCase {
         XCTAssertEqual(reloaded.thumbnails.display, .display(uuid: "ABC", name: "Studio Display"))
         XCTAssertFalse(reloaded.general.showsMenuBarIcon, "Both icons may be hidden")
         XCTAssertFalse(reloaded.general.showsDockIcon)
-        XCTAssertEqual(reloaded.editor.tools.arrow.width, 9)
+        XCTAssertEqual(reloaded.editor.tools.width, 9)
         XCTAssertEqual(reloaded.text, TextCapturePreferences())
         XCTAssertEqual(reloaded.scrolling.maximumAxisPixels, 30_000)
         XCTAssertEqual(reloaded.thumbnails.autoCloseDelaySeconds, 10)
@@ -55,7 +55,7 @@ final class AppPreferencesTests: XCTestCase {
         defaults.set(Data(#"{"outputs":["copyImage"],"includesWindowShadow":false,"showsCursor":true}"#.utf8), forKey: "preferences.v1.capture")
         defaults.set(Data("not json".utf8), forKey: "preferences.v1.thumbnails")
         defaults.set(Data(#"{"maximumAxisPixels":99999}"#.utf8), forKey: "preferences.v1.scrolling")
-        defaults.set(Data(#"{"tools":{"arrow":{"width":12}}}"#.utf8), forKey: "preferences.v1.editor")
+        defaults.set(Data(#"{"tools":{"width":12,"spotlight":{"dimPercent":60}}}"#.utf8), forKey: "preferences.v1.editor")
 
         let preferences = AppPreferences(defaults: defaults)
         XCTAssertEqual(preferences.capture.outputs, [.copyImage])
@@ -63,7 +63,7 @@ final class AppPreferencesTests: XCTestCase {
         XCTAssertTrue(preferences.capture.freezesScreen, "Fields missing from older data keep their defaults")
         XCTAssertEqual(preferences.thumbnails, ThumbnailPreferences())
         XCTAssertEqual(preferences.scrolling, ScrollingPreferences(), "Out-of-bounds stored limits are not trusted")
-        XCTAssertEqual(preferences.editor.tools.arrow.width, 12)
-        XCTAssertEqual(preferences.editor.tools.arrow.style, .standard, "Nested sections merge field by field")
+        XCTAssertEqual(preferences.editor.tools.width, 12)
+        XCTAssertEqual(preferences.editor.tools.spotlight.shape, .roundedRectangle, "Nested sections merge field by field")
     }
 }

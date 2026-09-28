@@ -25,9 +25,9 @@ enum EditorStyleSamples {
 
     static let textTreatments: [TextTreatment: NSImage] = render(TextTreatment.allCases, on: clearSample) { treatment in
         var text = EditorToolDefaults.Text()
-        text.size = 22
+        text.size = 16
         text.treatment = treatment
-        return .text(rect: CGRect(x: 22, y: 3, width: 52, height: 34), text: "Aa", style: text)
+        return .text(rect: CGRect(x: 14, y: 5, width: 68, height: 30), text: "Text", style: text)
     }
 
     static let spotlightShapes: [SpotlightShape: NSImage] = render(SpotlightShape.allCases, on: contentSample) { shape in

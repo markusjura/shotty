@@ -62,10 +62,11 @@ enum EditorGeometry {
             return max(0, segmentDistance(point, a, b) - style.width / 2)
         case .rectangle(let rect, let style):
             let rect = rect.standardized
-            if style.fillColor != nil, rect.contains(point) { return 0 }
+            // A filled rectangle draws no stroke.
+            if style.fillColor != nil { return rectDistance(point, rect) }
             return max(0, outlineDistance(point, rect) - style.width / 2)
         case .ellipse(let rect, let style):
-            return ellipseDistance(point, rect.standardized, filled: style.fillColor != nil, width: style.width)
+            return ellipseDistance(point, rect.standardized, width: style.width)
         case .spotlight(let rect, _):
             return outlineDistance(point, rect.standardized)
         case .counter(let center, _, let style):
@@ -113,10 +114,9 @@ enum EditorGeometry {
         rect.contains(p) ? min(p.x - rect.minX, rect.maxX - p.x, p.y - rect.minY, rect.maxY - p.y) : rectDistance(p, rect)
     }
 
-    static func ellipseDistance(_ p: CGPoint, _ rect: CGRect, filled: Bool, width: CGFloat) -> CGFloat {
+    static func ellipseDistance(_ p: CGPoint, _ rect: CGRect, width: CGFloat) -> CGFloat {
         let rx = max(0.5, rect.width / 2), ry = max(0.5, rect.height / 2)
         let r = hypot((p.x - rect.midX) / rx, (p.y - rect.midY) / ry)
-        if filled, r <= 1 { return 0 }
         // Radial approximation: exact on circles and adequate for hit tolerances on ellipses.
         return max(0, abs(r - 1) * min(rx, ry) - width / 2)
     }

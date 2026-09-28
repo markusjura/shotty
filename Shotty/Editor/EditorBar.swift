@@ -15,6 +15,8 @@ enum EditorBar {
     static let edgeInset: CGFloat = 13
     static let buttonSpacing: CGFloat = 6
     static let groupSpacing: CGFloat = 12
+    /// Fits the top bar with its widest tool options (Text) through Done.
+    static let minimumWindowWidth: CGFloat = 900
 
     /// Button fill: white at 20% in Dark Mode, which reads as CleanShot's #656666 on its bar.
     static let buttonFill = Color(nsColor: NSColor(name: nil) { appearance in
@@ -61,6 +63,6 @@ extension ButtonStyle where Self == EditorBarButtonStyle {
     /// Text capsule such as Done.
     static var editorBar: Self { .init() }
     static var editorBarProminent: Self { .init(isProminent: true) }
-    /// Icon-only capsule such as Crop, Copy, and Save.
+    /// Icon-only capsule such as Copy and Save.
     static var editorBarIcon: Self { .init(width: EditorBar.iconButtonWidth) }
 }

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Tool styles are not settings: the editor keeps the last choice for each tool.
+/// Tool styles are not settings: the editor keeps the last tool, color, stroke width, and tool options.
 struct EditorSettingsPane: View {
     @Bindable var preferences: AppPreferences
 

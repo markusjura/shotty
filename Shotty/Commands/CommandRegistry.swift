@@ -29,7 +29,7 @@ enum CommandGroup: CaseIterable, Sendable {
 enum CommandID: String, CaseIterable, Codable, Sendable {
     case captureArea, captureWindow, captureFullscreen, captureScrolling, captureText
     case showThumbnails, hideThumbnails, openLatest, saveAll, dismissAll
-    case toolSelect, toolArrow, toolRectangle, toolEllipse, toolLine, toolText, toolRedact, toolSpotlight, toolCounter, toolCrop
+    case toolSelect, toolRectangle, toolFilledRectangle, toolEllipse, toolLine, toolArrow, toolText, toolRedact, toolSpotlight, toolCounter, toolCrop
     case copyImage, save, saveAs, done, duplicate, zoomIn, zoomOut, zoomToFit, actualSize
 
     var title: String {
@@ -47,6 +47,7 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         case .toolSelect: "Select"
         case .toolArrow: "Arrow"
         case .toolRectangle: "Rectangle"
+        case .toolFilledRectangle: "Filled Rectangle"
         case .toolEllipse: "Ellipse"
         case .toolLine: "Line"
         case .toolText: "Text"
@@ -70,7 +71,7 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         switch self {
         case .captureArea, .captureWindow, .captureFullscreen, .captureScrolling, .captureText: .capture
         case .showThumbnails, .hideThumbnails, .openLatest, .saveAll, .dismissAll: .thumbnails
-        case .toolSelect, .toolArrow, .toolRectangle, .toolEllipse, .toolLine, .toolText, .toolRedact,
+        case .toolSelect, .toolRectangle, .toolFilledRectangle, .toolEllipse, .toolLine, .toolArrow, .toolText, .toolRedact,
              .toolSpotlight, .toolCounter, .toolCrop,
              .copyImage, .save, .saveAs, .done, .duplicate, .zoomIn, .zoomOut, .zoomToFit, .actualSize: .editor
         }
@@ -99,6 +100,7 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         case .toolSelect: .select
         case .toolArrow: .arrow
         case .toolRectangle: .rectangle
+        case .toolFilledRectangle: .filledRectangle
         case .toolEllipse: .ellipse
         case .toolLine: .line
         case .toolText: .text
@@ -123,6 +125,7 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         case .toolSelect: return Shortcut(kVK_ANSI_V)
         case .toolArrow: return Shortcut(kVK_ANSI_A)
         case .toolRectangle: return Shortcut(kVK_ANSI_R)
+        case .toolFilledRectangle: return Shortcut(kVK_ANSI_F)
         case .toolEllipse: return Shortcut(kVK_ANSI_E)
         case .toolLine: return Shortcut(kVK_ANSI_L)
         case .toolText: return Shortcut(kVK_ANSI_T)

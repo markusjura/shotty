@@ -96,7 +96,7 @@ final class DocumentRendererTests: XCTestCase {
                                                            bend: CGPoint(x: 25, y: 4), style: .init(style: arrowStyle))))
         }
         annotations += [
-            Annotation(content: .rectangle(rect: CGRect(x: 5, y: 55, width: 20, height: 20), style: .init(fillColor: .black, cornerRadius: 3))),
+            Annotation(content: .rectangle(rect: CGRect(x: 5, y: 55, width: 20, height: 20), style: .init(fillColor: .black))),
             Annotation(content: .ellipse(rect: CGRect(x: 30, y: 55, width: 20, height: 20), style: .init())),
             Annotation(content: .line(start: CGPoint(x: 55, y: 55), end: CGPoint(x: 75, y: 75), style: .init()))
         ]

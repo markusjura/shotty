@@ -39,3 +39,8 @@ Package and install only when I ask. Bump `CURRENT_PROJECT_VERSION` first, commi
 - Use Computer Use for exploratory checks, judging how something looks, or apps the tool can't drive. For repeatable checks, the tool is faster and cheaper.
 
 Clean up after testing. Dismiss test thumbnails with `menu View "Dismiss All"`, move test captures in `~/Desktop` and `~/Downloads` to the Trash, and clear the clipboard.
+
+## AppKit pitfalls
+
+- On macOS 27, `NSMenu` hides item images unless the item sets `preferredImageVisibility = .visible`. An image-only item without it shows as an empty row.
+- The editor's `NSHostingView` sets the window's minimum size from the SwiftUI content and overrides `window.minSize`. Constrain the root view with `.frame(minWidth:)` instead.

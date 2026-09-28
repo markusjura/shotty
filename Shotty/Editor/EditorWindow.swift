@@ -19,7 +19,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         window.toolbar = NSToolbar(identifier: "editor")
         window.toolbarStyle = .unified
         window.titlebarSeparatorStyle = .none
-        window.minSize = NSSize(width: 720, height: 400)
         window.isReleasedWhenClosed = false
         super.init(window: window)
         window.delegate = self
@@ -38,7 +37,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         let chrome = CGSize(width: 2 * EditorCanvas.margin, height: 2 * EditorCanvas.margin + 2 * EditorBar.height + 2)
         let image = CGSize(width: CGFloat(record.pixelWidth) / scale, height: CGFloat(record.pixelHeight) / scale)
         let zoom = min(1, (visible.width - chrome.width) / image.width, (visible.height - chrome.height) / image.height)
-        return CGRect(x: 0, y: 0, width: max(image.width * zoom + chrome.width, 720),
+        return CGRect(x: 0, y: 0, width: max(image.width * zoom + chrome.width, EditorBar.minimumWindowWidth),
                       height: max(image.height * zoom + chrome.height, 400))
     }
 
@@ -74,7 +73,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
             }
         }
     }
-    func windowWillClose(_ notification: Notification) { didClose?() }
+    func windowWillClose(_ notification: Notification) {
+        EditorColorPanel.shared.finish()
+        didClose?()
+    }
     func windowDidBecomeKey(_ notification: Notification) { model.commands.contextDidChange() }
     func windowDidResignKey(_ notification: Notification) {
         model.commands.contextDidChange()
@@ -90,9 +92,13 @@ final class EditorWindowModel {
     let canvas: EditorCanvas
     let coordinator: AppCoordinator
     let commands: CommandRegistry
-    var tool: EditorTool = .select {
+    /// Starts as the last drawing tool, which every later drawing tool choice updates.
+    var tool: EditorTool {
         willSet { if newValue != tool { styleGesture(false) } }
-        didSet { canvas.tool = tool }
+        didSet {
+            canvas.tool = tool
+            if tool.isDrawing { coordinator.preferences.editor.tool = tool }
+        }
     }
     var selectionVersion = 0
     var zoomLabel = "100%"
@@ -108,6 +114,8 @@ final class EditorWindowModel {
         let document = EditorDocument(record: record, store: coordinator.store)
         self.document = document
         canvas = EditorCanvas(document: document, source: image, preferences: coordinator.preferences, commands: commands)
+        tool = coordinator.preferences.editor.tool
+        canvas.tool = tool
         document.onChange = { [weak self] in
             self?.canvas.documentChanged(); self?.selectionVersion += 1
         }
@@ -126,20 +134,10 @@ final class EditorWindowModel {
         return (styleDraft ?? document.state).annotations.filter { canvas.selected.contains($0.id) }
     }
     var styleTool: EditorTool { selectedAnnotations.first?.tool ?? tool }
+    /// New-object defaults, overlaid with the first selected object's style.
     var defaults: EditorToolDefaults {
-        var values = defaultsDraft ?? coordinator.preferences.editor.tools
-        guard let annotation = selectedAnnotations.first else { return values }
-        switch annotation.content {
-        case .arrow(_, _, _, let s): values.arrow = s
-        case .rectangle(_, let s): values.rectangle = s
-        case .ellipse(_, let s): values.ellipse = s
-        case .line(_, _, let s): values.line = s
-        case .text(_, _, let s): values.text = s
-        case .redact(_, let s): values.redact = s
-        case .spotlight(_, let s): values.spotlight = s
-        case .counter(_, _, let s): values.counter = s
-        }
-        return values
+        let values = defaultsDraft ?? coordinator.preferences.editor.tools
+        return selectedAnnotations.first.map { self.values(for: $0, base: values) } ?? values
     }
 
     func hasMixedValues<Value: Equatable>(_ key: KeyPath<EditorToolDefaults, Value>) -> Bool {
@@ -153,7 +151,7 @@ final class EditorWindowModel {
         var values = base
         switch annotation.content {
         case .arrow(_, _, _, let style): values.arrow = style
-        case .rectangle(_, let style): values.rectangle = style
+        case .rectangle(_, let style): values.rectangle = style  // Also sets the filled style's color.
         case .ellipse(_, let style): values.ellipse = style
         case .line(_, _, let style): values.line = style
         case .text(_, _, let style): values.text = style
@@ -187,7 +185,9 @@ final class EditorWindowModel {
             case .arrow(let a, let b, let bend, _):
                 let control = values.arrow.style == .curved ? (bend ?? EditorGeometry.defaultBend(start: a, end: b)) : nil
                 state.annotations[i].content = .arrow(start: a, end: b, bend: control, style: values.arrow)
-            case .rectangle(let rect, _): state.annotations[i].content = .rectangle(rect: rect, style: values.rectangle)
+            case .rectangle(let rect, _):
+                let style = annotation.tool == .filledRectangle ? values.filledRectangle : values.rectangle
+                state.annotations[i].content = .rectangle(rect: rect, style: style)
             case .ellipse(let rect, _): state.annotations[i].content = .ellipse(rect: rect, style: values.ellipse)
             case .line(let a, let b, _): state.annotations[i].content = .line(start: a, end: b, style: values.line)
             case .text(let rect, let text, _): state.annotations[i].content = .text(rect: rect, text: text, style: values.text)
@@ -213,30 +213,6 @@ final class EditorWindowModel {
     }
     func binding<Value>(_ keyPath: WritableKeyPath<EditorToolDefaults, Value>) -> Binding<Value> {
         Binding(get: { self.defaults[keyPath: keyPath] }, set: { value in self.updateStyles { $0[keyPath: keyPath] = value } })
-    }
-    func colorBinding(_ keyPath: WritableKeyPath<EditorToolDefaults, RGBAColor>) -> Binding<Color> {
-        Binding(get: { Color(cgColor: self.defaults[keyPath: keyPath].cgColor) }, set: { color in
-            guard let value = RGBAColor(NSColor(color).cgColor) else { return }
-            self.setColor(value, keyPath)
-        })
-    }
-    /// A filled shape keeps its fill in step with its outline color.
-    func setColor(_ color: RGBAColor, _ keyPath: WritableKeyPath<EditorToolDefaults, RGBAColor>) {
-        updateStyles { values in
-            values[keyPath: keyPath] = color
-            if keyPath == \.rectangle.strokeColor, values.rectangle.fillColor != nil { values.rectangle.fillColor = color }
-            if keyPath == \.ellipse.strokeColor, values.ellipse.fillColor != nil { values.ellipse.fillColor = color }
-        }
-    }
-    /// Fills each shape with its own outline color, or removes the fill.
-    func setFilled(_ filled: Bool, for tool: EditorTool) {
-        updateStyles { values in
-            switch tool {
-            case .rectangle: values.rectangle.fillColor = filled ? values.rectangle.strokeColor : nil
-            case .ellipse: values.ellipse.fillColor = filled ? values.ellipse.strokeColor : nil
-            default: break
-            }
-        }
     }
     /// `value` is image pixels per display backing pixel (1 = actual pixels); nil fits the window.
     func setZoom(_ value: CGFloat?) {
@@ -368,6 +344,8 @@ private struct EditorWindowView: View {
             .frame(height: EditorBar.height)
             .background(EditorBarBackground())
         }
+        // The hosting view sets the window's minimum size from this, so the top bar never clips Done.
+        .frame(minWidth: EditorBar.minimumWindowWidth, minHeight: 400)
     }
 
     @ViewBuilder private var cropBar: some View {
@@ -510,10 +488,11 @@ private struct ToolIcon: View {
     private var symbol: String {
         switch tool {
         case .select: "cursorarrow"
-        case .arrow: "arrow.up.right"
         case .rectangle: "rectangle"
+        case .filledRectangle: "rectangle.fill"
         case .ellipse: "circle"
         case .line: "line.diagonal"
+        case .arrow: "arrow.up.right"
         case .text: "textformat"
         case .redact: "checkerboard.rectangle"
         case .spotlight: "rectangle.center.inset.filled"

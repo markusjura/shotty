@@ -66,7 +66,9 @@ struct Annotation: Codable, Identifiable, Equatable, Sendable {
         case .arrow(let start, let end, let bend, let style):
             guard start.isFinitePoint, end.isFinitePoint, bend?.isFinitePoint ?? true else { return false }
             defaults.arrow = style
-        case .rectangle(_, let style): defaults.rectangle = style
+        case .rectangle(_, let style):
+            guard style.strokeColor.isValid, style.fillColor?.isValid ?? true else { return false }
+            defaults.rectangle = style
         case .ellipse(_, let style): defaults.ellipse = style
         case .line(let start, let end, let style):
             guard start.isFinitePoint, end.isFinitePoint else { return false }
@@ -95,7 +97,7 @@ enum AnnotationContent: Codable, Equatable, Sendable {
     var tool: EditorTool {
         switch self {
         case .arrow: .arrow
-        case .rectangle: .rectangle
+        case .rectangle(_, let style): style.fillColor == nil ? .rectangle : .filledRectangle
         case .ellipse: .ellipse
         case .line: .line
         case .text: .text

@@ -2,213 +2,251 @@ import AppKit
 import SwiftUI
 
 /// CleanShot-style option buttons for the current tool or selection. Each shows its value with a
-/// chevron and opens a compact picker. A choice applies to the selected objects and becomes the
-/// default for new ones, so the editor always opens with the last configuration.
+/// chevron and opens a native menu below it. A choice applies to the selected objects and becomes
+/// the default for new ones. Color and stroke width are shared by all tools.
 struct EditorOptions: View {
     @Bindable var model: EditorWindowModel
 
     var body: some View {
         HStack(spacing: EditorBar.buttonSpacing) {
             switch model.styleTool {
+            case .rectangle, .ellipse, .line:
+                color(\.color)
+                thickness()
+            case .filledRectangle:
+                color(\.color)
             case .arrow:
-                color(\.arrow.color)
-                thickness(\.arrow.width)
-                choice("Arrow style", \.arrow.style, samples: EditorStyleSamples.arrows)
-            case .rectangle:
-                color(\.rectangle.strokeColor)
-                thickness(\.rectangle.width)
-                fill(\.rectangle.fillColor, corners: true)
-            case .ellipse:
-                color(\.ellipse.strokeColor)
-                thickness(\.ellipse.width)
-                fill(\.ellipse.fillColor, corners: false)
-            case .line:
-                color(\.line.color)
-                thickness(\.line.width)
+                color(\.color)
+                thickness()
+                choice("Arrow style", \.arrowStyle, samples: EditorStyleSamples.arrows, tinted: true)
             case .text:
-                color(\.text.color)
-                size("Text size", \.text.size, presets: [14, 18, 24, 32, 48, 64], symbol: "textformat.size")
-                TextStyleOption(model: model)
+                color(\.color)
+                size("Text size", \.textSize, presets: [14, 18, 24, 32, 48, 64]) { size in
+                    OptionMenu.textSample(pointSize: 7 + size / 4)
+                } label: { Text("\(Int($0)) px").font(.system(size: 13, weight: .medium)).monospacedDigit() }
+                textStyle()
             case .redact:
-                choice("Redaction style", \.redact.style, samples: EditorStyleSamples.redaction)
+                choice("Redaction style", \.redact.style, samples: EditorStyleSamples.redaction, tinted: false)
                 if model.defaults.redact.style == .solid { color(\.redact.solidColor) }
             case .spotlight:
-                choice("Spotlight shape", \.spotlight.shape, samples: EditorStyleSamples.spotlightShapes)
-                size("Dimming", \.spotlight.dimPercent, presets: [25, 45, 65, 80], unit: "%", symbol: "circle.lefthalf.filled")
+                choice("Spotlight shape", \.spotlight.shape, samples: EditorStyleSamples.spotlightShapes, tinted: false)
+                size("Dimming", \.spotlight.dimPercent, presets: [25, 45, 65, 80], unit: "%") { _ in nil } label: { _ in
+                    Image(systemName: "circle.lefthalf.filled")
+                }
             case .counter:
-                color(\.counter.color)
-                size("Counter size", \.counter.size, presets: [20, 28, 36, 48, 64], symbol: "textformat.size")
-                CounterOption(model: model)
+                color(\.color)
+                size("Counter size", \.counterSize, presets: [20, 28, 36, 48, 64]) { size in
+                    OptionMenu.dotSample(diameter: 6 + size / 4)
+                } label: { _ in Image(systemName: "textformat.size") }
+                numbering()
             case .select, .crop:
                 EmptyView()
             }
         }
     }
 
+    /// CleanShot's palette as a column of swatches, with the color panel for anything else.
     private func color(_ key: WritableKeyPath<EditorToolDefaults, RGBAColor>) -> some View {
         let mixed = model.hasMixedValues(key)
         let current = model.defaults[keyPath: key]
         return OptionButton(mixed ? "Color (mixed)" : "Color") {
             ColorDot(color: mixed ? nil : current)
-        } content: { close in
-            ColorPalette(selection: mixed ? nil : current, custom: model.colorBinding(key), model: model) {
-                model.setColor($0, key); close()
+        } menu: {
+            let menu = OptionMenu.make(showsState: false)
+            let isPreset = RGBAColor.annotationPalette.contains { $0.color == current }
+            for swatch in RGBAColor.annotationPalette {
+                let selected = !mixed && swatch.color == current
+                menu.addItem(OptionMenu.item(swatch.name, image: OptionMenu.swatch(swatch.color, selected: selected), hidesTitle: true) {
+                    model.binding(key).wrappedValue = swatch.color
+                })
             }
+            menu.addItem(.separator())
+            menu.addItem(OptionMenu.item("Custom Color…", image: OptionMenu.swatch(nil, selected: !mixed && !isPreset), hidesTitle: true) {
+                EditorColorPanel.shared.show(current, begin: { model.styleGesture(true) },
+                                             change: { model.binding(key).wrappedValue = $0 }, end: { model.styleGesture(false) })
+            })
+            return menu
         }
     }
 
-    private func thickness(_ key: WritableKeyPath<EditorToolDefaults, Double>) -> some View {
-        let current = model.defaults[keyPath: key]
-        let selection = model.hasMixedValues(key) ? nil : current
+    /// CleanShot's six stroke widths, drawn as strokes of increasing weight.
+    private func thickness() -> some View {
+        let current = model.defaults.width
+        let selection = model.hasMixedValues(\.width) ? nil : current
         return OptionButton("Thickness") {
             ThicknessGlyph(width: current)
-        } content: { close in
-            ChoiceList(values: EditorToolDefaults.widthPresets, selection: selection, choose: {
-                model.binding(key).wrappedValue = $0; close()
-            }) { width in
-                Capsule().frame(width: 44, height: max(1, width / 2))
-                Text("\(Int(width)) px").monospacedDigit()
+        } menu: {
+            let menu = OptionMenu.make(showsState: false)
+            for (index, width) in EditorToolDefaults.widthPresets.enumerated() {
+                menu.addItem(OptionMenu.item("\(Int(width)) px", image: OptionMenu.stroke(index: index, selected: width == selection),
+                                             hidesTitle: true) {
+                    model.binding(\.width).wrappedValue = width
+                })
             }
+            return menu
         }
     }
 
-    private func size(_ title: String, _ key: WritableKeyPath<EditorToolDefaults, Double>, presets: [Double],
-                      unit: String = " px", symbol: String) -> some View {
-        let selection = model.hasMixedValues(key) ? nil : model.defaults[keyPath: key]
-        return OptionButton(title) {
-            Image(systemName: symbol)
-        } content: { close in
-            ChoiceList(values: presets, selection: selection, choose: { model.binding(key).wrappedValue = $0; close() }) {
-                Text("\(Int($0))\(unit)").monospacedDigit()
-            }
-        }
-    }
-
-    private func choice<Value: StyleChoice>(_ title: String, _ key: WritableKeyPath<EditorToolDefaults, Value>,
-                                            samples: [Value: NSImage]) -> some View {
+    /// Numeric presets. Rows with a sample dim unselected values; rows without one use a checkmark.
+    private func size<Label: View>(_ title: String, _ key: WritableKeyPath<EditorToolDefaults, Double>, presets: [Double],
+                                   unit: String = " px", sample: @escaping (Double) -> NSImage?,
+                                   @ViewBuilder label: (Double) -> Label) -> some View {
         let current = model.defaults[keyPath: key]
+        let selection = model.hasMixedValues(key) ? nil : current
+        return OptionButton(title) {
+            label(current)
+        } menu: {
+            let menu = OptionMenu.make(showsState: sample(presets[0]) == nil)
+            for value in presets {
+                let image = sample(value).map { OptionMenu.dimmed($0, selected: value == selection) }
+                menu.addItem(OptionMenu.item("\(Int(value))\(unit)", image: image, isOn: image == nil && value == selection) {
+                    model.binding(key).wrappedValue = value
+                })
+            }
+            return menu
+        }
+    }
+
+    /// Style enums with rendered samples. `tinted` samples take the menu's text color, as CleanShot's arrows do.
+    private func choice<Value: StyleChoice>(_ title: String, _ key: WritableKeyPath<EditorToolDefaults, Value>,
+                                            samples: [Value: NSImage], tinted: Bool) -> some View {
+        let current = model.defaults[keyPath: key]
+        let selection = model.hasMixedValues(key) ? nil : current
         return OptionButton(title) {
             Image(systemName: current.symbol)
-        } content: { close in
-            ChoiceList(values: Value.allCases, selection: model.hasMixedValues(key) ? nil : current,
-                       choose: { model.binding(key).wrappedValue = $0; close() }) { value in
-                if let sample = samples[value] { Image(nsImage: sample).accessibilityHidden(true) }
-                Text(value.title)
+        } menu: {
+            let menu = OptionMenu.make(showsState: false)
+            for value in Value.allCases {
+                let image = samples[value].map { OptionMenu.dimmed($0, selected: value == selection, template: tinted) }
+                menu.addItem(OptionMenu.item(value.title, image: image) { model.binding(key).wrappedValue = value })
             }
+            return menu
         }
     }
 
-    /// Outline or filled, plus rounded corners for rectangles. The fill follows the outline color.
-    private func fill(_ key: WritableKeyPath<EditorToolDefaults, RGBAColor?>, corners: Bool) -> some View {
-        let tool = model.styleTool
-        let filled = model.defaults[keyPath: key] != nil
-        let rounded = model.defaults.rectangle.cornerRadius > 0
-        let shape = tool == .ellipse ? "circle" : rounded ? "app" : "square"
-        return OptionButton("Shape style") {
-            Image(systemName: filled ? "\(shape).fill" : shape)
-        } content: { close in
-            VStack(alignment: .leading, spacing: 0) {
-                ChoiceList(values: [false, true], selection: model.hasMixedValues(key) ? nil : filled,
-                           choose: { model.setFilled($0, for: tool); close() }) { isFilled in
-                    Image(systemName: isFilled ? "\(shape).fill" : shape).frame(width: 18)
-                    Text(isFilled ? "Filled" : "Outline")
-                }
-                if corners {
-                    Divider().padding(.horizontal, 8)
-                    Toggle("Rounded corners", isOn: Binding(get: { rounded }, set: {
-                        model.binding(\.rectangle.cornerRadius).wrappedValue = $0 ? EditorToolDefaults.roundedCornerRadius : 0
-                    }))
-                    .toggleStyle(.checkbox).padding(.horizontal, 13).padding(.vertical, 8)
-                }
-            }
-        }
-    }
-}
-
-private struct TextStyleOption: View {
-    @Bindable var model: EditorWindowModel
-
-    var body: some View {
-        OptionButton("Text style") {
+    private func textStyle() -> some View {
+        let text = model.defaults.text
+        return OptionButton("Text style") {
             Image(systemName: "textformat")
-        } content: { _ in
-            VStack(alignment: .leading, spacing: 8) {
-                ChoiceList(values: TextTreatment.allCases, selection: model.defaults.text.treatment,
-                           choose: { model.binding(\.text.treatment).wrappedValue = $0 }) { treatment in
-                    if let sample = EditorStyleSamples.textTreatments[treatment] { Image(nsImage: sample).accessibilityHidden(true) }
-                    Text(treatment.title)
+        } menu: {
+            let menu = OptionMenu.make(showsState: true)
+            for treatment in TextTreatment.allCases {
+                let image = EditorStyleSamples.textTreatments[treatment].map {
+                    OptionMenu.dimmed($0, selected: treatment == text.treatment, template: false)
                 }
-                Divider()
-                Group {
-                    Picker("Font", selection: model.binding(\.text.design)) {
-                        Text("System").tag(TextDesign.system)
-                        Text("Monospaced").tag(TextDesign.monospaced)
-                    }
-                    Picker("Weight", selection: model.binding(\.text.weight)) {
-                        Text("Regular").tag(TextWeight.regular)
-                        Text("Semibold").tag(TextWeight.semibold)
-                        Text("Bold").tag(TextWeight.bold)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 10)
+                menu.addItem(OptionMenu.item(treatment.title, image: image) { model.binding(\.textTreatment).wrappedValue = treatment })
             }
-            .padding(.bottom, 10)
-            .frame(width: 280)
+            menu.addItem(.separator())
+            menu.addItem(.sectionHeader(title: "Font"))
+            for (design, title) in [(TextDesign.system, "System"), (.monospaced, "Monospaced")] {
+                menu.addItem(OptionMenu.item(title, isOn: design == text.design) { model.binding(\.textDesign).wrappedValue = design })
+            }
+            menu.addItem(.separator())
+            menu.addItem(.sectionHeader(title: "Weight"))
+            for (weight, title) in [(TextWeight.regular, "Regular"), (.semibold, "Semibold"), (.bold, "Bold")] {
+                menu.addItem(OptionMenu.item(title, isOn: weight == text.weight) { model.binding(\.textWeight).wrappedValue = weight })
+            }
+            return menu
         }
     }
-}
 
-private struct CounterOption: View {
-    @Bindable var model: EditorWindowModel
-
-    var body: some View {
+    private func numbering() -> some View {
         OptionButton("Numbering") {
             Image(systemName: "number")
-        } content: { _ in
-            VStack(alignment: .leading, spacing: 10) {
-                // Canvas state is AppKit-owned; its callback invalidates this view.
-                let _ = model.selectionVersion
-                Stepper(value: Binding(get: { model.canvas.nextCounter },
-                                       set: { model.canvas.nextCounter = max(1, $0); model.selectionVersion += 1 }), in: 1...999) {
-                    Text("Next number: \(model.canvas.nextCounter)").monospacedDigit()
-                }
-                Button("Renumber in Order") { model.canvas.renumber() }
-            }
-            .padding(12)
+        } menu: {
+            let menu = OptionMenu.make(showsState: false)
+            let row = NSMenuItem()
+            row.view = NextCounterView(model: model)
+            menu.addItem(row)
+            menu.addItem(.separator())
+            menu.addItem(OptionMenu.item("Renumber in Order") { model.canvas.renumber() })
+            return menu
         }
     }
 }
 
-/// A toolbar button that shows the current value with a chevron and opens `content` in a popover.
-/// `content` receives an action that closes the popover.
-private struct OptionButton<Icon: View, Content: View>: View {
+/// "Next number" with a stepper, hosted in the numbering menu like CleanShot's starting number.
+private final class NextCounterView: NSView {
+    private let model: EditorWindowModel
+    private let label = NSTextField(labelWithString: "")
+    private let stepper = NSStepper()
+
+    init(model: EditorWindowModel) {
+        self.model = model
+        super.init(frame: NSRect(x: 0, y: 0, width: 190, height: 30))
+        stepper.minValue = 1; stepper.maxValue = 999; stepper.increment = 1
+        stepper.integerValue = model.canvas.nextCounter
+        stepper.target = self; stepper.action = #selector(step)
+        stepper.setAccessibilityLabel("Next number")
+        label.font = .menuFont(ofSize: 0)
+        label.stringValue = "Next number: \(model.canvas.nextCounter)"
+        let stack = NSStackView(views: [label, stepper])
+        stack.frame = bounds.insetBy(dx: 14, dy: 0)
+        stack.autoresizingMask = [.width, .height]
+        stack.distribution = .equalSpacing
+        addSubview(stack)
+    }
+    required init?(coder: NSCoder) { nil }
+
+    @objc private func step() {
+        model.canvas.nextCounter = stepper.integerValue
+        label.stringValue = "Next number: \(stepper.integerValue)"
+        model.selectionVersion += 1  // Canvas state is AppKit-owned; this invalidates the options.
+    }
+}
+
+/// A 26 pt capsule that shows the current value with a chevron and opens `menu` below itself.
+private struct OptionButton<Icon: View>: View {
     let title: String
     let icon: Icon
-    let content: (_ close: @escaping () -> Void) -> Content
-    @State private var isPresented = false
+    let menu: () -> NSMenu
+    @State private var anchor = MenuAnchor.Reference()
+    @State private var isOpen = false
 
-    init(_ title: String, @ViewBuilder icon: () -> Icon, @ViewBuilder content: @escaping (_ close: @escaping () -> Void) -> Content) {
+    init(_ title: String, @ViewBuilder icon: () -> Icon, menu: @escaping () -> NSMenu) {
         self.title = title
         self.icon = icon()
-        self.content = content
+        self.menu = menu
     }
 
     var body: some View {
-        Button { isPresented.toggle() } label: {
+        Button {
+            guard let view = anchor.view else { return }
+            isOpen = true
+            // Let the open state draw before the menu starts tracking.
+            DispatchQueue.main.async {
+                // Left-aligned below the button, clear of its shadow, like a pull-down menu.
+                menu().popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.maxY + 5), in: view)
+                isOpen = false
+            }
+        } label: {
             HStack(spacing: 3) {
-                icon.frame(width: 18, height: 18)
+                icon.frame(minHeight: 18).fixedSize()
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 9)
             .frame(height: EditorBar.buttonHeight)
             .contentShape(Capsule())
         }
-        .buttonStyle(OptionButtonStyle(isOpen: isPresented))
+        .buttonStyle(OptionButtonStyle(isOpen: isOpen))
+        .background(MenuAnchor(reference: anchor))
         .help(title)
         .accessibilityLabel(title)
-        .popover(isPresented: $isPresented, arrowEdge: .bottom) { content { isPresented = false } }
     }
+}
+
+/// Exposes the button's view so the menu can open relative to it.
+private struct MenuAnchor: NSViewRepresentable {
+    @MainActor final class Reference { weak var view: NSView? }
+    private final class FlippedView: NSView { override var isFlipped: Bool { true } }
+
+    let reference: Reference
+    func makeNSView(context: Context) -> NSView {
+        let view = FlippedView()
+        reference.view = view
+        return view
+    }
+    func updateNSView(_ view: NSView, context: Context) { reference.view = view }
 }
 
 /// A tinted capsule like CleanShot's toolbar options, darker while pressed or open.
@@ -216,100 +254,131 @@ private struct OptionButtonStyle: ButtonStyle {
     let isOpen: Bool
 
     func makeBody(configuration: Configuration) -> some View {
-        StyledLabel(configuration: configuration, isOpen: isOpen)
-    }
-
-    private struct StyledLabel: View {
-        let configuration: Configuration
-        let isOpen: Bool
-        var body: some View {
-            configuration.label
-                .background(EditorBar.buttonFill, in: Capsule())
-                .overlay(Capsule().fill(Color.black.opacity(configuration.isPressed || isOpen ? 0.15 : 0)))
-        }
+        configuration.label
+            .background(EditorBar.buttonFill, in: Capsule())
+            .overlay(Capsule().fill(Color.black.opacity(configuration.isPressed || isOpen ? 0.15 : 0)))
     }
 }
 
-/// A menu-like list: the hovered row is highlighted and the current value has a checkmark.
-private struct ChoiceList<Value: Hashable, Label: View>: View {
-    let values: [Value]
-    let selection: Value?
-    let choose: (Value) -> Void
-    @ViewBuilder let label: (Value) -> Label
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(values, id: \.self) { value in
-                ChoiceRow(isSelected: value == selection, action: { choose(value) }) { label(value) }
-            }
-        }
-        .padding(5)
+/// Builds the option menus. Rows with images show the selected value at full strength and the rest
+/// dimmed, as CleanShot does; plain rows use checkmarks.
+@MainActor
+private enum OptionMenu {
+    static func make(showsState: Bool) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        menu.showsStateColumn = showsState
+        return menu
     }
-}
 
-private struct ChoiceRow<Label: View>: View {
-    let isSelected: Bool
-    let action: () -> Void
-    @ViewBuilder let label: () -> Label
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).opacity(isSelected ? 1 : 0)
-                label()
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 8)
-            .frame(minHeight: 26)
-            .foregroundStyle(isHovered ? Color.white : .primary)
-            .background(isHovered ? Color.accentColor : .clear, in: RoundedRectangle(cornerRadius: 5))
-            .contentShape(Rectangle())
+    /// `hidesTitle` keeps the title for accessibility while the row shows only its image.
+    static func item(_ title: String, image: NSImage? = nil, isOn: Bool = false, hidesTitle: Bool = false,
+                     action: @escaping () -> Void) -> NSMenuItem {
+        let item = ActionItem(title: hidesTitle ? "" : title, action: action)
+        item.image = image
+        // macOS 27 hides menu item images unless an item opts in.
+        if #available(macOS 27, *), image != nil { item.preferredImageVisibility = .visible }
+        item.state = isOn ? .on : .off
+        if hidesTitle {
+            item.setAccessibilityLabel(title)
+            item.toolTip = title
         }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        return item
     }
-}
 
-/// Preset swatches, plus a well for any other color.
-private struct ColorPalette: View {
-    let selection: RGBAColor?
-    @Binding var custom: Color
-    let model: EditorWindowModel
-    let choose: (RGBAColor) -> Void
+    /// Unselected samples draw at reduced opacity. Template samples take the menu's text color.
+    static func dimmed(_ image: NSImage, selected: Bool, template: Bool = true) -> NSImage {
+        let result = NSImage(size: image.size, flipped: false) { rect in
+            image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: selected ? 1 : 0.4)
+            return true
+        }
+        result.isTemplate = template
+        return result
+    }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(24), spacing: 6), count: 5), spacing: 6) {
-                ForEach(RGBAColor.palette, id: \.name) { swatch in
-                    Button { choose(swatch.color) } label: {
-                        ColorDot(color: swatch.color, diameter: 20)
-                            .padding(2)
-                            .overlay(Circle().strokeBorder(Color.accentColor, lineWidth: 2).opacity(swatch.color == selection ? 1 : 0))
-                    }
-                    .buttonStyle(.plain)
-                    .help(swatch.name)
-                    .accessibilityLabel(swatch.name)
-                    .accessibilityAddTraits(swatch.color == selection ? .isSelected : [])
+    /// A 24 pt swatch in a 30 pt cell; nil draws the color wheel. The selected one gets a ring.
+    static func swatch(_ color: RGBAColor?, selected: Bool) -> NSImage {
+        NSImage(size: NSSize(width: 30, height: 30), flipped: false) { rect in
+            let dot = rect.insetBy(dx: 3, dy: 3)
+            if let color {
+                NSColor(cgColor: color.cgColor)?.setFill()
+                NSBezierPath(ovalIn: dot).fill()
+                NSColor.labelColor.withAlphaComponent(0.2).setStroke()
+                NSBezierPath(ovalIn: dot.insetBy(dx: 0.25, dy: 0.25)).stroke()
+            } else {
+                let steps = 48
+                for step in 0..<steps {
+                    let wedge = NSBezierPath()
+                    wedge.move(to: NSPoint(x: dot.midX, y: dot.midY))
+                    wedge.appendArc(withCenter: NSPoint(x: dot.midX, y: dot.midY), radius: dot.width / 2,
+                                    startAngle: CGFloat(step) * 360 / CGFloat(steps), endAngle: CGFloat(step + 1) * 360 / CGFloat(steps) + 0.5)
+                    NSColor(hue: CGFloat(step) / CGFloat(steps), saturation: 0.75, brightness: 1, alpha: 1).setFill()
+                    wedge.fill()
                 }
+                let center = NSGradient(colors: [.white, NSColor.white.withAlphaComponent(0)])
+                center?.draw(in: NSBezierPath(ovalIn: dot), relativeCenterPosition: .zero)
             }
-            Divider()
-            HStack {
-                Text("Custom")
-                Spacer()
-                EditorColorWell(color: $custom, model: model, label: "Custom color").frame(width: 28, height: 20)
+            if selected {
+                let ring = NSBezierPath(ovalIn: rect.insetBy(dx: 0.75, dy: 0.75))
+                ring.lineWidth = 1.5
+                NSColor.labelColor.withAlphaComponent(0.45).setStroke()
+                ring.stroke()
             }
+            return true
         }
-        .padding(12)
-        .frame(width: 164)
+    }
+
+    /// A diagonal stroke for the `index`th width preset. Menu strokes grow more gently than the presets.
+    static func stroke(index: Int, selected: Bool) -> NSImage {
+        let weights: [CGFloat] = [1.5, 2, 3, 4, 5, 6.5]
+        let image = NSImage(size: NSSize(width: 32, height: 28), flipped: false) { rect in
+            let path = NSBezierPath()
+            path.move(to: NSPoint(x: rect.midX - 7, y: rect.midY - 7))
+            path.line(to: NSPoint(x: rect.midX + 7, y: rect.midY + 7))
+            path.lineWidth = weights[min(index, weights.count - 1)]
+            path.lineCapStyle = .round
+            NSColor.black.setStroke()
+            path.stroke()
+            return true
+        }
+        return dimmed(image, selected: selected)
+    }
+
+    /// "Aa" at a size that follows the text size preset, like CleanShot's font size menu.
+    static func textSample(pointSize: CGFloat) -> NSImage {
+        let text = NSAttributedString(string: "Aa", attributes: [.font: NSFont.systemFont(ofSize: pointSize, weight: .medium)])
+        let size = text.size()
+        return NSImage(size: NSSize(width: 34, height: max(18, ceil(size.height))), flipped: false) { rect in
+            text.draw(at: NSPoint(x: 0, y: (rect.height - size.height) / 2))
+            return true
+        }
+    }
+
+    /// A filled circle that grows with the counter size.
+    static func dotSample(diameter: CGFloat) -> NSImage {
+        NSImage(size: NSSize(width: 26, height: max(18, diameter)), flipped: false) { rect in
+            NSBezierPath(ovalIn: NSRect(x: (rect.width - diameter) / 2, y: (rect.height - diameter) / 2, width: diameter, height: diameter)).fill()
+            return true
+        }
+    }
+
+    private final class ActionItem: NSMenuItem {
+        private let handler: () -> Void
+
+        init(title: String, action: @escaping () -> Void) {
+            handler = action
+            super.init(title: title, action: #selector(run), keyEquivalent: "")
+            target = self
+        }
+        required init(coder: NSCoder) { fatalError("Not used from nibs") }
+
+        @objc private func run() { handler() }
     }
 }
 
 /// A color swatch; nil draws a multicolor swatch for mixed selections.
 private struct ColorDot: View {
     let color: RGBAColor?
-    var diameter: CGFloat = 16
 
     var body: some View {
         Group {
@@ -320,7 +389,7 @@ private struct ColorDot: View {
             }
         }
         .overlay(Circle().strokeBorder(.primary.opacity(0.2)))
-        .frame(width: diameter, height: diameter)
+        .frame(width: 16, height: 16)
     }
 }
 
@@ -333,12 +402,13 @@ private struct ThicknessGlyph: View {
             var path = Path()
             path.move(to: CGPoint(x: 3, y: size.height - 3))
             path.addLine(to: CGPoint(x: size.width - 3, y: 3))
-            context.stroke(path, with: .foreground, style: StrokeStyle(lineWidth: min(5, max(1, width / 3)), lineCap: .round))
+            context.stroke(path, with: .foreground, style: StrokeStyle(lineWidth: min(5, max(1.5, width / 8)), lineCap: .round))
         }
+        .frame(width: 18, height: 18)
     }
 }
 
-/// Style enums offered as a choice list with rendered samples.
+/// Style enums offered as a menu with rendered samples.
 private protocol StyleChoice: Hashable, CaseIterable where AllCases == [Self] {
     var title: String { get }
     /// Shown on the toolbar button for the current value.
@@ -376,15 +446,4 @@ private extension TextTreatment {
     var title: String {
         switch self { case .plain: "Plain"; case .outlined: "Outlined"; case .label: "Filled label" }
     }
-}
-
-private extension RGBAColor {
-    /// CleanShot-like presets; the first is the default annotation color.
-    static let palette: [(name: String, color: RGBAColor)] = [
-        ("Red", .annotationRed), ("Orange", RGBAColor(red: 1, green: 0.584, blue: 0)),
-        ("Yellow", RGBAColor(red: 1, green: 0.8, blue: 0)), ("Green", RGBAColor(red: 0.204, green: 0.78, blue: 0.349)),
-        ("Teal", RGBAColor(red: 0.188, green: 0.69, blue: 0.78)), ("Blue", RGBAColor(red: 0, green: 0.478, blue: 1)),
-        ("Purple", RGBAColor(red: 0.686, green: 0.322, blue: 0.871)), ("Pink", RGBAColor(red: 1, green: 0.176, blue: 0.333)),
-        ("White", .white), ("Black", .black),
-    ]
 }
