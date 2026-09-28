@@ -232,16 +232,11 @@ final class DocumentRenderer {
         return font as CTFont
     }
 
-    private static func drawText(_ text: String, rect: CGRect, style: EditorToolDefaults.Text, context: CGContext) {
-        guard !text.isEmpty, rect.width > 0, rect.height > 0 else { return }
-        context.saveGState()
-        defer { context.restoreGState() }
-        let padding = style.treatment == .label ? max(4, style.size * 0.2) : 0
-        if style.treatment == .label {
-            context.setFillColor(style.color.cgColor)
-            context.addPath(CGPath(roundedRect: rect, cornerWidth: padding, cornerHeight: padding, transform: nil))
-            context.fillPath()
-        }
+    private static func textPadding(_ style: EditorToolDefaults.Text) -> CGFloat {
+        style.treatment == .label ? max(4, style.size * 0.2) : 0
+    }
+
+    private static func attributedText(_ text: String, style: EditorToolDefaults.Text) -> NSAttributedString {
         let foreground = style.treatment == .label ? RGBAColor.white : style.color
         var attributes: [NSAttributedString.Key: Any] = [
             NSAttributedString.Key(kCTFontAttributeName as String): textFont(style),
@@ -251,8 +246,30 @@ final class DocumentRenderer {
             attributes[NSAttributedString.Key(kCTStrokeWidthAttributeName as String)] = -4.0
             attributes[NSAttributedString.Key(kCTStrokeColorAttributeName as String)] = RGBAColor.white.cgColor
         }
-        let attributed = NSAttributedString(string: text, attributes: attributes)
-        let framesetter = CTFramesetterCreateWithAttributedString(attributed)
+        return NSAttributedString(string: text, attributes: attributes)
+    }
+
+    /// The size text needs when wrapped at `width`, including label padding. Empty text measures
+    /// one line, so a new box keeps its height.
+    static func textSize(_ text: String, style: EditorToolDefaults.Text, width: CGFloat) -> CGSize {
+        let padding = textPadding(style)
+        let framesetter = CTFramesetterCreateWithAttributedString(attributedText(text.isEmpty ? "A" : text, style: style))
+        let size = CTFramesetterSuggestFrameSizeWithConstraints(framesetter, CFRange(), nil,
+                                                                CGSize(width: max(1, width - 2 * padding), height: .greatestFiniteMagnitude), nil)
+        return CGSize(width: ceil(size.width) + 1 + 2 * padding, height: ceil(size.height) + 2 * padding)
+    }
+
+    private static func drawText(_ text: String, rect: CGRect, style: EditorToolDefaults.Text, context: CGContext) {
+        guard !text.isEmpty, rect.width > 0, rect.height > 0 else { return }
+        context.saveGState()
+        defer { context.restoreGState() }
+        let padding = textPadding(style)
+        if style.treatment == .label {
+            context.setFillColor(style.color.cgColor)
+            context.addPath(CGPath(roundedRect: rect, cornerWidth: padding, cornerHeight: padding, transform: nil))
+            context.fillPath()
+        }
+        let framesetter = CTFramesetterCreateWithAttributedString(attributedText(text, style: style))
         let textRect = rect.insetBy(dx: padding, dy: padding)
         guard textRect.width > 0, textRect.height > 0 else { return }
         context.translateBy(x: textRect.minX, y: textRect.maxY); context.scaleBy(x: 1, y: -1)

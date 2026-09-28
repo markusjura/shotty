@@ -131,9 +131,14 @@ final class EditorWindowModel {
 
     var selectedAnnotations: [Annotation] {
         _ = selectionVersion
-        return (styleDraft ?? document.state).annotations.filter { canvas.selected.contains($0.id) }
+        return canvas.visibleState.annotations.filter { canvas.selected.contains($0.id) }
     }
     var styleTool: EditorTool { selectedAnnotations.first?.tool ?? tool }
+    /// A selected text's own size, which its size handle sets freely; otherwise the default.
+    var textSize: Double {
+        for annotation in selectedAnnotations { if case .text(_, _, let style) = annotation.content { return style.size } }
+        return defaults.textSize
+    }
     /// New-object defaults, overlaid with the first selected object's style.
     var defaults: EditorToolDefaults {
         let values = defaultsDraft ?? coordinator.preferences.editor.tools
@@ -163,7 +168,9 @@ final class EditorWindowModel {
     }
 
     /// Styles the selection, if any. The choice always becomes the default for new objects.
-    private func updateStyles(_ transform: (inout EditorToolDefaults) -> Void) {
+    /// `resizes` is true when the change picks a size stop; other changes keep each selected
+    /// text's and counter's own size.
+    private func updateStyles(resizes: Bool, _ transform: (inout EditorToolDefaults) -> Void) {
         var stored = defaultsDraft ?? coordinator.preferences.editor.tools; transform(&stored)
         if isStyling { defaultsDraft = stored } else { coordinator.preferences.editor.tools = stored }
         guard !selectedAnnotations.isEmpty else { return }
@@ -190,10 +197,16 @@ final class EditorWindowModel {
                 state.annotations[i].content = .rectangle(rect: rect, style: style)
             case .ellipse(let rect, _): state.annotations[i].content = .ellipse(rect: rect, style: values.ellipse)
             case .line(let a, let b, _): state.annotations[i].content = .line(start: a, end: b, style: values.line)
-            case .text(let rect, let text, _): state.annotations[i].content = .text(rect: rect, text: text, style: values.text)
+            case .text(let rect, let text, let old):
+                var style = values.text
+                if !resizes { style.size = old.size }
+                state.annotations[i].content = EditorGeometry.restyledText(rect: rect, text: text, from: old, to: style)
             case .redact(let rect, _): state.annotations[i].content = .redact(rect: rect, style: values.redact)
             case .spotlight(let rect, _): state.annotations[i].content = .spotlight(rect: rect, style: values.spotlight)
-            case .counter(let center, let n, _): state.annotations[i].content = .counter(center: center, number: n, style: values.counter)
+            case .counter(let center, let n, let old):
+                var style = values.counter
+                if !resizes { style.size = old.size }
+                state.annotations[i].content = .counter(center: center, number: n, style: style)
             }
         }
         if isStyling { styleDraft = state; canvas.setStylePreview(state); selectionVersion += 1 }
@@ -212,7 +225,10 @@ final class EditorWindowModel {
         }
     }
     func binding<Value>(_ keyPath: WritableKeyPath<EditorToolDefaults, Value>) -> Binding<Value> {
-        Binding(get: { self.defaults[keyPath: keyPath] }, set: { value in self.updateStyles { $0[keyPath: keyPath] = value } })
+        let resizes = keyPath == \EditorToolDefaults.width || keyPath == \EditorToolDefaults.textSize
+            || keyPath == \EditorToolDefaults.counterSize
+        return Binding(get: { self.defaults[keyPath: keyPath] },
+                       set: { value in self.updateStyles(resizes: resizes) { $0[keyPath: keyPath] = value } })
     }
     /// `value` is image pixels per display backing pixel (1 = actual pixels); nil fits the window.
     func setZoom(_ value: CGFloat?) {

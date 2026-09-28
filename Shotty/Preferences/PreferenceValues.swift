@@ -214,38 +214,53 @@ enum SpotlightShape: String, Codable, CaseIterable, Sendable { case rectangle, r
 /// Widths and sizes are image pixels, independent of zoom.
 struct EditorToolDefaults: Codable, Equatable, Sendable {
     static let widthRange = 1.0...64.0
-    /// CleanShot's six stroke widths (1, 3, 7, 10, 15, and 25 pt) in Retina pixels.
-    static let widthPresets: [Double] = [2, 6, 14, 20, 30, 50]
+    /// Six stroke widths (2, 3, 4, 5, 7, and 10 pt) in Retina pixels. Finer than CleanShot's
+    /// 1, 3, 7, 10, 15, and 25 pt, whose jump from 3 to 7 pt skips the widths used most.
+    static let widthPresets: [Double] = [4, 6, 8, 10, 14, 20]
+
+    /// Counter diameters and text sizes paired with the width presets: one stop sizes every
+    /// tool. Text at each stop reads about as large as that stop's counter digits.
+    static let counterSizePresets: [Double] = [32, 40, 48, 56, 66, 80]
+    static let textSizePresets: [Double] = [24, 28, 32, 40, 48, 64]
+
+    /// The preset nearest to `width`, so glyphs can show any stored width as one of six weights.
+    static func widthLevel(of width: Double) -> Int {
+        nearest(width, in: widthPresets)
+    }
+
+    private static func nearest(_ value: Double, in presets: [Double]) -> Int {
+        presets.indices.min { abs(presets[$0] - value) < abs(presets[$1] - value) } ?? 0
+    }
 
     // Per-object styles. Annotations store these, so their fields must stay decodable.
 
     struct Arrow: Codable, Equatable, Sendable {
         var color = RGBAColor.annotationBlue
-        var width = 20.0
+        var width = 8.0
         var style = ArrowStyle.standard
     }
 
     /// A filled rectangle fills with its outline color.
     struct Rectangle: Codable, Equatable, Sendable {
         var strokeColor = RGBAColor.annotationBlue
-        var width = 20.0
+        var width = 8.0
         var fillColor: RGBAColor?
     }
 
     struct Ellipse: Codable, Equatable, Sendable {
         var strokeColor = RGBAColor.annotationBlue
-        var width = 20.0
+        var width = 8.0
     }
 
     struct Line: Codable, Equatable, Sendable {
         var color = RGBAColor.annotationBlue
-        var width = 20.0
+        var width = 8.0
     }
 
     struct Text: Codable, Equatable, Sendable {
         static let sizeRange = 8.0...200.0
         var color = RGBAColor.annotationBlue
-        var size = 24.0
+        var size = 32.0
         var weight = TextWeight.semibold
         var design = TextDesign.system
         var treatment = TextTreatment.plain
@@ -267,22 +282,31 @@ struct EditorToolDefaults: Codable, Equatable, Sendable {
     struct Counter: Codable, Equatable, Sendable {
         static let sizeRange = 12.0...96.0
         var color = RGBAColor.annotationBlue
-        var size = 28.0
+        var size = 48.0
     }
 
     // Stored defaults.
 
     var color = RGBAColor.annotationBlue
-    /// The fourth of the six presets, CleanShot's medium.
-    var width = 20.0
+    /// The third of the six presets, 4 pt on Retina: bold enough to read at a glance without
+    /// covering the text it points at.
+    var width = 8.0
     var arrowStyle = ArrowStyle.standard
-    var textSize = 24.0
     var textWeight = TextWeight.semibold
     var textDesign = TextDesign.system
     var textTreatment = TextTreatment.plain
     var redact = Redact()
     var spotlight = Spotlight()
-    var counterSize = 28.0
+    /// Counter and text sizes follow the shared thickness stop; setting one picks the stop with
+    /// the nearest size.
+    var counterSize: Double {
+        get { Self.counterSizePresets[Self.widthLevel(of: width)] }
+        set { width = Self.widthPresets[Self.nearest(newValue, in: Self.counterSizePresets)] }
+    }
+    var textSize: Double {
+        get { Self.textSizePresets[Self.widthLevel(of: width)] }
+        set { width = Self.widthPresets[Self.nearest(newValue, in: Self.textSizePresets)] }
+    }
 
     // The style of a new object of each kind. Setting one adopts its color and width.
 

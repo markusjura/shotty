@@ -23,6 +23,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
             if tool != .crop { cropAspect = nil }
             cropDraft = tool == .crop ? CropGeometry.applyingAspect(cropAspect, to: document.state.crop ?? sourceBounds, within: sourceBounds) : nil
             viewportMayHaveChanged()
+            window?.invalidateCursorRects(for: self)
             selectionChanged?()
         }
     }
@@ -34,7 +35,19 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
     var zoomChanged: (() -> Void)?
     private var clipObserver: NSObjectProtocol?
     private var fittedViewport: CGRect?
-    var nextCounter = 1
+    /// The number the next counter gets: one above the highest counter in the image, unless the
+    /// user picked another number, which then continues from there. Picking the default again,
+    /// or placing counters until the picked number is the default, resumes following the image.
+    var nextCounter: Int {
+        get { counterOverride ?? highestCounter + 1 }
+        set { counterOverride = newValue == highestCounter + 1 ? nil : newValue }
+    }
+    private var counterOverride: Int?
+    private var highestCounter: Int {
+        document.state.annotations.compactMap { annotation -> Int? in
+            if case .counter(_, let number, _) = annotation.content { number } else { nil }
+        }.max() ?? 0
+    }
     var cropDraft: CGRect? { didSet { needsDisplay = true } }
     private(set) var cropAspect: CGFloat?
 
@@ -46,6 +59,8 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         case marquee(base: Set<UUID>)
         case pan(CGPoint)
         case crop(edges: SelectionEdges?, start: CGRect, moving: Bool)
+        /// Text tool on empty canvas: the drag sets the new text box's width.
+        case textBox
     }
     private var gesture: Gesture?
     private var draft: AnnotationDocument?
@@ -100,9 +115,6 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         self.document = document; self.source = source; self.preferences = preferences; self.commands = commands
         observedState = document.state
         super.init(frame: .zero)
-        nextCounter = 1 + document.state.annotations.compactMap { annotation -> Int? in
-            if case .counter(_, let number, _) = annotation.content { number } else { nil }
-        }.reduce(0, max)
         setAccessibilityRole(.group); setAccessibilityLabel("Image annotation canvas")
         // AppKit no longer clips views by default; drawing never extends past the canvas.
         clipsToBounds = true
@@ -167,6 +179,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
     private func updateViewport() {
         let size = NSSize(width: viewport.width * zoom + 2 * Self.margin, height: viewport.height * zoom + 2 * Self.margin)
         if frame.size != size { setFrameSize(size) }
+        window?.invalidateCursorRects(for: self)
         repositionTextView()
         needsDisplay = true
     }
@@ -274,13 +287,27 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         }
         let state = visibleState
         let chosen = state.annotations.filter { selected.contains($0.id) && $0.id != textID }
-        context.setStrokeColor(NSColor.controlAccentColor.cgColor); context.setLineWidth(1 / zoom)
-        for annotation in chosen { context.stroke(annotation.bounds) }
+        // As in CleanShot, a selected shape glows instead of showing a border, and text shows a
+        // dashed box. Several also outline each member, since their shared handles sit on the union.
+        context.saveGState()
+        context.setShadow(offset: .zero, blur: 10, color: NSColor.white.withAlphaComponent(0.5).cgColor)
+        drawVectors(chosen.filter { !Self.hasEffects([$0]) && $0.tool != .text }, context: context)
+        context.restoreGState()
+        for annotation in chosen where annotation.tool == .text { drawDashedBox(annotation.bounds, context: context) }
+        if let box = editingBox {
+            drawDashedBox(box, context: context)
+            for (handle, point) in EditorGeometry.textHandles(for: box) { drawHandle(point, handle: handle, context: context) }
+        }
+        if chosen.count > 1 {
+            context.setStrokeColor(NSColor.controlAccentColor.cgColor); context.setLineWidth(1 / zoom)
+            for annotation in chosen { context.stroke(annotation.bounds) }
+        }
         if gesture.map({ if case .marquee = $0 { false } else { true } }) ?? true {
-            for (_, point) in selectionHandles(in: state) { drawHandle(point, context: context) }
+            for (handle, point) in selectionHandles(in: state) { drawHandle(point, handle: handle, context: context) }
         }
         if let marquee {
-            context.setStrokeColor(NSColor.controlAccentColor.cgColor); context.setLineWidth(1 / zoom); context.stroke(marquee)
+            if case .textBox = gesture { drawDashedBox(marquee, context: context) }
+            else { context.setStrokeColor(NSColor.controlAccentColor.cgColor); context.setLineWidth(1 / zoom); context.stroke(marquee) }
         }
         context.restoreGState()
     }
@@ -334,10 +361,35 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         context.interpolationQuality = zoom >= 2 ? .none : .high
         context.draw(image, in: CGRect(origin: .zero, size: rect.size)); context.restoreGState()
     }
-    private func drawHandle(_ point: CGPoint, context: CGContext) {
-        let rect = CGRect(x: point.x - 4 / zoom, y: point.y - 4 / zoom, width: 8 / zoom, height: 8 / zoom)
-        context.setFillColor(NSColor.white.cgColor); context.fillEllipse(in: rect)
-        context.setStrokeColor(NSColor.controlAccentColor.cgColor); context.setLineWidth(1 / zoom); context.strokeEllipse(in: rect)
+    private func drawDashedBox(_ rect: CGRect, context: CGContext) {
+        context.saveGState()
+        context.setStrokeColor(NSColor.controlAccentColor.cgColor); context.setLineWidth(1.5 / zoom)
+        context.setLineDash(phase: 0, lengths: [5 / zoom, 4 / zoom]); context.stroke(rect)
+        context.restoreGState()
+    }
+
+    /// CleanShot's handle: an accent-filled dot in a white ring with a soft shadow, 16 points wide.
+    /// The text size handle is a smaller rounded square.
+    private func drawHandle(_ point: CGPoint, handle: EditorHandle? = nil, context: CGContext) {
+        if handle == .textSize {
+            let square = CGRect(x: point.x - 6 / zoom, y: point.y - 6 / zoom, width: 12 / zoom, height: 12 / zoom)
+            context.saveGState()
+            context.setShadow(offset: .zero, blur: 3, color: NSColor.black.withAlphaComponent(0.35).cgColor)
+            context.setFillColor(NSColor.white.cgColor)
+            context.addPath(CGPath(roundedRect: square, cornerWidth: 3 / zoom, cornerHeight: 3 / zoom, transform: nil)); context.fillPath()
+            context.restoreGState()
+            context.setFillColor(NSColor.controlAccentColor.cgColor)
+            context.addPath(CGPath(roundedRect: square.insetBy(dx: 2.5 / zoom, dy: 2.5 / zoom), cornerWidth: 1.5 / zoom,
+                                   cornerHeight: 1.5 / zoom, transform: nil))
+            context.fillPath()
+            return
+        }
+        let ring = CGRect(x: point.x - 8 / zoom, y: point.y - 8 / zoom, width: 16 / zoom, height: 16 / zoom)
+        context.saveGState()
+        context.setShadow(offset: .zero, blur: 3, color: NSColor.black.withAlphaComponent(0.35).cgColor)
+        context.setFillColor(NSColor.white.cgColor); context.fillEllipse(in: ring)
+        context.restoreGState()
+        context.setFillColor(NSColor.controlAccentColor.cgColor); context.fillEllipse(in: ring.insetBy(dx: 2.5 / zoom, dy: 2.5 / zoom))
     }
 
     /// One object shows its own handles; several share handles on their union.
@@ -345,15 +397,29 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         let chosen = state.annotations.filter { selected.contains($0.id) && $0.id != textID }
         if chosen.count == 1 { return EditorGeometry.handles(for: chosen[0]) }
         guard let union = EditorGeometry.union(chosen) else { return [] }
-        return EditorGeometry.boxHandles(for: union)
+        return EditorGeometry.cornerHandles(for: union)
+    }
+
+    /// Drawing tools show the capture crosshair over the image, as in CleanShot.
+    override func resetCursorRects() {
+        guard tool.isDrawing else { return }
+        addCursorRect(viewRect(viewport), cursor: .captureCrosshair)
     }
 
     // MARK: Pointer gestures
 
     override func mouseDown(with event: NSEvent) {
-        finishText()
-        window?.makeFirstResponder(self)
         let point = imagePoint(window: event.locationInWindow)
+        // A handle of the text being edited finishes the edit and starts resizing the result.
+        let editingHandle = editingBox.flatMap { box in
+            EditorGeometry.textHandles(for: box).first { hypot($0.1.x - point.x, $0.1.y - point.y) <= 8 / zoom }?.0
+        }
+        let editedID = textID
+        finishText()
+        if editingHandle != nil, let editedID, document.state.annotations.contains(where: { $0.id == editedID }) {
+            selected = [editedID]
+        }
+        window?.makeFirstResponder(self)
         anchor = point; windowAnchor = event.locationInWindow
         gestureState = document.state; selectionBeforeGesture = selected
         if spaceHeld { gesture = .pan(enclosingScrollView?.contentView.bounds.origin ?? .zero); return }
@@ -363,7 +429,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
             gesture = .crop(edges: edges, start: rect, moving: edges == nil && rect.contains(point))
             return
         }
-        let tolerance = 7 / zoom
+        let tolerance = 8 / zoom
         if let (handle, _) = selectionHandles(in: document.state).first(where: { hypot($0.1.x - point.x, $0.1.y - point.y) <= tolerance }) {
             let chosen = document.state.annotations.filter { selected.contains($0.id) }
             if chosen.count == 1 { gesture = .resize(chosen[0].id, handle) }
@@ -374,39 +440,41 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         if let hit, hit.tool == .text, event.clickCount == 2 || tool == .text {
             selected = [hit.id]; beginText(point: point, existing: hit); resetGesture(); return
         }
+        // As in CleanShot, any tool picks up an existing object; only empty canvas draws.
+        if let hit {
+            if event.modifierFlags.contains(.shift) {
+                if selected.contains(hit.id) { selected.remove(hit.id) } else { selected.insert(hit.id) }
+            } else if !selected.contains(hit.id) { selected = [hit.id] }
+            var state = document.state
+            let duplicated = event.modifierFlags.contains(.option)
+            if duplicated {
+                let copies = state.annotations.filter { selected.contains($0.id) }.map { annotation -> Annotation in
+                    var copy = annotation; copy.id = UUID(); return copy
+                }
+                state.annotations += copies
+                gestureState = state
+                selected = Set(copies.map(\.id))
+            }
+            let moving = state.annotations.filter { selected.contains($0.id) }
+            gesture = .move(start: EditorGeometry.union(moving) ?? .null, duplicated: duplicated)
+            return
+        }
         switch tool {
         case .select:
-            if let hit {
-                if event.modifierFlags.contains(.shift) {
-                    if selected.contains(hit.id) { selected.remove(hit.id) } else { selected.insert(hit.id) }
-                } else if !selected.contains(hit.id) { selected = [hit.id] }
-                var state = document.state
-                let duplicated = event.modifierFlags.contains(.option)
-                if duplicated {
-                    let copies = state.annotations.filter { selected.contains($0.id) }.map { annotation -> Annotation in
-                        var copy = annotation; copy.id = UUID(); return copy
-                    }
-                    state.annotations += copies
-                    gestureState = state
-                    selected = Set(copies.map(\.id))
-                }
-                let moving = state.annotations.filter { selected.contains($0.id) }
-                gesture = .move(start: EditorGeometry.union(moving) ?? .null, duplicated: duplicated)
-            } else {
-                let base = event.modifierFlags.contains(.shift) ? selected : []
-                selected = base
-                gesture = .marquee(base: base)
-            }
+            let base = event.modifierFlags.contains(.shift) ? selected : []
+            selected = base
+            gesture = .marquee(base: base)
         case .text:
-            beginText(point: point); resetGesture()
+            selected = []
+            gesture = .textBox
         case .counter:
             var state = document.state
-            let annotation = Annotation(content: .counter(center: point, number: nextCounter, style: preferences.editor.tools.counter))
-            state.annotations.append(annotation)
-            nextCounter += 1
+            let number = nextCounter
+            state.annotations.append(Annotation(content: .counter(center: point, number: number, style: preferences.editor.tools.counter)))
             resetGesture()
             commit(state, actionName: "Add Counter")
-            selected = [annotation.id]
+            nextCounter = number + 1
+            selected = []
         default:
             gesture = .draw(UUID())
             selected = []
@@ -454,6 +522,12 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
             let scaled = EditorGeometry.scaled(state.annotations.filter { selected.contains($0.id) }, from: start, to: target)
             let byID = Dictionary(uniqueKeysWithValues: scaled.map { ($0.id, $0) })
             state.annotations = state.annotations.map { byID[$0.id] ?? $0 }
+        case .textBox:
+            marquee = CGRect(x: min(anchor.x, point.x), y: anchor.y, width: abs(point.x - anchor.x),
+                             height: DocumentRenderer.textSize("", style: preferences.editor.tools.text, width: .greatestFiniteMagnitude).height)
+                .intersection(viewport)
+            needsDisplay = true
+            return
         case .marquee(let base):
             let rect = SelectionGeometry.rectangle(from: anchor, to: point, square: false, centered: false)
             marquee = rect
@@ -474,6 +548,8 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         }
         draft = state
         needsDisplay = true
+        // The options show a resized text's size while it is being dragged.
+        if case .resize = gesture { selectionChanged?() }
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -482,13 +558,18 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         let travelled = windowAnchor.map { hypot(event.locationInWindow.x - $0.x, event.locationInWindow.y - $0.y) } ?? 0
         let result = draft
         let before = selectionBeforeGesture
+        let (start, box) = (anchor, marquee)
         resetGesture()
+        if case .textBox = finished, let start {
+            if let box, travelled >= 3, box.width >= 1 { beginText(point: box.origin, width: box.width) } else { beginText(point: start) }
+            return
+        }
         // A click without meaningful movement creates, moves, or duplicates nothing.
         if let result, result != document.state, travelled >= 3 {
             switch finished {
-            case .draw(let id):
+            case .draw:
+                // New objects stay unselected, so the next drag draws again, as in CleanShot.
                 commit(result, actionName: "Draw \(CommandID.tool(tool).title)")
-                if document.state.annotations.contains(where: { $0.id == id }) { selected = [id] }
             case .move(_, let duplicated): commit(result, actionName: duplicated ? "Duplicate Objects" : "Move Objects")
             default: commit(result, actionName: "Transform Objects")
             }
@@ -733,14 +814,14 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
 
     // MARK: Text
 
-    private func beginText(point: CGPoint, existing: Annotation? = nil) {
+    /// Edits `existing`, or starts a new text at `point`, `width` wide or up to 360 pixels.
+    private func beginText(point: CGPoint, width: CGFloat? = nil, existing: Annotation? = nil) {
         finishText()
         let style: EditorToolDefaults.Text, rect: CGRect, value: String
         if let existing, case .text(let r, let text, let s) = existing.content { style = s; rect = r; value = text }
         else {
             style = preferences.editor.tools.text
-            rect = CGRect(x: point.x, y: point.y, width: max(1, min(360, viewport.maxX - point.x)),
-                          height: max(1, min(style.size * 1.5, viewport.maxY - point.y)))
+            rect = EditorGeometry.textRect("", style: style, origin: point, width: max(1, width ?? min(360, viewport.maxX - point.x)))
             value = ""
         }
         textID = existing?.id ?? UUID(); textRect = rect; textStyle = style
@@ -762,14 +843,22 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         guard let textView, let textRect else { return }
         textView.frame = viewRect(CGRect(origin: textRect.origin, size: CGSize(width: textRect.width, height: textView.frame.height / zoom)))
     }
-    func textDidChange(_ notification: Notification) { textView?.sizeToFit() }
+    func textDidChange(_ notification: Notification) { textView?.sizeToFit(); needsDisplay = true }
+
+    /// The box of the text being edited: the full width while empty, then as wide as its lines.
+    private var editingBox: CGRect? {
+        guard let textView, let textRect, let textStyle else { return nil }
+        let text = textView.string
+        let size = DocumentRenderer.textSize(text, style: textStyle, width: textRect.width)
+        return CGRect(origin: textRect.origin, size: CGSize(width: text.isEmpty ? textRect.width : min(textRect.width, size.width),
+                                                           height: size.height))
+    }
 
     /// Commits the edited text, discarding a new empty text, and returns focus to the canvas.
     func finishText() {
-        guard let textView, let id = textID, let style = textStyle, var rect = textRect else { return }
+        guard let textView, let id = textID, let style = textStyle, let box = editingBox else { return }
         let text = textView.string
-        rect.size.height = max(style.size * 1.5, textView.frame.height / zoom)
-        rect = rect.intersection(viewport)
+        let rect = box.intersection(viewport)
         let hadFocus = window?.firstResponder === textView
         textView.typingUndoManager.removeAllActions()
         textView.removeFromSuperview(); self.textView = nil; textID = nil; textStyle = nil; textRect = nil
@@ -783,7 +872,6 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         case (nil, true): break
         }
         commit(state, actionName: "Edit Text")
-        if !text.isEmpty { selected = [id] }
         if hadFocus { window?.makeFirstResponder(self) }
         updateAccessibility()
         needsDisplay = true

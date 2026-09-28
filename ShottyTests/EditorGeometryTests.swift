@@ -30,7 +30,7 @@ final class EditorGeometryTests: XCTestCase {
     }
 
     func testCounterHandlesChangeSizeWithinTheStyleRange() {
-        let counter = Annotation(content: .counter(center: CGPoint(x: 100, y: 100), number: 3, style: .init()))
+        let counter = Annotation(content: .counter(center: CGPoint(x: 100, y: 100), number: 3, style: .init(size: 28)))
         guard case .edges(let corner) = EditorGeometry.handles(for: counter)[2].0 else { return XCTFail("Corner handle") }
         let grown = EditorGeometry.resized(counter, handle: .edges(corner), delta: CGVector(dx: 16, dy: 2), limit: limit)
         guard case .counter(let center, let number, let style) = grown.content else { return XCTFail() }
@@ -65,9 +65,30 @@ final class EditorGeometryTests: XCTestCase {
                                                        annotations: [a, b]), [kept, a.id], "Shrinking deselects")
     }
 
+    /// CleanShot's text box: side handles rewrap at a new width, the corner scales the font.
+    func testTextSideHandlesRewrapAndCornerHandleScalesTheFont() {
+        var style = EditorToolDefaults.Text(); style.size = 32
+        let text = "Hello text"
+        let wide = EditorGeometry.textRect(text, style: style, origin: CGPoint(x: 100, y: 100), width: 400)
+        let annotation = Annotation(content: .text(rect: wide, text: text, style: style))
+        XCTAssertEqual(EditorGeometry.handles(for: annotation).map(\.0), [.edges(.left), .edges(.right), .textSize])
+
+        let narrow = EditorGeometry.resized(annotation, handle: .edges(.right), delta: CGVector(dx: -300, dy: 0), limit: limit)
+        guard case .text(let narrowRect, _, let narrowStyle) = narrow.content else { return XCTFail() }
+        XCTAssertEqual(narrowRect.width, 100)
+        XCTAssertGreaterThan(narrowRect.height, wide.height, "Narrower text wraps onto more lines")
+        XCTAssertEqual(narrowStyle.size, 32)
+
+        let grown = EditorGeometry.resized(annotation, handle: .textSize, delta: CGVector(dx: 400, dy: wide.height), limit: limit)
+        guard case .text(let grownRect, _, let grownStyle) = grown.content else { return XCTFail() }
+        XCTAssertEqual(grownStyle.size, 64, "Dragging the corner one box diagonal doubles the size")
+        XCTAssertEqual(grownRect.width, 800, "The wrap width scales with the font")
+        XCTAssertEqual(grownRect.origin, wide.origin)
+    }
+
     func testGroupScalingKeepsStylesAndArrangementKeepsRelativeOrder() {
         let rect = Annotation(content: .rectangle(rect: CGRect(x: 0, y: 0, width: 10, height: 10), style: .init()))
-        let counter = Annotation(content: .counter(center: CGPoint(x: 20, y: 20), number: 1, style: .init()))
+        let counter = Annotation(content: .counter(center: CGPoint(x: 20, y: 20), number: 1, style: .init(size: 28)))
         let scaled = EditorGeometry.scaled([rect, counter], from: CGRect(x: 0, y: 0, width: 34, height: 34),
                                            to: CGRect(x: 0, y: 0, width: 68, height: 68))
         XCTAssertEqual(scaled[0].bounds, CGRect(x: 0, y: 0, width: 20, height: 20))

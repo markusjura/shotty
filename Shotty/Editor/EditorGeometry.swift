@@ -1,10 +1,12 @@
 import CoreGraphics
 import Foundation
 
-/// A resize handle: an endpoint or bend of a line/arrow, or edges of a bounding box.
+/// A resize handle: an endpoint or bend of a line/arrow, edges of a bounding box, or the corner
+/// that scales a text's font size.
 enum EditorHandle: Equatable, Sendable {
     case point(Int)
     case edges(SelectionEdges)
+    case textSize
 }
 
 enum EditorArrangement: Sendable { case front, forward, backward, back }
@@ -21,7 +23,8 @@ enum EditorGeometry {
                 y: edges.contains(.bottom) ? rect.minY : edges.contains(.top) ? rect.maxY : rect.midY)
     }
 
-    /// Handles for one selected object. Counters resize their size from four corners.
+    /// Handles for one selected object: endpoints for lines and arrows, otherwise the four
+    /// corners, as in CleanShot.
     static func handles(for annotation: Annotation) -> [(EditorHandle, CGPoint)] {
         switch annotation.content {
         case .line(let a, let b, _): return [(.point(0), a), (.point(1), b)]
@@ -29,16 +32,37 @@ enum EditorGeometry {
             var result: [(EditorHandle, CGPoint)] = [(.point(0), a), (.point(1), b)]
             if style.style == .curved { result.append((.point(2), bend ?? defaultBend(start: a, end: b))) }
             return result
-        case .counter:
-            return [[.left, .bottom], [.right, .bottom], [.right, .top], [.left, .top]].map {
-                (.edges($0), point(on: annotation.bounds, for: $0))
-            }
-        default: return boxHandles(for: annotation.bounds)
+        case .text(let rect, _, _): return textHandles(for: rect)
+        default: return cornerHandles(for: annotation.bounds)
         }
     }
 
+    /// As in CleanShot: side handles set the wrap width, the bottom-right corner scales the font.
+    static func textHandles(for rect: CGRect) -> [(EditorHandle, CGPoint)] {
+        [(.edges(.left), CGPoint(x: rect.minX, y: rect.midY)), (.edges(.right), CGPoint(x: rect.maxX, y: rect.midY)),
+         (.textSize, CGPoint(x: rect.maxX, y: rect.maxY))]
+    }
+
+    /// Text wrapped at `width` from `origin`, as tall as its lines.
+    static func textRect(_ text: String, style: EditorToolDefaults.Text, origin: CGPoint, width: CGFloat) -> CGRect {
+        CGRect(origin: origin, size: CGSize(width: width, height: DocumentRenderer.textSize(text, style: style, width: width).height))
+    }
+
+    /// Restyles text in place. A new size scales the wrap width with it, so lines break as before.
+    static func restyledText(rect: CGRect, text: String, from old: EditorToolDefaults.Text,
+                             to new: EditorToolDefaults.Text) -> AnnotationContent {
+        let width = rect.width * new.size / old.size
+        return .text(rect: textRect(text, style: new, origin: rect.origin, width: width), text: text, style: new)
+    }
+
+    /// Crop handles: corners and edge midpoints.
     static func boxHandles(for rect: CGRect) -> [(EditorHandle, CGPoint)] {
         boxHandleEdges.map { (.edges($0), point(on: rect, for: $0)) }
+    }
+
+    static func cornerHandles(for rect: CGRect) -> [(EditorHandle, CGPoint)] {
+        boxHandleEdges.filter { $0.contains(.left) != $0.contains(.right) && $0.contains(.top) != $0.contains(.bottom) }
+            .map { (.edges($0), point(on: rect, for: $0)) }
     }
 
     /// The control point DocumentRenderer uses for a curved arrow without an explicit bend.
@@ -156,6 +180,18 @@ enum EditorGeometry {
             let end = index == 1 ? (constrained ? snappedEndpoint(from: a, toward: moved(b), limit: limit) : moved(b)) : b
             result.content = .arrow(start: start, end: end,
                                     bend: index == 2 ? control.map(moved) : bend, style: style)
+        case (.text(let rect, let text, let style), .edges(let edges)):
+            let minX = edges.contains(.left) ? min(rect.maxX - style.size, max(limit.minX, rect.minX + delta.dx)) : rect.minX
+            let maxX = edges.contains(.right) ? max(rect.minX + style.size, min(limit.maxX, rect.maxX + delta.dx)) : rect.maxX
+            result.content = .text(rect: textRect(text, style: style, origin: CGPoint(x: minX, y: rect.minY), width: maxX - minX),
+                                   text: text, style: style)
+        case (.text(let rect, let text, let style), .textSize):
+            // The drag projected onto the box diagonal, as a fraction of it, scales the font.
+            let factor = 1 + (delta.dx * rect.width + delta.dy * rect.height) / (rect.width * rect.width + rect.height * rect.height)
+            var scaled = style
+            scaled.size = min(EditorToolDefaults.Text.sizeRange.upperBound,
+                              max(EditorToolDefaults.Text.sizeRange.lowerBound, (style.size * factor).rounded()))
+            result.content = restyledText(rect: rect, text: text, from: style, to: scaled)
         case (.counter(let center, let number, var style), .edges(let edges)):
             let corner = point(on: annotation.bounds, for: edges)
             let half = max(abs(corner.x + delta.dx - center.x), abs(corner.y + delta.dy - center.y))

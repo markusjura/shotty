@@ -73,11 +73,13 @@ struct Annotation: Codable, Identifiable, Equatable, Sendable {
         case .line(let start, let end, let style):
             guard start.isFinitePoint, end.isFinitePoint else { return false }
             defaults.line = style
-        case .text(_, _, let style): defaults.text = style
+        case .text(_, _, let style):
+            guard EditorToolDefaults.Text.sizeRange.contains(style.size) else { return false }
+            defaults.text = style
         case .redact(_, let style): defaults.redact = style
         case .spotlight(_, let style): defaults.spotlight = style
         case .counter(let center, let number, let style):
-            guard center.isFinitePoint, number > 0 else { return false }
+            guard center.isFinitePoint, number > 0, EditorToolDefaults.Counter.sizeRange.contains(style.size) else { return false }
             defaults.counter = style
         }
         return defaults.isValid

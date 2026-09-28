@@ -21,8 +21,8 @@ struct EditorOptions: View {
                 choice("Arrow style", \.arrowStyle, samples: EditorStyleSamples.arrows, tinted: true)
             case .text:
                 color(\.color)
-                size("Text size", \.textSize, presets: [14, 18, 24, 32, 48, 64]) { size in
-                    OptionMenu.textSample(pointSize: 7 + size / 4)
+                size("Text size", \.textSize, presets: EditorToolDefaults.textSizePresets, value: model.textSize) { size in
+                    OptionMenu.textSample(pointSize: 5 + size / 4)
                 } label: { Text("\(Int($0)) px").font(.system(size: 13, weight: .medium)).monospacedDigit() }
                 textStyle()
             case .redact:
@@ -35,8 +35,8 @@ struct EditorOptions: View {
                 }
             case .counter:
                 color(\.color)
-                size("Counter size", \.counterSize, presets: [20, 28, 36, 48, 64]) { size in
-                    OptionMenu.dotSample(diameter: 6 + size / 4)
+                size("Counter size", \.counterSize, presets: EditorToolDefaults.counterSizePresets) { size in
+                    OptionMenu.dotSample(diameter: size / 4)
                 } label: { _ in Image(systemName: "textformat.size") }
                 numbering()
             case .select, .crop:
@@ -69,7 +69,7 @@ struct EditorOptions: View {
         }
     }
 
-    /// CleanShot's six stroke widths, drawn as strokes of increasing weight.
+    /// The six stroke widths, drawn as strokes of increasing weight.
     private func thickness() -> some View {
         let current = model.defaults.width
         let selection = model.hasMixedValues(\.width) ? nil : current
@@ -89,9 +89,9 @@ struct EditorOptions: View {
 
     /// Numeric presets. Rows with a sample dim unselected values; rows without one use a checkmark.
     private func size<Label: View>(_ title: String, _ key: WritableKeyPath<EditorToolDefaults, Double>, presets: [Double],
-                                   unit: String = " px", sample: @escaping (Double) -> NSImage?,
+                                   value: Double? = nil, unit: String = " px", sample: @escaping (Double) -> NSImage?,
                                    @ViewBuilder label: (Double) -> Label) -> some View {
-        let current = model.defaults[keyPath: key]
+        let current = value ?? model.defaults[keyPath: key]
         let selection = model.hasMixedValues(key) ? nil : current
         return OptionButton(title) {
             label(current)
@@ -329,8 +329,11 @@ private enum OptionMenu {
     }
 
     /// A diagonal stroke for the `index`th width preset. Menu strokes grow more gently than the presets.
+    /// Glyph weights for the six width presets, from thinnest to thickest.
+    static let strokeWeights: [CGFloat] = [1.5, 2, 3, 4, 5, 6.5]
+
     static func stroke(index: Int, selected: Bool) -> NSImage {
-        let weights: [CGFloat] = [1.5, 2, 3, 4, 5, 6.5]
+        let weights = strokeWeights
         let image = NSImage(size: NSSize(width: 32, height: 28), flipped: false) { rect in
             let path = NSBezierPath()
             path.move(to: NSPoint(x: rect.midX - 7, y: rect.midY - 7))
@@ -402,7 +405,8 @@ private struct ThicknessGlyph: View {
             var path = Path()
             path.move(to: CGPoint(x: 3, y: size.height - 3))
             path.addLine(to: CGPoint(x: size.width - 3, y: 3))
-            context.stroke(path, with: .foreground, style: StrokeStyle(lineWidth: min(5, max(1.5, width / 8)), lineCap: .round))
+            let weight = min(5, OptionMenu.strokeWeights[EditorToolDefaults.widthLevel(of: width)])
+            context.stroke(path, with: .foreground, style: StrokeStyle(lineWidth: weight, lineCap: .round))
         }
         .frame(width: 18, height: 18)
     }

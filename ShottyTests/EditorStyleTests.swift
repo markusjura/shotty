@@ -11,7 +11,14 @@ final class EditorStyleTests: XCTestCase {
         let first = try makeModel(preferences, defaults)
         XCTAssertEqual(first.tool, .rectangle)
         XCTAssertEqual(first.canvas.tool, .rectangle)
-        XCTAssertEqual(first.defaults.rectangle, EditorToolDefaults.Rectangle(strokeColor: .annotationBlue, width: 20))
+        XCTAssertEqual(first.defaults.rectangle, EditorToolDefaults.Rectangle(strokeColor: .annotationBlue, width: 8))
+        XCTAssertEqual(first.defaults.counter.size, 48, "Counters follow the shared thickness stop")
+        XCTAssertEqual(first.defaults.text.size, 32, "So does text")
+
+        first.binding(\.counterSize).wrappedValue = 66
+        XCTAssertEqual(first.defaults.width, 14, "A counter size picks the matching thickness stop")
+        first.binding(\.textSize).wrappedValue = 24
+        XCTAssertEqual(first.defaults.width, 4, "So does a text size")
 
         first.tool = .arrow
         first.binding(\.color).wrappedValue = .annotationRed
@@ -25,7 +32,8 @@ final class EditorStyleTests: XCTestCase {
         XCTAssertEqual(tools.line, EditorToolDefaults.Line(color: .annotationRed, width: 6))
         XCTAssertEqual(tools.filledRectangle.fillColor, .annotationRed)
         XCTAssertEqual(tools.text.color, .annotationRed)
-        XCTAssertEqual(tools.counter.color, .annotationRed)
+        XCTAssertEqual(tools.text.size, 28)
+        XCTAssertEqual(tools.counter, EditorToolDefaults.Counter(color: .annotationRed, size: 40))
     }
 
     func testAdoptingAnObjectStyleKeepsFilledRectanglesFilled() {

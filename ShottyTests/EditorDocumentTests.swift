@@ -210,4 +210,88 @@ final class EditorDocumentTests: XCTestCase {
         XCTAssertTrue(success)
         return bytes
     }
+
+    /// CleanShot's model: drawing leaves the new object unselected, a press on an object picks it
+    /// up without leaving the drawing tool, and a click on empty canvas only deselects.
+    func testDrawingToolDrawsUnselectedAndPicksUpExistingObjects() async throws {
+        let (directory, store, record) = try await fixture()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let suite = "shotty-canvas-pointer-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let document = EditorDocument(record: record, store: store)
+        let canvas = EditorCanvas(document: document, source: try await store.image(for: record.id),
+                                  preferences: AppPreferences(defaults: defaults), commands: CommandRegistry(defaults: defaults))
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 200, height: 200), styleMask: .borderless,
+                              backing: .buffered, defer: true)
+        window.contentView?.addSubview(canvas)
+        canvas.tool = .rectangle
+        // Image pixels to window points at the canvas's initial 50% zoom and 12-point margin.
+        func press(_ type: NSEvent.EventType, _ x: CGFloat, _ y: CGFloat) -> NSEvent {
+            let point = canvas.convert(CGPoint(x: x / 2 + EditorCanvas.margin, y: y / 2 + EditorCanvas.margin), to: nil)
+            return NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0,
+                                      windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        }
+        canvas.mouseDown(with: press(.leftMouseDown, 4, 4))
+        canvas.mouseDragged(with: press(.leftMouseDragged, 24, 24))
+        canvas.mouseUp(with: press(.leftMouseUp, 24, 24))
+        let drawn = try XCTUnwrap(document.state.annotations.first)
+        XCTAssertTrue(canvas.selected.isEmpty)
+
+        canvas.mouseDown(with: press(.leftMouseDown, 4, 4))
+        XCTAssertEqual(canvas.selected, [drawn.id])
+        canvas.mouseDragged(with: press(.leftMouseDragged, 14, 4))
+        canvas.mouseUp(with: press(.leftMouseUp, 14, 4))
+        XCTAssertEqual(document.state.annotations.map(\.bounds), [drawn.translated(by: CGSize(width: 10, height: 0)).bounds])
+        XCTAssertEqual(canvas.tool, .rectangle)
+
+        canvas.mouseDown(with: press(.leftMouseDown, 58, 58))
+        canvas.mouseUp(with: press(.leftMouseUp, 58, 58))
+        XCTAssertTrue(canvas.selected.isEmpty)
+        XCTAssertEqual(document.state.annotations.count, 1)
+        _ = try await document.flush()
+    }
+
+    /// The next number follows the highest counter in the image; a picked number continues until
+    /// it meets that default again.
+    func testNextCounterFollowsTheHighestNumberUnlessPicked() async throws {
+        let (directory, store, record) = try await fixture()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let suite = "shotty-next-counter-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let two = Annotation(content: .counter(center: CGPoint(x: 15, y: 15), number: 2, style: .init()))
+        let seven = Annotation(content: .counter(center: CGPoint(x: 40, y: 40), number: 7, style: .init()))
+        let document = EditorDocument(record: record, store: store)
+        document.commit(AnnotationDocument(annotations: [two, seven]), actionName: "Counters")
+        let preferences = AppPreferences(defaults: defaults)
+        let canvas = EditorCanvas(document: document, source: try await store.image(for: record.id),
+                                  preferences: preferences, commands: CommandRegistry(defaults: defaults))
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 200, height: 200), styleMask: .borderless,
+                              backing: .buffered, defer: true)
+        window.contentView?.addSubview(canvas)
+        canvas.tool = .counter
+        // Small counters on empty spots of the 64-pixel image; a press on one would select it.
+        preferences.editor.tools.width = 4
+        var spots = [CGPoint(x: 52, y: 52), CGPoint(x: 15, y: 56)]
+        func place() {
+            let image = spots.removeFirst()
+            let point = canvas.convert(CGPoint(x: image.x / 2 + EditorCanvas.margin, y: image.y / 2 + EditorCanvas.margin), to: nil)
+            canvas.mouseDown(with: NSEvent.mouseEvent(with: .leftMouseDown, location: point, modifierFlags: [], timestamp: 0,
+                                                      windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                                                      clickCount: 1, pressure: 1)!)
+        }
+        XCTAssertEqual(canvas.nextCounter, 8)
+        document.commit(AnnotationDocument(annotations: [two]), actionName: "Delete")
+        XCTAssertEqual(canvas.nextCounter, 3, "Deleting the highest counter lowers the next number")
+
+        canvas.nextCounter = 1
+        place()
+        XCTAssertEqual(canvas.nextCounter, 2, "A picked number continues below the highest")
+        place()
+        XCTAssertEqual(canvas.nextCounter, 3)
+        document.commit(AnnotationDocument(annotations: [two]), actionName: "Delete")
+        XCTAssertEqual(canvas.nextCounter, 3, "Once the picked number met the default, it follows the image again")
+        _ = try await document.flush()
+    }
 }
