@@ -280,7 +280,7 @@ struct EditorToolDefaults: Codable, Equatable, Sendable {
     struct Spotlight: Codable, Equatable, Sendable {
         static let dimRange = 5.0...90.0
         var shape = SpotlightShape.roundedRectangle
-        var dimPercent = 45.0
+        var dimPercent = 50.0
     }
 
     struct Counter: Codable, Equatable, Sendable {

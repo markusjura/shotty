@@ -67,7 +67,7 @@ final class DocumentRenderer {
             if case .spotlight(let rect, let style) = annotation.content { return (rect, style) }
             return nil
         }
-        if !spotlights.isEmpty { drawSpotlights(spotlights, in: context, bounds: working) }
+        if !spotlights.isEmpty { Self.drawSpotlights(spotlights, in: context, bounds: working) }
         for annotation in document.annotations where annotation.tool == .counter {
             try Task.checkCancellation()
             Self.drawAnnotation(annotation, in: context)
@@ -204,7 +204,8 @@ final class DocumentRenderer {
         return try render(source: source, state: AnnotationDocument(annotations: [Annotation(content: .redact(rect: bounds, style: style))]))
     }
 
-    private func drawSpotlights(_ openings: [(CGRect, EditorToolDefaults.Spotlight)], in context: CGContext,
+    /// Dims `bounds` outside the openings. The editor also calls this to draw spotlights live.
+    static func drawSpotlights(_ openings: [(CGRect, EditorToolDefaults.Spotlight)], in context: CGContext,
                                 bounds: CGRect) {
         context.saveGState()
         defer { context.restoreGState() }
@@ -217,13 +218,14 @@ final class DocumentRenderer {
             case .rectangle: path.addRect(rect.standardized)
             case .ellipse: path.addEllipse(in: rect.standardized)
             case .roundedRectangle:
-                let radius = min(12, min(rect.width, rect.height) / 5)
+                // 14 pt on Retina: clearly rounder than a rectangle without looking like a pill.
+                let radius = min(28, min(rect.width, rect.height) / 4)
                 path.addRoundedRect(in: rect.standardized, cornerWidth: radius, cornerHeight: radius)
             }
             context.addPath(path)
             context.clip(using: .evenOdd)
         }
-        context.setFillColor(CGColor(gray: 0, alpha: (openings.last?.1.dimPercent ?? 45) / 100))
+        context.setFillColor(CGColor(gray: 0, alpha: (openings.last?.1.dimPercent ?? 50) / 100))
         context.fill(bounds)
     }
 

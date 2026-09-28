@@ -290,10 +290,10 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         let chosen = state.annotations.filter { selected.contains($0.id) && $0.id != textID }
         // A selected shape shows only its handles and text a dashed box. Several also outline each
         // member, since their shared handles sit on the union.
-        for annotation in chosen where annotation.tool == .text { drawDashedBox(annotation.bounds, context: context) }
+        for annotation in chosen where annotation.tool == .text { drawDashedBox(textChrome(annotation.bounds), context: context) }
         if let box = editingBox {
-            drawDashedBox(box, context: context)
-            for (handle, point) in EditorGeometry.textHandles(for: box) { drawHandle(point, handle: handle, context: context) }
+            drawDashedBox(textChrome(box), context: context)
+            for (handle, point) in EditorGeometry.textHandles(for: textChrome(box)) { drawHandle(point, handle: handle, context: context) }
         }
         if chosen.count > 1 {
             context.setStrokeColor(NSColor.controlAccentColor.cgColor); context.setLineWidth(1 / zoom)
@@ -310,7 +310,8 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
     }
 
     /// The composition: base image, then exact region patches of the current draft where they are
-    /// ready, otherwise the source with vector annotations as an immediate fallback.
+    /// ready, otherwise the source with live annotations, which look the same, as an immediate
+    /// fallback.
     private func drawContent(in context: CGContext) {
         let overlay = visibleState.annotations.filter { $0.id != textID }
         let hasEffects = Self.hasEffects(overlay) || (previewImage != nil && Self.hasEffects(previewAnnotations))
@@ -335,25 +336,22 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
             context.saveGState(); context.clip(to: rect)
             drawImage(source, in: sourceBounds, context: context)
             drawVectors(overlay, context: context)
-            // The latest finished patches lag by one render; they replace most of the fallback.
-            // They may show source where a redaction now is, so redraw from the first redaction up.
-            if patchKey?.base == previewGeneration {
-                for patch in patches where patch.rect.intersects(rect) { drawImage(patch.image, in: patch.rect, context: context) }
-                if let first = overlay.firstIndex(where: { $0.tool == .redact }) {
-                    drawVectors(Array(overlay[first...]), context: context)
-                }
-            }
             context.restoreGState()
         }
         schedulePatches(key: key, rects: dirty)
     }
 
-    /// Vectors, with stand-ins for redactions, which only the background renderer draws exactly.
+    /// Annotations in the renderer's order: shapes and redactions, then spotlight dimming, then
+    /// counters. Redactions come from their effect layers, which only the renderer draws exactly.
     private func drawVectors(_ annotations: [Annotation], context: CGContext) {
-        for annotation in annotations where annotation.tool != .counter {
+        for annotation in annotations where annotation.tool != .counter && annotation.tool != .spotlight {
             if case .redact(let rect, let style) = annotation.content { drawRedactionStandIn(rect, style: style, context: context) }
             else { DocumentRenderer.drawAnnotation(annotation, in: context) }
         }
+        let spotlights = annotations.compactMap { annotation -> (CGRect, EditorToolDefaults.Spotlight)? in
+            if case .spotlight(let rect, let style) = annotation.content { (rect, style) } else { nil }
+        }
+        if !spotlights.isEmpty { DocumentRenderer.drawSpotlights(spotlights, in: context, bounds: sourceBounds) }
         for annotation in annotations where annotation.tool == .counter { DocumentRenderer.drawAnnotation(annotation, in: context) }
     }
 
@@ -455,9 +453,14 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         context.setFillColor(NSColor.controlAccentColor.cgColor); context.fillEllipse(in: ring.insetBy(dx: 2.5 / zoom, dy: 2.5 / zoom))
     }
 
+    /// As in CleanShot, a text's dashed box and handles sit 14 points outside its text, so the
+    /// handles stay clear of the letters and of the text view while typing.
+    private func textChrome(_ rect: CGRect) -> CGRect { rect.insetBy(dx: -14 / zoom, dy: -14 / zoom) }
+
     /// One object shows its own handles; several share handles on their union.
     private func selectionHandles(in state: AnnotationDocument) -> [(EditorHandle, CGPoint)] {
         let chosen = state.annotations.filter { selected.contains($0.id) && $0.id != textID }
+        if chosen.count == 1, case .text(let rect, _, _) = chosen[0].content { return EditorGeometry.textHandles(for: textChrome(rect)) }
         if chosen.count == 1 { return EditorGeometry.handles(for: chosen[0]) }
         guard let union = EditorGeometry.union(chosen) else { return [] }
         return EditorGeometry.cornerHandles(for: union)
@@ -488,7 +491,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
 
     private func cursor(at point: CGPoint) -> NSCursor {
         guard tool != .crop else { return .arrow }
-        let handles = (editingBox.map(EditorGeometry.textHandles) ?? []) + selectionHandles(in: document.state)
+        let handles = (editingBox.map { EditorGeometry.textHandles(for: textChrome($0)) } ?? []) + selectionHandles(in: document.state)
         if let handle = handles.first(where: { hypot($0.1.x - point.x, $0.1.y - point.y) <= 8 / zoom })?.0 {
             return resizeCursor(for: handle)
         }
@@ -534,7 +537,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         let point = imagePoint(window: event.locationInWindow)
         // A handle of the text being edited finishes the edit and starts resizing the result.
         let editingHandle = editingBox.flatMap { box in
-            EditorGeometry.textHandles(for: box).first { hypot($0.1.x - point.x, $0.1.y - point.y) <= 8 / zoom }?.0
+            EditorGeometry.textHandles(for: textChrome(box)).first { hypot($0.1.x - point.x, $0.1.y - point.y) <= 8 / zoom }?.0
         }
         let editedID = textID
         finishText()
@@ -689,9 +692,14 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         // A click without meaningful movement creates, moves, or duplicates nothing.
         if let result, result != document.state, travelled >= 3 {
             switch finished {
-            case .draw:
-                // New objects stay unselected, so the next drag draws again, as in CleanShot.
+            case .draw(let id):
+                // New objects stay unselected, so the next drag draws again, as in CleanShot. A new
+                // redaction or spotlight stays selected, like text, so its style and size can be
+                // adjusted at once.
                 commit(result, actionName: "Draw \(CommandID.tool(tool).title)")
+                if tool == .redact || tool == .spotlight, document.state.annotations.contains(where: { $0.id == id }) {
+                    selected = [id]
+                }
             case .move(_, let duplicated): commit(result, actionName: duplicated ? "Duplicate Objects" : "Move Objects")
             default: commit(result, actionName: "Transform Objects")
             }
@@ -960,16 +968,22 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         view.font = NSFontManager.shared.convert(view.font ?? .systemFont(ofSize: style.size), toSize: style.size * zoom)
         view.textColor = style.treatment == .label ? .white : NSColor(cgColor: style.color.cgColor)
         view.textContainerInset = .zero; view.textContainer?.lineFragmentPadding = 0
+        // Lines wrap at the text's width while the view itself fits the typed text, like its box.
+        view.textContainer?.widthTracksTextView = false
+        view.textContainer?.containerSize = CGSize(width: rect.width * zoom, height: .greatestFiniteMagnitude)
         view.isVerticallyResizable = true; view.string = value; view.delegate = self
         view.finish = { [weak self] in self?.finishText() }
-        textView = view; addSubview(view); window?.makeFirstResponder(view); needsDisplay = true
+        textView = view; addSubview(view); repositionTextView(); window?.makeFirstResponder(view); needsDisplay = true
         updateAccessibility()
     }
+    /// Keeps the text view on its box, so presses just outside it reach the box's handles.
     private func repositionTextView() {
-        guard let textView, let textRect else { return }
-        textView.frame = viewRect(CGRect(origin: textRect.origin, size: CGSize(width: textRect.width, height: textView.frame.height / zoom)))
+        guard let textView, let box = editingBox else { return }
+        textView.textContainer?.containerSize = CGSize(width: (textRect?.width ?? box.width) * zoom, height: .greatestFiniteMagnitude)
+        textView.frame = viewRect(box)
+        textView.sizeToFit()
     }
-    func textDidChange(_ notification: Notification) { textView?.sizeToFit(); needsDisplay = true }
+    func textDidChange(_ notification: Notification) { repositionTextView(); needsDisplay = true }
 
     /// The box of the text being edited: the full width while empty, then as wide as its lines.
     private var editingBox: CGRect? {

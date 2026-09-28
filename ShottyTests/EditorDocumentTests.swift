@@ -201,8 +201,9 @@ final class EditorDocumentTests: XCTestCase {
         return bytes
     }
 
-    /// CleanShot's model: drawing leaves the new object unselected, a press on an object picks it
-    /// up without leaving the drawing tool, and a click on empty canvas only deselects.
+    /// CleanShot's model: drawing leaves the new object unselected (redactions and spotlights stay selected), a
+    /// press on an object picks it up without leaving the drawing tool, and a click on empty
+    /// canvas only deselects.
     func testDrawingToolDrawsUnselectedAndPicksUpExistingObjects() async throws {
         let (directory, store, record) = try await fixture()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -239,6 +240,26 @@ final class EditorDocumentTests: XCTestCase {
         canvas.mouseUp(with: press(.leftMouseUp, 58, 58))
         XCTAssertTrue(canvas.selected.isEmpty)
         XCTAssertEqual(document.state.annotations.count, 1)
+
+        // A new redaction stays selected, so its corner handles resize it right away.
+        canvas.tool = .redact
+        canvas.mouseDown(with: press(.leftMouseDown, 44, 44))
+        canvas.mouseDragged(with: press(.leftMouseDragged, 62, 62))
+        canvas.mouseUp(with: press(.leftMouseUp, 62, 62))
+        XCTAssertEqual(document.state.annotations.count, 2)
+        let redaction = try XCTUnwrap(document.state.annotations.last)
+        XCTAssertEqual(canvas.selected, [redaction.id])
+        canvas.mouseDown(with: press(.leftMouseDown, 44, 44))
+        canvas.mouseDragged(with: press(.leftMouseDragged, 38, 38))
+        canvas.mouseUp(with: press(.leftMouseUp, 38, 38))
+        XCTAssertEqual(document.state.annotations.last?.bounds, CGRect(x: 38, y: 38, width: 24, height: 24))
+
+        // So does a new spotlight.
+        canvas.tool = .spotlight
+        canvas.mouseDown(with: press(.leftMouseDown, 4, 40))
+        canvas.mouseDragged(with: press(.leftMouseDragged, 30, 62))
+        canvas.mouseUp(with: press(.leftMouseUp, 30, 62))
+        XCTAssertEqual(canvas.selected, [try XCTUnwrap(document.state.annotations.last).id])
         _ = try await document.flush()
     }
 
@@ -317,6 +338,39 @@ final class EditorDocumentTests: XCTestCase {
         let row = bitmap.pixelsHigh / 2
         let levels = (0..<bitmap.pixelsWide).compactMap { bitmap.colorAt(x: $0, y: row)?.usingColorSpace(.sRGB)?.brightnessComponent }
         XCTAssertLessThan((levels.max() ?? 1) - (levels.min() ?? 0), 0.5, "The stripes under the redaction show through")
+        _ = try await document.flush()
+    }
+
+    /// While typing, presses on the text box's handles reach the canvas, not the text view, so
+    /// they resize the text instead of moving the caret.
+    func testEditingTextHandlesReceivePresses() async throws {
+        let (directory, store, record) = try await fixture()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let suite = "shotty-text-handles-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let document = EditorDocument(record: record, store: store)
+        let preferences = AppPreferences(defaults: defaults)
+        preferences.editor.tools.width = 4  // The smallest text, so a word fits the 64-pixel image.
+        let canvas = EditorCanvas(document: document, source: try await store.image(for: record.id),
+                                  preferences: preferences, commands: CommandRegistry(defaults: defaults))
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 300, height: 300), styleMask: .borderless,
+                              backing: .buffered, defer: true)
+        window.contentView?.addSubview(canvas)
+        canvas.tool = .text
+        let start = canvas.convert(CGPoint(x: 1 + EditorCanvas.margin, y: 1 + EditorCanvas.margin), to: nil)
+        func press(_ type: NSEvent.EventType) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: start, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                               context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        }
+        canvas.mouseDown(with: press(.leftMouseDown)); canvas.mouseUp(with: press(.leftMouseUp))
+        let textView = try XCTUnwrap(canvas.subviews.compactMap { $0 as? CanvasTextView }.first)
+        textView.insertText("Hi", replacementRange: NSRange(location: 0, length: 0))
+        // The right side handle sits 14 points outside the typed text, halfway down. Image pixels
+        // map to view points at the initial 50% zoom.
+        let box = DocumentRenderer.textSize("Hi", style: preferences.editor.tools.text, width: .greatestFiniteMagnitude)
+        let right = CGPoint(x: EditorCanvas.margin + (1 + box.width) / 2 + 14, y: EditorCanvas.margin + (1 + box.height / 2) / 2)
+        XCTAssertTrue(window.contentView?.hitTest(canvas.convert(right, to: window.contentView)) === canvas)
         _ = try await document.flush()
     }
 }

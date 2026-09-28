@@ -30,9 +30,7 @@ struct EditorOptions: View {
                 if model.defaults.redact.style == .solid { color(\.redact.solidColor) }
             case .spotlight:
                 choice("Spotlight shape", \.spotlight.shape, samples: EditorStyleSamples.spotlightShapes, tinted: false)
-                size("Dimming", \.spotlight.dimPercent, presets: [25, 45, 65, 80], unit: "%") { _ in nil } label: { _ in
-                    Image(systemName: "circle.lefthalf.filled")
-                }
+                dimming()
             case .counter:
                 color(\.color)
                 // Labeled by digit size, the text size of the same stop, as in text mode.
@@ -152,6 +150,20 @@ struct EditorOptions: View {
         }
     }
 
+    /// The dimming percentage, set with a slider in its menu. The spotlights update while it moves.
+    private func dimming() -> some View {
+        let mixed = model.hasMixedValues(\.spotlight.dimPercent)
+        return OptionButton("Dimming") {
+            Text(mixed ? "–" : "\(Int(model.defaults.spotlight.dimPercent))%").monospacedDigit()
+        } menu: {
+            let menu = OptionMenu.make(showsState: false)
+            let row = NSMenuItem()
+            row.view = DimmingView(model: model)
+            menu.addItem(row)
+            return menu
+        }
+    }
+
     private func numbering() -> some View {
         OptionButton("Numbering") {
             Image(systemName: "number")
@@ -214,6 +226,68 @@ private final class NextCounterView: NSView {
         model.canvas.nextCounter = number
         field.integerValue = number; stepper.integerValue = number
         model.selectionVersion += 1  // Canvas state is AppKit-owned; this invalidates the options.
+    }
+}
+
+/// "Dimming" with a slider in 5% steps and its value, laid out like the next number row.
+private final class DimmingView: NSView {
+    private let model: EditorWindowModel
+    private let slider = NSSlider()
+    private let value = NSTextField(labelWithString: "")
+    private var editing = false
+
+    init(model: EditorWindowModel) {
+        self.model = model
+        super.init(frame: .zero)
+        let label = NSTextField(labelWithString: "Dimming")
+        label.font = .menuFont(ofSize: 0)
+        let range = EditorToolDefaults.Spotlight.dimRange
+        slider.minValue = range.lowerBound; slider.maxValue = range.upperBound
+        slider.doubleValue = model.defaults.spotlight.dimPercent
+        slider.isContinuous = true
+        // The small control's knob grows less when pressed, which suits a menu row.
+        slider.controlSize = .small
+        slider.target = self; slider.action = #selector(slid)
+        slider.setAccessibilityLabel("Dimming")
+        value.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        value.alignment = .right
+        show(slider.doubleValue)
+        let stack = NSStackView(views: [label, slider, value]); stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            slider.widthAnchor.constraint(equalToConstant: 140),
+            value.widthAnchor.constraint(equalToConstant: 36),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 15),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            heightAnchor.constraint(equalToConstant: 32)
+        ])
+        setFrameSize(fittingSize)
+    }
+    required init?(coder: NSCoder) { nil }
+
+    /// One drag is one style gesture: live preview while sliding, one undoable change on release.
+    @objc private func slid() {
+        let percent = (slider.doubleValue / 5).rounded() * 5
+        if !editing { editing = true; model.styleGesture(true) }
+        model.binding(\.spotlight.dimPercent).wrappedValue = percent
+        show(percent)
+        if NSApp.currentEvent?.type == .leftMouseUp { finish() }
+    }
+
+    private func show(_ percent: Double) { value.stringValue = "\(Int(percent))%" }
+
+    private func finish() {
+        guard editing else { return }
+        editing = false
+        model.styleGesture(false)
+    }
+
+    // The menu can close mid-gesture, for example on Escape; commit what was chosen.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { finish() }
     }
 }
 

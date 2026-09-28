@@ -16,6 +16,11 @@ final class EditorGeometryTests: XCTestCase {
         // Near both the hollow outline (x = 0, 3 px) and the line's start (7 px away), the nearer outline wins.
         XCTAssertEqual(EditorGeometry.hit(CGPoint(x: 3, y: 200), in: annotations, tolerance: 6)?.id, hollow.id)
         XCTAssertEqual(EditorGeometry.hit(CGPoint(x: 200, y: 204), in: annotations, tolerance: 6)?.id, line.id)
+
+        // A spotlight's opening picks it up, but objects shown in the opening win over it.
+        let spotlight = Annotation(content: .spotlight(rect: CGRect(x: 50, y: 50, width: 300, height: 300), style: .init()))
+        XCTAssertEqual(EditorGeometry.hit(CGPoint(x: 300, y: 100), in: annotations + [spotlight], tolerance: 6)?.id, spotlight.id)
+        XCTAssertEqual(EditorGeometry.hit(CGPoint(x: 120, y: 120), in: annotations + [spotlight], tolerance: 6)?.id, filled.id)
     }
 
     func testCurvedArrowHitsAlongItsDrawnCurve() {

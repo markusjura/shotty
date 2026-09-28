@@ -73,8 +73,8 @@ enum EditorGeometry {
     // MARK: Hit testing
 
     /// Distance from `point` to the visible part of an annotation: 0 inside filled interiors,
-    /// otherwise to the stroke's outer edge. Hollow shapes and spotlight openings are hit
-    /// only near their outline, so they never block objects beneath them.
+    /// otherwise to the stroke's outer edge. Hollow shapes are hit only near their outline, so
+    /// they never block objects beneath them. `hit` also accepts a spotlight's opening.
     static func distance(from point: CGPoint, to annotation: Annotation) -> CGFloat {
         switch annotation.content {
         case .line(let a, let b, let style):
@@ -102,10 +102,16 @@ enum EditorGeometry {
 
     /// The annotation with the nearest visible part within `tolerance`. Ties go to the one drawn
     /// on top; counters always render above other annotations.
+    /// The annotation a press at `point` picks up: the nearest within `tolerance`, the topmost on
+    /// a tie. Inside a spotlight's opening the spotlight counts as just within reach, so objects
+    /// shown in the opening still win over it.
     static func hit(_ point: CGPoint, in annotations: [Annotation], tolerance: CGFloat) -> Annotation? {
         var best: (annotation: Annotation, distance: CGFloat, z: Int)?
         for (index, annotation) in annotations.enumerated() {
-            let distance = distance(from: point, to: annotation)
+            var distance = distance(from: point, to: annotation)
+            if case .spotlight(let rect, _) = annotation.content, rect.standardized.contains(point) {
+                distance = min(distance, tolerance)
+            }
             guard distance <= tolerance else { continue }
             let z = index + (annotation.tool == .counter ? annotations.count : 0)
             if best == nil || distance < best!.distance || (distance == best!.distance && z > best!.z) {
