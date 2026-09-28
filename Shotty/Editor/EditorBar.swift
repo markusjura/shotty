@@ -7,6 +7,9 @@ import SwiftUI
 enum EditorBar {
     static let height: CGFloat = 51
     static let buttonHeight: CGFloat = 26
+    /// The one font for text and symbols in the bars: button titles, option values, and zoom.
+    static let font = Font.system(size: 13, weight: .medium)
+    @MainActor static let nsFont = NSFont.systemFont(ofSize: 13, weight: .medium)
     static let iconButtonWidth: CGFloat = 36
     static let toolHeight: CGFloat = 24
     static let toolWidth: CGFloat = 35
@@ -49,7 +52,7 @@ struct EditorBarButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .medium))
+            .font(EditorBar.font)
             .foregroundStyle(isProminent ? Color.white : .primary)
             .padding(.horizontal, width == nil ? 12 : 0)
             .frame(width: width, height: EditorBar.buttonHeight)

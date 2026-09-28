@@ -345,15 +345,7 @@ private struct EditorWindowView: View {
                         EditorOptions(model: model).padding(.leading, EditorBar.groupSpacing)
                     }
                     Spacer(minLength: EditorBar.groupSpacing)
-                    HStack(spacing: EditorBar.buttonSpacing) {
-                        Button("Copy Image", systemImage: "doc.on.doc") { model.copy() }
-                            .help(help(.copyImage))
-                        Button("Save", systemImage: "square.and.arrow.down") { model.save(asNew: NSEvent.modifierFlags.contains(.option)) }
-                            .help("\(help(.save)). Option-click to save as.")
-                            .disabled(model.busy)
-                    }
-                    .buttonStyle(.editorBarIcon)
-                    Button("Done") { model.close?() }.buttonStyle(.editorBarProminent).padding(.leading, 10)
+                    Button("Done") { model.close?() }.buttonStyle(.editorBarProminent)
                 }
             }
             .labelStyle(.iconOnly)
@@ -364,10 +356,18 @@ private struct EditorWindowView: View {
             CanvasContainer(canvas: model.canvas)
             Divider()
             ZStack {
-                HStack {
+                // Zoom on the left, output on the right, with the drag handle between them, as in CleanShot.
+                HStack(spacing: EditorBar.buttonSpacing) {
                     ZoomMenu(model: model)
                     Spacer()
+                    Button("Copy Image", systemImage: "doc.on.doc") { model.copy() }
+                        .help(help(.copyImage))
+                    Button("Save", systemImage: "square.and.arrow.down") { model.save(asNew: NSEvent.modifierFlags.contains(.option)) }
+                        .help("\(help(.save)). Option-click to save as.")
+                        .disabled(model.busy)
                 }
+                .buttonStyle(.editorBarIcon)
+                .labelStyle(.iconOnly)
                 EditorDragHandle(model: model).frame(width: 115, height: 31)
             }
             .padding(.horizontal, EditorBar.edgeInset)
@@ -420,7 +420,7 @@ private struct ZoomMenu: View {
             item("100%", .actualSize)
             Button("200%") { model.setZoom(2) }
         } label: {
-            Text(model.zoomLabel).font(.system(size: 13, weight: .medium)).monospacedDigit()
+            Text(model.zoomLabel).font(EditorBar.font).monospacedDigit()
         }
         .menuStyle(.borderlessButton)
         .fixedSize()

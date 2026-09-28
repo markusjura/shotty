@@ -38,7 +38,7 @@ final class EditorGeometryTests: XCTestCase {
         XCTAssertEqual(number, 3)
         XCTAssertEqual(style.size, 60)
         let huge = EditorGeometry.resized(counter, handle: .edges(corner), delta: CGVector(dx: 500, dy: 0), limit: limit)
-        if case .counter(_, _, let style) = huge.content { XCTAssertEqual(style.size, 96) }
+        if case .counter(_, _, let style) = huge.content { XCTAssertEqual(style.size, 128) }
     }
 
     func testEdgeResizeMovesOneSideAndStaysInsideTheImage() {

@@ -26,7 +26,7 @@ final class ExportDragView: NSView, NSDraggingSource {
         NSColor.labelColor.withAlphaComponent(0.06).setFill(); path.fill()
         NSColor.labelColor.withAlphaComponent(0.2).setStroke(); path.stroke()
         let text = "Drag Me" as NSString
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13, weight: .medium),
+        let attributes: [NSAttributedString.Key: Any] = [.font: EditorBar.nsFont,
                                                          .foregroundColor: NSColor.labelColor.withAlphaComponent(0.8)]
         let size = text.size(withAttributes: attributes)
         text.draw(at: CGPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2), withAttributes: attributes)

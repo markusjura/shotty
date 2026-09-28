@@ -23,7 +23,7 @@ struct EditorOptions: View {
                 color(\.color)
                 size("Text size", \.textSize, presets: EditorToolDefaults.textSizePresets, value: model.textSize) { size in
                     OptionMenu.textSample(pointSize: 5 + size / 4)
-                } label: { Text("\(Int($0)) px").font(.system(size: 13, weight: .medium)).monospacedDigit() }
+                } label: { Text("\(Int($0)) px").monospacedDigit() }
                 textStyle()
             case .redact:
                 choice("Redaction style", \.redact.style, samples: EditorStyleSamples.redaction, tinted: false)
@@ -39,7 +39,7 @@ struct EditorOptions: View {
                 size("Counter size", \.textSize, presets: EditorToolDefaults.textSizePresets, value: model.textSize) { size in
                     let stop = EditorToolDefaults.textSizePresets.firstIndex(of: size) ?? 0
                     return OptionMenu.dotSample(diameter: EditorToolDefaults.counterSizePresets[stop] / 4)
-                } label: { Text("\(Int($0)) px").font(.system(size: 13, weight: .medium)).monospacedDigit() }
+                } label: { Text("\(Int($0)) px").monospacedDigit() }
                 numbering()
             case .select, .crop:
                 EmptyView()
@@ -253,7 +253,7 @@ private struct OptionButton<Icon: View>: View {
             }
         } label: {
             HStack(spacing: 3) {
-                icon.frame(minHeight: 18).fixedSize()
+                icon.font(EditorBar.font).frame(minHeight: 18).fixedSize()
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 9)

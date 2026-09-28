@@ -290,7 +290,8 @@ final class DocumentRenderer {
         ]
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: string, attributes: attributes))
         let box = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
-        let scale = min(1, rect.width * 0.75 / max(1, box.width))
+        // Up to two digits keep the full size; longer numbers shrink to stay inside the circle.
+        let scale = min(1, rect.width * 0.8 / max(1, box.width))
         context.translateBy(x: rect.midX, y: rect.midY); context.scaleBy(x: scale, y: -scale)
         context.textMatrix = .identity
         context.textPosition = CGPoint(x: -box.midX, y: -box.midY)

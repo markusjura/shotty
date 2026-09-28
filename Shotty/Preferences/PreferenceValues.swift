@@ -218,20 +218,14 @@ struct EditorToolDefaults: Codable, Equatable, Sendable {
     /// 1, 3, 7, 10, 15, and 25 pt, whose jump from 3 to 7 pt skips the widths used most.
     static let widthPresets: [Double] = [4, 6, 8, 10, 14, 20]
 
-    /// Counter diameters and text sizes paired with the width presets: one stop sizes every
-    /// tool. A counter's digits use the text size of its stop.
-    static let counterSizePresets: [Double] = [40, 48, 52, 56, 64, 80]
+    /// Text sizes paired with the width presets: one stop sizes every tool. A counter's digits
+    /// use its stop's text size, in a circle `counterScale` times as wide, so two digits fit.
     static let textSizePresets: [Double] = [28, 32, 36, 40, 48, 64]
+    static let counterScale = 1.6
+    static let counterSizePresets: [Double] = textSizePresets.map { $0 * counterScale }
 
-    /// The digit size of a counter `diameter` wide: its stop's text size, interpolated between
-    /// stops for counters resized by their handles.
-    static func counterTextSize(forDiameter diameter: Double) -> Double {
-        let sizes = counterSizePresets, texts = textSizePresets
-        guard diameter > sizes[0] else { return diameter * texts[0] / sizes[0] }
-        guard let upper = sizes.firstIndex(where: { $0 >= diameter }) else { return diameter * texts.last! / sizes.last! }
-        let lower = upper - 1
-        return texts[lower] + (texts[upper] - texts[lower]) * (diameter - sizes[lower]) / (sizes[upper] - sizes[lower])
-    }
+    /// The digit size of a counter `diameter` wide, the inverse of `counterSizePresets`.
+    static func counterTextSize(forDiameter diameter: Double) -> Double { diameter / counterScale }
 
     /// The preset nearest to `width`, so glyphs can show any stored width as one of six weights.
     static func widthLevel(of width: Double) -> Int {
@@ -290,9 +284,9 @@ struct EditorToolDefaults: Codable, Equatable, Sendable {
     }
 
     struct Counter: Codable, Equatable, Sendable {
-        static let sizeRange = 12.0...96.0
+        static let sizeRange = 12.0...128.0
         var color = RGBAColor.annotationBlue
-        var size = 52.0
+        var size = 57.6
     }
 
     // Stored defaults.
