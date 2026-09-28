@@ -61,7 +61,7 @@ final class EditorDocument {
         let pending = persistenceTask
         await pending?.value
         guard persistedRevision >= requested.revision else {
-            throw persistenceError ?? CaptureSessionStore.Failure.invalidManifest
+            throw persistenceError ?? DocumentRenderer.Failure.invalidDocument
         }
         return requested
     }

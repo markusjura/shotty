@@ -3,8 +3,8 @@
 # Usage:
 #   Scripts/install.sh path/to/Shotty-<version>-<build>-<commit>.zip
 #   Scripts/install.sh --rollback      # swap the installed build with the previous one
-# Quit Shotty from its menu first, so it can finish running saves and discard its capture session itself.
-# Settings (UserDefaults) and ~/Library/Application Support/Shotty are never touched.
+# Quit Shotty from its menu first, so it can finish running saves and clear its captures itself.
+# Settings (UserDefaults) are never touched.
 # Gatekeeper and quarantine are left alone; judge an install by whether it launches.
 #
 # Every replacement is two renames inside a private work directory on the /Applications volume.

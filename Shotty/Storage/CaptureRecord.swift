@@ -42,9 +42,3 @@ struct ExportedFile: Codable, Equatable, Sendable {
     let url: URL
     let fingerprint: FileFingerprint
 }
-
-struct SessionRecovery: Sendable {
-    enum State: String, Codable, Sendable { case empty, interrupted }
-    let state: State
-    let records: [CaptureRecord]
-}

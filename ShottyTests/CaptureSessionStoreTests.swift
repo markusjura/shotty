@@ -19,7 +19,7 @@ final class CaptureSessionStoreTests: XCTestCase {
         return try XCTUnwrap(context.makeImage())
     }
 
-    func testSourceAndBoundedThumbnailSurviveInterruptionAndRestore() async throws {
+    func testSourceIsKeptPrivatelyWithABoundedThumbnail() async throws {
         let directory = try directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = CaptureSessionStore(directory: directory)
@@ -36,86 +36,28 @@ final class CaptureSessionStoreTests: XCTestCase {
         XCTAssertEqual(permissions, 0o600)
         let backup = try directory.resourceValues(forKeys: [.isExcludedFromBackupKey])
         XCTAssertEqual(backup.isExcludedFromBackup, true)
-
-        // Relaunching without Quit, as after a crash, finds the session interrupted until Restore.
-        let relaunched = CaptureSessionStore(directory: directory)
-        let recovery = try await relaunched.load()
-        XCTAssertEqual(recovery.state, .interrupted)
-        XCTAssertEqual(recovery.records, [created])
-        try await relaunched.resume()
-        let source = try await relaunched.image(for: created.id)
+        let source = try await store.image(for: created.id)
         XCTAssertEqual(source.width, 1_200)
         XCTAssertEqual(source.colorSpace?.name, CGColorSpace.displayP3)
     }
 
-    func testSessionOpenedThroughSymlinkKeepsOwnedSourceWhenCleaningOrphans() async throws {
-        let parent = try directory()
-        defer { try? FileManager.default.removeItem(at: parent) }
-        let actual = parent.appendingPathComponent("actual", isDirectory: true)
-        try FileManager.default.createDirectory(at: actual, withIntermediateDirectories: false)
-        let alias = parent.appendingPathComponent("alias", isDirectory: true)
-        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: actual)
-        let store = CaptureSessionStore(directory: alias)
-        let record = try await store.create(image: image(), kind: .area, scale: 1)
-        let orphan = actual.appendingPathComponent("\(UUID()).png")
-        try Data("orphan".utf8).write(to: orphan)
-        let restored = CaptureSessionStore(directory: actual)
-        let recovery = try await restored.load()
-        XCTAssertEqual(recovery.records, [record])
-        try await restored.resume()
-        let source = try await restored.image(for: record.id)
-        XCTAssertEqual(source.width, 1_200)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: record.sourceURL.path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: orphan.path))
-    }
-
-    func testInterruptedSessionRequiresRestoreAndDiscardCleansSources() async throws {
+    /// A launch after a crash or kill starts empty, removing whatever the previous run left.
+    func testResetForgetsCapturesAndClearsLeftoverFiles() async throws {
         let directory = try directory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let first = CaptureSessionStore(directory: directory)
-        let record = try await first.create(image: image(), kind: .area, scale: 1)
+        let crashed = CaptureSessionStore(directory: directory)
+        let record = try await crashed.create(image: image(), kind: .area, scale: 1)
+        try Data("{}".utf8).write(to: directory.appendingPathComponent("session.json"))
         let relaunched = CaptureSessionStore(directory: directory)
-        do {
-            _ = try await relaunched.create(image: image(), kind: .window, scale: 1)
-            XCTFail("Must not overwrite an interrupted session")
-        } catch CaptureSessionStore.Failure.recoveryRequired {}
-        let recovery = try await relaunched.load()
-        XCTAssertEqual(recovery.state, .interrupted)
-        XCTAssertEqual(recovery.records.map(\.id), [record.id])
-        try await relaunched.discard()
+        try await relaunched.reset()
+        let records = await relaunched.records()
+        XCTAssertTrue(records.isEmpty)
         XCTAssertFalse(FileManager.default.fileExists(atPath: record.sourceURL.path))
-        let empty = try await CaptureSessionStore(directory: directory).load()
-        XCTAssertEqual(empty.state, .empty)
-        XCTAssertTrue(empty.records.isEmpty)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), [])
+        _ = try await relaunched.create(image: image(), kind: .window, scale: 1)
     }
 
-    func testManifestFailureLeavesExistingCaptureAndNoOrphanSource() async throws {
-        let directory = try directory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = CaptureSessionStore(directory: directory)
-        let record = try await store.create(image: image(), kind: .fullscreen, scale: 2)
-        let manifest = directory.appendingPathComponent("session.json")
-        let preserved = try Data(contentsOf: manifest)
-        try FileManager.default.removeItem(at: manifest)
-        try FileManager.default.createDirectory(at: manifest, withIntermediateDirectories: false)
-        do {
-            _ = try await store.create(image: image(), kind: .area, scale: 1)
-            XCTFail("Replacing a directory with the manifest must fail")
-        } catch {}
-        let records = await store.records()
-        XCTAssertEqual(records, [record])
-        let sources = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-            .filter { $0.pathExtension == "png" }
-        XCTAssertEqual(sources.map { $0.resolvingSymlinksInPath() }, [record.sourceURL.resolvingSymlinksInPath()])
-        XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath: directory.path).contains { $0.hasPrefix(".shotty-") },
-                       "Failed manifest publication must remove the directly encoded source and all staging files")
-        try FileManager.default.removeItem(at: manifest)
-        try preserved.write(to: manifest)
-        let recovered = try await CaptureSessionStore(directory: directory).load()
-        XCTAssertEqual(recovered.records, [record])
-    }
-
-    func testCopyAndSaveStateRequireMatchingRevisionAndRemovalIsDurable() async throws {
+    func testCopyAndSaveStateRequireMatchingRevisionAndRemovalDeletesTheSource() async throws {
         let directory = try directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = CaptureSessionStore(directory: directory.appendingPathComponent("session"))
@@ -137,7 +79,7 @@ final class CaptureSessionStoreTests: XCTestCase {
         try await store.remove(record.id)
         XCTAssertFalse(FileManager.default.fileExists(atPath: record.sourceURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: receipt.destinationURL.path))
-        let reloaded = try await CaptureSessionStore(directory: directory.appendingPathComponent("session")).load()
-        XCTAssertTrue(reloaded.records.isEmpty)
+        let remaining = await store.records()
+        XCTAssertTrue(remaining.isEmpty)
     }
 }

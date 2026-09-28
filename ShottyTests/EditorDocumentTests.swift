@@ -17,7 +17,7 @@ final class EditorDocumentTests: XCTestCase {
         return (directory, store, record)
     }
 
-    func testGestureUndoRedoCreatesDurableRevisionsAndReopensWithAnnotations() async throws {
+    func testGestureUndoRedoCreatesRevisionsAndReopensWithAnnotations() async throws {
         let (directory, store, record) = try await fixture()
         defer { try? FileManager.default.removeItem(at: directory) }
         let sourceBytes = try Data(contentsOf: record.sourceURL)
@@ -36,30 +36,22 @@ final class EditorDocumentTests: XCTestCase {
         XCTAssertEqual(snapshot.documentState, state)
         XCTAssertFalse(editor.isPersisting)
         XCTAssertEqual(try Data(contentsOf: record.sourceURL), sourceBytes)
-        let recovery = try await CaptureSessionStore(directory: directory).load()
-        let reopened = EditorDocument(record: try XCTUnwrap(recovery.records.first), store: store)
+        let kept = await store.records()
+        let reopened = EditorDocument(record: try XCTUnwrap(kept.first), store: store)
         XCTAssertEqual(reopened.state, state)
         XCTAssertEqual(reopened.revision, 3)
     }
 
-    func testFailedPersistenceKeepsEditsAndFlushRetries() async throws {
+    func testFailedPersistenceKeepsEdits() async throws {
         let (directory, store, record) = try await fixture()
         defer { try? FileManager.default.removeItem(at: directory) }
         let editor = EditorDocument(record: record, store: store)
-        let manifest = directory.appendingPathComponent("session.json")
-        let original = try Data(contentsOf: manifest)
-        try FileManager.default.removeItem(at: manifest)
-        try FileManager.default.createDirectory(at: manifest, withIntermediateDirectories: false)
+        try await store.remove(record.id)
         let state = AnnotationDocument(annotations: [Annotation(content: .counter(center: CGPoint(x: 20, y: 20), number: 1, style: .init()))])
         editor.commit(state, actionName: "Counter")
-        do { _ = try await editor.flush(); XCTFail("Failed disk commit must not report success") } catch {}
+        do { _ = try await editor.flush(); XCTFail("An edit of a removed capture must not report success") } catch {}
         XCTAssertEqual(editor.state, state)
         XCTAssertNotNil(editor.persistenceError)
-        try FileManager.default.removeItem(at: manifest)
-        try original.write(to: manifest)
-        let persisted = try await editor.flush()
-        XCTAssertEqual(persisted.documentState, state)
-        XCTAssertNil(editor.persistenceError)
     }
 
     func testExportKeepsRequestedRevisionAndLaterEditRemainsUnsaved() async throws {
@@ -150,10 +142,8 @@ final class EditorDocumentTests: XCTestCase {
         XCTAssertEqual(document.state.annotations.map(\.id), original.annotations.reversed().map(\.id))
         _ = try await document.flush()
 
-        let restoredStore = CaptureSessionStore(directory: directory)
-        let recovery = try await restoredStore.load()
-        try await restoredStore.resume()
-        let restored = EditorDocument(record: try XCTUnwrap(recovery.records.first), store: restoredStore)
+        let kept = await store.records()
+        let restored = EditorDocument(record: try XCTUnwrap(kept.first), store: store)
         let reopenedCanvas = EditorCanvas(document: restored, source: source, preferences: preferences, commands: commands)
         reopenedCanvas.nextCounter = 42
         reopenedCanvas.renumber()

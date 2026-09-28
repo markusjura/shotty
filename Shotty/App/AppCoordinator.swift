@@ -58,30 +58,14 @@ final class AppCoordinator {
         thumbnails.pausesAutoClose = { [weak self] id in
             self?.hasEditor?(id) == true || self?.outputFailures.contains(id) == true
         }
+        // Captures live only as long as the app. Whatever a crash or kill left behind goes silently.
         do {
             try CaptureScratchSpace.cleanPreviousLaunch()
-            let recovery = try await store.load()
-            if recovery.state == .interrupted, !recovery.records.isEmpty {
-                let alert = NSAlert()
-                alert.messageText = "Restore your captures?"
-                alert.informativeText = "Shotty closed before the active session finished. Your captures were kept on this Mac."
-                alert.addButton(withTitle: "Restore"); alert.addButton(withTitle: "Discard")
-                NSApp.activate()
-                if alert.runModal() == .alertSecondButtonReturn { try await store.discard() }
-                else { try await store.resume() }
-            } else { try await store.resume() }
-            await refreshRecords()
-            for record in records { await showThumbnail(record.id) }
-            ready = true
+            try await store.reset()
         } catch {
-            let alert = NSAlert(); alert.messageText = "Couldn't restore the capture session"
-            alert.informativeText = error.localizedDescription + " You can keep the files and quit, or discard this session."
-            alert.addButton(withTitle: "Keep Files and Quit"); alert.addButton(withTitle: "Discard Session")
-            if alert.runModal() == .alertSecondButtonReturn {
-                do { try await store.discard(); ready = true; await refreshRecords() }
-                catch { showError(error, title: "Couldn't discard the session"); NSApp.terminate(nil) }
-            } else { NSApp.terminate(nil) }
+            Logger(subsystem: "local.markus.Shotty", category: "Launch").error("Couldn't clear the previous session: \(error.localizedDescription, privacy: .public)")
         }
+        ready = true
     }
 
     func capture(_ kind: CaptureKind) {
@@ -380,8 +364,8 @@ final class AppCoordinator {
         while !holds.isEmpty || pendingAcceptances > 0, ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(100))
         }
-        do { try await store.discard() } catch {
-            Logger(subsystem: "local.markus.Shotty", category: "Quit").error("Couldn't discard the session: \(error.localizedDescription, privacy: .public)")
+        do { try await store.reset() } catch {
+            Logger(subsystem: "local.markus.Shotty", category: "Quit").error("Couldn't clear the session: \(error.localizedDescription, privacy: .public)")
         }
         thumbnails.close()
         return true
