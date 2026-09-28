@@ -407,29 +407,37 @@ private struct ZoomMenu: View {
 }
 
 /// The drawing tools as one capsule strip. Thin separators divide tools, except beside the
-/// active tool, whose accent capsule fills the strip's height.
+/// active or hovered tool, whose capsule fills the strip's height.
 private struct ToolStrip: View {
     let model: EditorWindowModel
+    @State private var hovered: EditorTool?
+
     var body: some View {
         let tools = EditorTool.allCases.filter { $0 != .crop }
+        let highlighted = Set([model.tool, hovered].compactMap { $0 })
         HStack(spacing: 0) {
             ForEach(Array(tools.enumerated()), id: \.element) { index, tool in
                 if index > 0 {
                     Rectangle().fill(.primary.opacity(0.15)).frame(width: 1, height: 12)
-                        .opacity(model.tool == tool || model.tool == tools[index - 1] ? 0 : 1)
+                        .opacity(highlighted.contains(tool) || highlighted.contains(tools[index - 1]) ? 0 : 1)
                 }
-                ToolButton(model: model, tool: tool, isStandalone: false)
+                ToolButton(model: model, tool: tool, isStandalone: false, isHovered: hovered == tool)
+                    .onHover { inside in
+                        if inside { hovered = tool } else if hovered == tool { hovered = nil }
+                    }
             }
         }
         .background(EditorBar.groupFill, in: Capsule())
     }
 }
 
-/// One tool. The active tool is an accent capsule; Crop stands alone as a tinted capsule.
+/// One tool. The active tool is an accent capsule and a hovered one a neutral capsule; Crop
+/// stands alone as a tinted capsule.
 private struct ToolButton: View {
     let model: EditorWindowModel
     let tool: EditorTool
     let isStandalone: Bool
+    var isHovered = false
 
     var body: some View {
         let active = model.tool == tool
@@ -442,7 +450,7 @@ private struct ToolButton: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(active ? Color.white : .primary)
-        .background(active ? Color.accentColor : isStandalone ? EditorBar.buttonFill : .clear, in: Capsule())
+        .background(active ? Color.accentColor : isStandalone || isHovered ? EditorBar.buttonFill : .clear, in: Capsule())
         .help([CommandID.tool(tool).title, model.commands.shortcut(for: .tool(tool))?.displayString].compactMap { $0 }.joined(separator: " "))
         .accessibilityLabel(CommandID.tool(tool).title)
         .accessibilityAddTraits(active ? .isSelected : [])
