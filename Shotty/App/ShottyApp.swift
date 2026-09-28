@@ -66,7 +66,8 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
     private lazy var scrollingCapture = ScrollingCaptureController(coordinator: coordinator)
     private var hotKeys: GlobalHotKeyCenter?
     private var terminating = false
-    private var editors: [UUID: EditorWindowController] = [:]
+    /// While any editor is open, Shotty is a regular app with its menu bar, Dock icon, and app switcher entry.
+    private var editors: [UUID: EditorWindowController] = [:] { didSet { updateActivationPolicy() } }
     private var openingEditors = Set<UUID>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -145,12 +146,19 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
     private func observePreferences() {
         withObservationTracking {
             NSApp.appearance = coordinator.preferences.general.appearance.nsAppearance
-            NSApp.setActivationPolicy(coordinator.preferences.general.activationPolicy)
+            updateActivationPolicy()
             _ = coordinator.preferences.thumbnails
             coordinator.thumbnails.refresh()
         } onChange: { [weak self] in
             Task { @MainActor in self?.observePreferences() }
         }
+    }
+
+    private func updateActivationPolicy() {
+        // Read the preference unconditionally so preference observation keeps tracking it.
+        let preferred = coordinator.preferences.general.activationPolicy
+        let policy = editors.isEmpty ? preferred : .regular
+        if NSApp.activationPolicy() != policy { NSApp.setActivationPolicy(policy) }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
