@@ -453,9 +453,10 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         context.setFillColor(NSColor.controlAccentColor.cgColor); context.fillEllipse(in: ring.insetBy(dx: 2.5 / zoom, dy: 2.5 / zoom))
     }
 
-    /// As in CleanShot, a text's dashed box and handles sit 14 points outside its text, so the
-    /// handles stay clear of the letters and of the text view while typing.
-    private func textChrome(_ rect: CGRect) -> CGRect { rect.insetBy(dx: -14 / zoom, dy: -14 / zoom) }
+    /// As in CleanShot, a text's dashed box and handles sit outside its text, so the side handles
+    /// stay clear of the letters and of the text view while typing. The line box already leaves
+    /// room above and below the letters, so it needs little vertical padding.
+    private func textChrome(_ rect: CGRect) -> CGRect { rect.insetBy(dx: -14 / zoom, dy: -4 / zoom) }
 
     /// One object shows its own handles; several share handles on their union.
     private func selectionHandles(in state: AnnotationDocument) -> [(EditorHandle, CGPoint)] {
