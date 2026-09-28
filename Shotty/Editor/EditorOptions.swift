@@ -35,9 +35,11 @@ struct EditorOptions: View {
                 }
             case .counter:
                 color(\.color)
-                size("Counter size", \.counterSize, presets: EditorToolDefaults.counterSizePresets) { size in
-                    OptionMenu.dotSample(diameter: size / 4)
-                } label: { _ in Image(systemName: "textformat.size") }
+                // Labeled by digit size, the text size of the same stop, as in text mode.
+                size("Counter size", \.textSize, presets: EditorToolDefaults.textSizePresets, value: model.textSize) { size in
+                    let stop = EditorToolDefaults.textSizePresets.firstIndex(of: size) ?? 0
+                    return OptionMenu.dotSample(diameter: EditorToolDefaults.counterSizePresets[stop] / 4)
+                } label: { Text("\(Int($0)) px").font(.system(size: 13, weight: .medium)).monospacedDigit() }
                 numbering()
             case .select, .crop:
                 EmptyView()
@@ -165,33 +167,63 @@ struct EditorOptions: View {
     }
 }
 
-/// "Next number" with a stepper, hosted in the numbering menu like CleanShot's starting number.
+/// "Next number" as a native number field with a stepper, sized to its content and aligned
+/// with the menu's item titles.
 private final class NextCounterView: NSView {
     private let model: EditorWindowModel
-    private let label = NSTextField(labelWithString: "")
+    private let field = ClickToEditField()
     private let stepper = NSStepper()
 
     init(model: EditorWindowModel) {
         self.model = model
-        super.init(frame: NSRect(x: 0, y: 0, width: 190, height: 30))
+        super.init(frame: .zero)
+        let label = NSTextField(labelWithString: "Next number")
+        label.font = .menuFont(ofSize: 0)
+        let formatter = NumberFormatter()
+        formatter.minimum = 1; formatter.maximum = 999; formatter.allowsFloats = false
+        field.formatter = formatter
+        field.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        field.bezelStyle = .roundedBezel; field.alignment = .center
+        field.integerValue = model.canvas.nextCounter
+        field.target = self; field.action = #selector(typed)
+        field.setAccessibilityLabel("Next number")
         stepper.minValue = 1; stepper.maxValue = 999; stepper.increment = 1
         stepper.integerValue = model.canvas.nextCounter
-        stepper.target = self; stepper.action = #selector(step)
+        stepper.target = self; stepper.action = #selector(stepped)
         stepper.setAccessibilityLabel("Next number")
-        label.font = .menuFont(ofSize: 0)
-        label.stringValue = "Next number: \(model.canvas.nextCounter)"
-        let stack = NSStackView(views: [label, stepper])
-        stack.frame = bounds.insetBy(dx: 14, dy: 0)
-        stack.autoresizingMask = [.width, .height]
-        stack.distribution = .equalSpacing
+        let controls = NSStackView(views: [field, stepper]); controls.spacing = 2
+        let stack = NSStackView(views: [label, controls]); stack.spacing = 16
+        stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
+        NSLayoutConstraint.activate([
+            field.widthAnchor.constraint(equalToConstant: 44),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 15),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            heightAnchor.constraint(equalToConstant: 32)
+        ])
+        setFrameSize(fittingSize)
     }
     required init?(coder: NSCoder) { nil }
 
-    @objc private func step() {
-        model.canvas.nextCounter = stepper.integerValue
-        label.stringValue = "Next number: \(stepper.integerValue)"
+    @objc private func stepped() { set(stepper.integerValue) }
+    @objc private func typed() { set(field.integerValue) }
+
+    private func set(_ number: Int) {
+        let number = min(999, max(1, number))
+        model.canvas.nextCounter = number
+        field.integerValue = number; stepper.integerValue = number
         model.selectionVersion += 1  // Canvas state is AppKit-owned; this invalidates the options.
+    }
+}
+
+/// A menu opens with its first text field focused. This one waits for a click, so the menu
+/// opens without a focus ring and keyboard navigation still reaches the items.
+private final class ClickToEditField: NSTextField {
+    private var clicked = false
+    override var acceptsFirstResponder: Bool { clicked }
+    override func mouseDown(with event: NSEvent) {
+        clicked = true; window?.makeFirstResponder(self); super.mouseDown(with: event)
     }
 }
 

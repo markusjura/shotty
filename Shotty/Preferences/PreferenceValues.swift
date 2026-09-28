@@ -219,9 +219,19 @@ struct EditorToolDefaults: Codable, Equatable, Sendable {
     static let widthPresets: [Double] = [4, 6, 8, 10, 14, 20]
 
     /// Counter diameters and text sizes paired with the width presets: one stop sizes every
-    /// tool. Text at each stop reads about as large as that stop's counter digits.
-    static let counterSizePresets: [Double] = [32, 40, 48, 56, 66, 80]
-    static let textSizePresets: [Double] = [24, 28, 32, 40, 48, 64]
+    /// tool. A counter's digits use the text size of its stop.
+    static let counterSizePresets: [Double] = [40, 48, 52, 56, 64, 80]
+    static let textSizePresets: [Double] = [28, 32, 36, 40, 48, 64]
+
+    /// The digit size of a counter `diameter` wide: its stop's text size, interpolated between
+    /// stops for counters resized by their handles.
+    static func counterTextSize(forDiameter diameter: Double) -> Double {
+        let sizes = counterSizePresets, texts = textSizePresets
+        guard diameter > sizes[0] else { return diameter * texts[0] / sizes[0] }
+        guard let upper = sizes.firstIndex(where: { $0 >= diameter }) else { return diameter * texts.last! / sizes.last! }
+        let lower = upper - 1
+        return texts[lower] + (texts[upper] - texts[lower]) * (diameter - sizes[lower]) / (sizes[upper] - sizes[lower])
+    }
 
     /// The preset nearest to `width`, so glyphs can show any stored width as one of six weights.
     static func widthLevel(of width: Double) -> Int {
@@ -260,7 +270,7 @@ struct EditorToolDefaults: Codable, Equatable, Sendable {
     struct Text: Codable, Equatable, Sendable {
         static let sizeRange = 8.0...200.0
         var color = RGBAColor.annotationBlue
-        var size = 32.0
+        var size = 36.0
         var weight = TextWeight.semibold
         var design = TextDesign.system
         var treatment = TextTreatment.plain
@@ -282,7 +292,7 @@ struct EditorToolDefaults: Codable, Equatable, Sendable {
     struct Counter: Codable, Equatable, Sendable {
         static let sizeRange = 12.0...96.0
         var color = RGBAColor.annotationBlue
-        var size = 48.0
+        var size = 52.0
     }
 
     // Stored defaults.

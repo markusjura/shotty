@@ -23,7 +23,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
             if tool != .crop { cropAspect = nil }
             cropDraft = tool == .crop ? CropGeometry.applyingAspect(cropAspect, to: document.state.crop ?? sourceBounds, within: sourceBounds) : nil
             viewportMayHaveChanged()
-            window?.invalidateCursorRects(for: self)
+            updateCursor()
             selectionChanged?()
         }
     }
@@ -154,7 +154,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         stylePreview = nil
         if gesture != nil { cancelGesture(restoreSelection: false) }
         selected.formIntersection(Set(state.annotations.map(\.id)))
-        viewportMayHaveChanged(); updatePreview(); needsDisplay = true; updateAccessibility()
+        viewportMayHaveChanged(); updatePreview(); needsDisplay = true; updateAccessibility(); updateCursor()
     }
 
     // MARK: Coordinates and zoom
@@ -179,7 +179,6 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
     private func updateViewport() {
         let size = NSSize(width: viewport.width * zoom + 2 * Self.margin, height: viewport.height * zoom + 2 * Self.margin)
         if frame.size != size { setFrameSize(size) }
-        window?.invalidateCursorRects(for: self)
         repositionTextView()
         needsDisplay = true
     }
@@ -287,12 +286,8 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         }
         let state = visibleState
         let chosen = state.annotations.filter { selected.contains($0.id) && $0.id != textID }
-        // As in CleanShot, a selected shape glows instead of showing a border, and text shows a
-        // dashed box. Several also outline each member, since their shared handles sit on the union.
-        context.saveGState()
-        context.setShadow(offset: .zero, blur: 10, color: NSColor.white.withAlphaComponent(0.5).cgColor)
-        drawVectors(chosen.filter { !Self.hasEffects([$0]) && $0.tool != .text }, context: context)
-        context.restoreGState()
+        // A selected shape shows only its handles and text a dashed box. Several also outline each
+        // member, since their shared handles sit on the union.
         for annotation in chosen where annotation.tool == .text { drawDashedBox(annotation.bounds, context: context) }
         if let box = editingBox {
             drawDashedBox(box, context: context)
@@ -400,10 +395,69 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         return EditorGeometry.cornerHandles(for: union)
     }
 
-    /// Drawing tools show the capture crosshair over the image, as in CleanShot.
-    override func resetCursorRects() {
-        guard tool.isDrawing else { return }
-        addCursorRect(viewRect(viewport), cursor: .captureCrosshair)
+    // MARK: Pointer cursor
+
+    private var cursorArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let cursorArea { removeTrackingArea(cursorArea) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self)
+        addTrackingArea(area); cursorArea = area
+    }
+    override func cursorUpdate(with event: NSEvent) { updateCursor() }
+    override func mouseMoved(with event: NSEvent) { updateCursor() }
+
+    /// Sets the cursor for what a press at the pointer would do: resize cursors on handles, a
+    /// hand on objects, the capture crosshair where a drawing tool draws, as in CleanShot.
+    private func updateCursor() {
+        guard gesture == nil, !spaceHeld, let window, window.isKeyWindow else { return }
+        let viewPoint = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        guard visibleRect.contains(viewPoint), textView.map({ !$0.frame.contains(viewPoint) }) ?? true else { return }
+        cursor(at: imagePoint(fromView: viewPoint)).set()
+    }
+
+    private func cursor(at point: CGPoint) -> NSCursor {
+        guard tool != .crop else { return .arrow }
+        let handles = (editingBox.map(EditorGeometry.textHandles) ?? []) + selectionHandles(in: document.state)
+        if let handle = handles.first(where: { hypot($0.1.x - point.x, $0.1.y - point.y) <= 8 / zoom })?.0 {
+            return resizeCursor(for: handle)
+        }
+        if let hit = EditorGeometry.hit(point, in: document.state.annotations, tolerance: 6 / zoom) {
+            return hit.tool == .text && tool == .text ? .iBeam : .openHand
+        }
+        return tool.isDrawing && viewport.contains(point) ? .captureCrosshair : .arrow
+    }
+
+    /// The standard frame resize cursor. Line and arrow handles point along the line, and a
+    /// curved arrow's bend handle across it. Image y grows downward, as on screen.
+    private func resizeCursor(for handle: EditorHandle) -> NSCursor {
+        let position: NSCursor.FrameResizePosition
+        switch handle {
+        case .textSize: position = .bottomRight
+        case .edges(let edges):
+            let top = edges.contains(.bottom), bottom = edges.contains(.top)
+            let left = edges.contains(.left), right = edges.contains(.right)
+            position = top ? (left ? .topLeft : right ? .topRight : .top)
+                : bottom ? (left ? .bottomLeft : right ? .bottomRight : .bottom) : (left ? .left : .right)
+        case .point(let index):
+            guard selected.count == 1, let annotation = document.state.annotations.first(where: { selected.contains($0.id) })
+            else { return .crosshair }
+            let (a, b): (CGPoint, CGPoint) = switch annotation.content {
+            case .line(let a, let b, _), .arrow(let a, let b, _, _): (a, b)
+            default: (.zero, CGPoint(x: 1, y: 0))
+            }
+            var angle = atan2(b.y - a.y, b.x - a.x) + (index == 2 ? .pi / 2 : 0)
+            angle = (angle.truncatingRemainder(dividingBy: .pi) + .pi).truncatingRemainder(dividingBy: .pi)
+            position = switch Int((angle / (.pi / 4)).rounded()) % 4 {
+            case 0: .left
+            case 1: .topLeft
+            case 2: .top
+            default: .topRight
+            }
+        }
+        return .frameResize(position: position, directions: .all)
     }
 
     // MARK: Pointer gestures
@@ -578,6 +632,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         }
         selected.formIntersection(Set(document.state.annotations.map(\.id)))
         needsDisplay = true
+        updateCursor()
     }
 
     /// Escape, focus loss, or an external document change. The release that follows does nothing.
@@ -780,7 +835,10 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
             commit(state, actionName: "Move Objects"); return
         }
         if let shortcut = Shortcut(event: event), let id = commands.command(matching: shortcut, in: [.editor, .editorTool]) {
-            if let tool = id.tool { self.tool = tool; selectionChanged?() } else { command?(id) }
+            if let tool = id.tool {
+                if tool.isDrawing { selected = [] }
+                self.tool = tool; selectionChanged?()
+            } else { command?(id) }
             return
         }
         super.keyDown(with: event)

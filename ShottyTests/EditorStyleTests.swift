@@ -12,13 +12,15 @@ final class EditorStyleTests: XCTestCase {
         XCTAssertEqual(first.tool, .rectangle)
         XCTAssertEqual(first.canvas.tool, .rectangle)
         XCTAssertEqual(first.defaults.rectangle, EditorToolDefaults.Rectangle(strokeColor: .annotationBlue, width: 8))
-        XCTAssertEqual(first.defaults.counter.size, 48, "Counters follow the shared thickness stop")
-        XCTAssertEqual(first.defaults.text.size, 32, "So does text")
+        XCTAssertEqual(first.defaults.counter.size, 52, "Counters follow the shared thickness stop")
+        XCTAssertEqual(first.defaults.text.size, 36, "So does text")
 
         first.binding(\.counterSize).wrappedValue = 66
         XCTAssertEqual(first.defaults.width, 14, "A counter size picks the matching thickness stop")
         first.binding(\.textSize).wrappedValue = 24
         XCTAssertEqual(first.defaults.width, 4, "So does a text size")
+        XCTAssertEqual(EditorToolDefaults.counterTextSize(forDiameter: 52), 36, "Counter digits match the stop's text size")
+        XCTAssertEqual(EditorToolDefaults.counterTextSize(forDiameter: 60), 44, "Resized counters interpolate between stops")
 
         first.tool = .arrow
         first.binding(\.color).wrappedValue = .annotationRed
@@ -32,8 +34,8 @@ final class EditorStyleTests: XCTestCase {
         XCTAssertEqual(tools.line, EditorToolDefaults.Line(color: .annotationRed, width: 6))
         XCTAssertEqual(tools.filledRectangle.fillColor, .annotationRed)
         XCTAssertEqual(tools.text.color, .annotationRed)
-        XCTAssertEqual(tools.text.size, 28)
-        XCTAssertEqual(tools.counter, EditorToolDefaults.Counter(color: .annotationRed, size: 40))
+        XCTAssertEqual(tools.text.size, 32)
+        XCTAssertEqual(tools.counter, EditorToolDefaults.Counter(color: .annotationRed, size: 48))
     }
 
     func testAdoptingAnObjectStyleKeepsFilledRectanglesFilled() {

@@ -71,6 +71,9 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
     private var openingEditors = Set<UUID>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Tooltips, such as the editor tool names, appear after 0.7 s instead of AppKit's 1 s.
+        // A global NSInitialToolTipDelay set by the user still wins.
+        UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 700])
         guard NSClassFromString("XCTestCase") == nil else { return }
         coordinator.thumbnails.commands = commands
         coordinator.recognizeText = { [weak self] image, settings, ticket in self?.textCapture.start(image, settings: settings, ticket: ticket) }

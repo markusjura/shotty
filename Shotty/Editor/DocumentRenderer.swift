@@ -282,7 +282,7 @@ final class DocumentRenderer {
         context.saveGState()
         defer { context.restoreGState() }
         var style = EditorToolDefaults.Text()
-        style.size = rect.height * 0.54; style.weight = .bold
+        style.size = EditorToolDefaults.counterTextSize(forDiameter: rect.height); style.weight = .bold
         let string = String(number)
         let attributes: [NSAttributedString.Key: Any] = [
             NSAttributedString.Key(kCTFontAttributeName as String): textFont(style),

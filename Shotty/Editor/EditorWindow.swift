@@ -134,10 +134,24 @@ final class EditorWindowModel {
         return canvas.visibleState.annotations.filter { canvas.selected.contains($0.id) }
     }
     var styleTool: EditorTool { selectedAnnotations.first?.tool ?? tool }
-    /// A selected text's own size, which its size handle sets freely; otherwise the default.
+    /// The text size of the first selected text or counter, whose handles size it freely;
+    /// otherwise the default. A counter's text size is the size of its digits.
     var textSize: Double {
-        for annotation in selectedAnnotations { if case .text(_, _, let style) = annotation.content { return style.size } }
+        for annotation in selectedAnnotations {
+            switch annotation.content {
+            case .text(_, _, let style): return style.size
+            case .counter(_, _, let style): return EditorToolDefaults.counterTextSize(forDiameter: style.size).rounded()
+            default: continue
+            }
+        }
         return defaults.textSize
+    }
+
+    /// Picking a drawing tool deselects, so the next press draws and the options show the
+    /// tool's defaults, as in CleanShot.
+    func pick(_ tool: EditorTool) {
+        if tool.isDrawing { canvas.selected = [] }
+        self.tool = tool
     }
     /// New-object defaults, overlaid with the first selected object's style.
     var defaults: EditorToolDefaults {
@@ -238,7 +252,7 @@ final class EditorWindowModel {
         zoomLabel = "\(Int((canvas.zoom * (canvas.window?.backingScaleFactor ?? 2) * 100).rounded()))%"
     }
     func execute(_ command: CommandID) {
-        if let tool = command.tool { self.tool = tool; return }
+        if let tool = command.tool { pick(tool); return }
         switch command {
         case .copyImage: copy()
         case .save: save(asNew: NSEvent.modifierFlags.contains(.option))
@@ -457,7 +471,7 @@ private struct ToolButton: View {
 
     var body: some View {
         let active = model.tool == tool
-        Button { model.tool = tool } label: {
+        Button { model.pick(tool) } label: {
             ToolIcon(tool: tool)
                 .font(.system(size: 14, weight: .medium))
                 .frame(width: isStandalone ? EditorBar.iconButtonWidth : EditorBar.toolWidth,
