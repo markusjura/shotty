@@ -201,7 +201,7 @@ final class EditorDocumentTests: XCTestCase {
         return bytes
     }
 
-    /// CleanShot's model: drawing leaves the new object unselected (redactions and spotlights stay selected), a
+    /// Drawing leaves the new object unselected (redactions and spotlights stay selected), a
     /// press on an object picks it up without leaving the drawing tool, and a click on empty
     /// canvas only deselects.
     func testDrawingToolDrawsUnselectedAndPicksUpExistingObjects() async throws {

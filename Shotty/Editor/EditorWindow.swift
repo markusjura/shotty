@@ -15,7 +15,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         window.title = "Shotty · \(record.pixelWidth) × \(record.pixelHeight)"
         window.titleVisibility = .hidden; window.titlebarAppearsTransparent = true
         // An empty unified toolbar places the traffic lights at x 19, 42, 65 and centers them in the
-        // 51 pt bar, as in CleanShot. The SwiftUI bar draws everything else beneath the titlebar.
+        // 51 pt bar. The SwiftUI bar draws everything else beneath the titlebar.
         window.toolbar = NSToolbar(identifier: "editor")
         window.toolbarStyle = .unified
         window.titlebarSeparatorStyle = .none
@@ -28,7 +28,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     }
     required init?(coder: NSCoder) { nil }
 
-    /// Like CleanShot, the window wraps the image at the zoom the canvas will fit it to: actual size
+    /// The window wraps the image at the zoom the canvas will fit it to: actual size
     /// when the screen has room, otherwise scaled down to fit it.
     private static func initialFrame(for record: CaptureRecord) -> CGRect {
         let screen = NSScreen.main ?? NSScreen.screens.first
@@ -148,7 +148,7 @@ final class EditorWindowModel {
     }
 
     /// Picking a drawing tool deselects, so the next press draws and the options show the
-    /// tool's defaults, as in CleanShot.
+    /// tool's defaults.
     func pick(_ tool: EditorTool) {
         if tool.isDrawing { canvas.selected = [] }
         self.tool = tool
@@ -337,7 +337,7 @@ private struct EditorWindowView: View {
                 if model.tool == .crop {
                     cropBar
                 } else {
-                    // Crop changes the whole image, so it sits apart from the drawing tools, as in CleanShot.
+                    // Crop changes the whole image, so it sits apart from the drawing tools.
                     ToolButton(model: model, tool: .crop, isStandalone: true)
                     ToolStrip(model: model).padding(.leading, EditorBar.groupSpacing)
                     // Select without an editable selection has no options; hide rather than disable.
@@ -356,7 +356,7 @@ private struct EditorWindowView: View {
             CanvasContainer(canvas: model.canvas)
             Divider()
             ZStack {
-                // Zoom on the left, output on the right, with the drag handle between them, as in CleanShot.
+                // Zoom on the left, output on the right, with the drag handle between them.
                 HStack(spacing: EditorBar.buttonSpacing) {
                     ZoomMenu(model: model)
                     Spacer()
@@ -405,7 +405,7 @@ private struct EditorWindowView: View {
     }
 }
 
-/// CleanShot's zoom control: the current percentage, even while fitting, with zoom steps,
+/// The zoom control: the current percentage, even while fitting, with zoom steps,
 /// Fit Canvas, and three fixed levels.
 private struct ZoomMenu: View {
     let model: EditorWindowModel

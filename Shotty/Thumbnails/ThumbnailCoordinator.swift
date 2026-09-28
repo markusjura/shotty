@@ -308,8 +308,8 @@ final class ThumbnailCoordinator {
     private func place() {
         guard let panel, let screen = resolveScreen() else { return }
         targetDisplay = screen.displayID
-        // visibleFrame excludes the menu bar, notch area, and Dock. The side and bottom insets match
-        // where CleanShot starts its stack (40 pt in, 100 pt up); the top keeps a 12 pt margin.
+        // visibleFrame excludes the menu bar, notch area, and Dock. The stack starts 40 pt in and
+        // 100 pt up from the bottom corner; the top keeps a 12 pt margin.
         let visible = screen.visibleFrame
         let frame = CGRect(x: visible.minX + 40, y: visible.minY + 100, width: visible.width - 80, height: visible.height - 112)
         let width = min(self.width, frame.width)

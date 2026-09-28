@@ -70,7 +70,7 @@ final class EditorGeometryTests: XCTestCase {
                                                        annotations: [a, b]), [kept, a.id], "Shrinking deselects")
     }
 
-    /// CleanShot's text box: side handles rewrap at a new width, the corner scales the font.
+    /// Text box: side handles rewrap at a new width, the corner scales the font.
     func testTextSideHandlesRewrapAndCornerHandleScalesTheFont() {
         var style = EditorToolDefaults.Text(); style.size = 32
         let text = "Hello text"

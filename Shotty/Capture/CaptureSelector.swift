@@ -201,7 +201,7 @@ final class CaptureSelector {
     /// Area and window selection switch into each other with Space; the other modes never pick a window.
     private var selectsWindows: Bool { kind == .area || kind == .window }
 
-    /// CleanShot-style crosshair for drawing a screenshot region, before and while dragging; the
+    /// A crosshair for drawing a screenshot region, before and while dragging; the
     /// normal arrow for picking a window or a scrolling region. Set directly as well as through
     /// cursor rects, because Shotty is not the active app and the frontmost app may otherwise keep
     /// its cursor.
@@ -721,7 +721,7 @@ private final class SelectionView: NSView {
     }
 
     /// The scrolling prompt, centered on each display until a region is drawn. Sized like
-    /// CleanShot's: 20 pt regular text in a 59 pt pill, with no shadow.
+    /// 20 pt regular text in a 59 pt pill, with no shadow.
     private func drawInstruction() {
         let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 20, weight: .regular),
                                                          .foregroundColor: Chrome.controlLabel]
@@ -759,7 +759,7 @@ final class NonKeyPanel: NSPanel {
 }
 
 extension NSCursor {
-    /// Area-capture crosshair modeled on CleanShot X: a one-point black plus inside a white
+    /// Area-capture crosshair: a one-point black plus inside a white
     /// outline with a faint dark rim, so it reads on light and dark content alike.
     @MainActor static let captureCrosshair: NSCursor = {
         let size: CGFloat = 23

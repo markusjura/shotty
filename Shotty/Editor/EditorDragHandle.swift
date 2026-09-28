@@ -7,7 +7,7 @@ struct EditorDragHandle: NSViewRepresentable {
     func updateNSView(_ view: ExportDragView, context: Context) { view.model = model }
 }
 
-/// CleanShot's Drag Me handle. Dragging hides the editor so the image can go to Finder, a chat, or
+/// The Drag Me handle. Dragging hides the editor so the image can go to Finder, a chat, or
 /// any window behind it. A completed drop closes the editor; a cancelled drag brings it back.
 final class ExportDragView: NSView, NSDraggingSource {
     weak var model: EditorWindowModel?

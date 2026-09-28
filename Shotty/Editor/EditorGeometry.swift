@@ -24,7 +24,7 @@ enum EditorGeometry {
     }
 
     /// Handles for one selected object: endpoints for lines and arrows, otherwise the four
-    /// corners, as in CleanShot.
+    /// corners.
     static func handles(for annotation: Annotation) -> [(EditorHandle, CGPoint)] {
         switch annotation.content {
         case .line(let a, let b, _): return [(.point(0), a), (.point(1), b)]
@@ -37,7 +37,7 @@ enum EditorGeometry {
         }
     }
 
-    /// As in CleanShot: side handles set the wrap width, the bottom-right corner scales the font.
+    /// Side handles set the wrap width, the bottom-right corner scales the font.
     static func textHandles(for rect: CGRect) -> [(EditorHandle, CGPoint)] {
         [(.edges(.left), CGPoint(x: rect.minX, y: rect.midY)), (.edges(.right), CGPoint(x: rect.maxX, y: rect.midY)),
          (.textSize, CGPoint(x: rect.maxX, y: rect.maxY))]

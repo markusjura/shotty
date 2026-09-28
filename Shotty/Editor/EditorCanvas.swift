@@ -429,7 +429,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         context.restoreGState()
     }
 
-    /// CleanShot's handle: an accent-filled dot in a white ring with a soft shadow, 16 points wide.
+    /// A handle: an accent-filled dot in a white ring with a soft shadow, 16 points wide.
     /// The text size handle is a smaller rounded square.
     private func drawHandle(_ point: CGPoint, handle: EditorHandle? = nil, context: CGContext) {
         if handle == .textSize {
@@ -453,7 +453,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         context.setFillColor(NSColor.controlAccentColor.cgColor); context.fillEllipse(in: ring.insetBy(dx: 2.5 / zoom, dy: 2.5 / zoom))
     }
 
-    /// As in CleanShot, a text's dashed box and handles sit outside its text, so the side handles
+    /// A text's dashed box and handles sit outside its text, so the side handles
     /// stay clear of the letters and of the text view while typing. The line box already leaves
     /// room above and below the letters, so it needs little vertical padding.
     private func textChrome(_ rect: CGRect) -> CGRect { rect.insetBy(dx: -14 / zoom, dy: -4 / zoom) }
@@ -482,7 +482,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
     override func mouseMoved(with event: NSEvent) { updateCursor() }
 
     /// Sets the cursor for what a press at the pointer would do: resize cursors on handles, a
-    /// hand on objects, the capture crosshair where a drawing tool draws, as in CleanShot.
+    /// hand on objects, the capture crosshair where a drawing tool draws.
     private func updateCursor() {
         guard gesture == nil, !spaceHeld, let window, window.isKeyWindow else { return }
         let viewPoint = convert(window.mouseLocationOutsideOfEventStream, from: nil)
@@ -566,7 +566,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         if let hit, hit.tool == .text, event.clickCount == 2 || tool == .text {
             selected = [hit.id]; beginText(point: point, existing: hit); resetGesture(); return
         }
-        // As in CleanShot, any tool picks up an existing object; only empty canvas draws.
+        // Any tool picks up an existing object; only empty canvas draws.
         if let hit {
             if event.modifierFlags.contains(.shift) {
                 if selected.contains(hit.id) { selected.remove(hit.id) } else { selected.insert(hit.id) }
@@ -694,7 +694,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         if let result, result != document.state, travelled >= 3 {
             switch finished {
             case .draw(let id):
-                // New objects stay unselected, so the next drag draws again, as in CleanShot. A new
+                // New objects stay unselected, so the next drag draws again. A new
                 // redaction or spotlight stays selected, like text, so its style and size can be
                 // adjusted at once.
                 commit(result, actionName: "Draw \(CommandID.tool(tool).title)")

@@ -30,7 +30,7 @@ struct RGBAColor: Codable, Equatable, Sendable {
     static let annotationRed = RGBAColor(red: 0.976, green: 0.204, blue: 0.259)
     static let annotationBlue = RGBAColor(red: 0, green: 0.48, blue: 1)
 
-    /// CleanShot X's annotation colors, in its menu order.
+    /// The annotation colors, in menu order.
     static let annotationPalette: [(name: String, color: RGBAColor)] = [
         ("Black", .black), ("Red", .annotationRed), ("Orange", RGBAColor(red: 1, green: 0.549, blue: 0)),
         ("Yellow", RGBAColor(red: 1, green: 0.882, blue: 0)), ("Green", RGBAColor(red: 0.25, green: 0.84, blue: 0.32)),
@@ -186,7 +186,7 @@ struct ThumbnailPreferences: Codable, Equatable, Sendable {
     /// Dismisses a thumbnail once its copied image is pasted into another app.
     var dismissesAfterPaste = false
     /// Hides the stack from the start of a capture until its pixels are taken, so thumbnails
-    /// never appear in screenshots. Off by default: the stack stays visible, as in CleanShot.
+    /// never appear in screenshots. Off by default: the stack stays visible.
     var hidesDuringCapture = false
 
     var isValid: Bool { Self.autoCloseDelayRange.contains(autoCloseDelaySeconds) }
@@ -194,7 +194,7 @@ struct ThumbnailPreferences: Codable, Equatable, Sendable {
 
 // MARK: - Editor
 
-/// Declared in toolbar order, which follows CleanShot X.
+/// Declared in toolbar order.
 enum EditorTool: String, Codable, CaseIterable, Sendable {
     case select, rectangle, filledRectangle, ellipse, line, arrow, text, redact, spotlight, counter, crop
 
@@ -209,13 +209,13 @@ enum TextTreatment: String, Codable, CaseIterable, Sendable { case plain, outlin
 enum RedactStyle: String, Codable, CaseIterable, Sendable { case pixelate, blur, solid }
 enum SpotlightShape: String, Codable, CaseIterable, Sendable { case rectangle, roundedRectangle, ellipse }
 
-/// New-object defaults. As in CleanShot, one color and one stroke width serve every tool; the
+/// New-object defaults. One color and one stroke width serve every tool; the
 /// per-tool style properties combine them with the options that belong to that tool alone.
 /// Widths and sizes are image pixels, independent of zoom.
 struct EditorToolDefaults: Codable, Equatable, Sendable {
     static let widthRange = 1.0...64.0
-    /// Six stroke widths (2, 3, 4, 5, 7, and 10 pt) in Retina pixels. Finer than CleanShot's
-    /// 1, 3, 7, 10, 15, and 25 pt, whose jump from 3 to 7 pt skips the widths used most.
+    /// Six stroke widths (2, 3, 4, 5, 7, and 10 pt) in Retina pixels, finest where widths are
+    /// used most.
     static let widthPresets: [Double] = [4, 6, 8, 10, 14, 20]
 
     /// Text sizes paired with the width presets: one stop sizes every tool. A counter's digits

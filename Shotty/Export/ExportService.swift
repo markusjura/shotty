@@ -177,7 +177,7 @@ actor ExportService {
         return "\(stem)\(collision == 1 ? "" : "-\(collision)")\(density).\(options.fileExtension)"
     }
 
-    /// CleanShot's naming, e.g. `image-2026-09-26-14.17.05`; `filename` adds `@2x` for Retina pixels.
+    /// Names like `image-2026-09-26-14.17.05`; `filename` adds `@2x` for Retina pixels.
     nonisolated static func filenameStem(date: Date, timeZone: TimeZone = .current) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")

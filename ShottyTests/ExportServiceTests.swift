@@ -167,7 +167,7 @@ final class ExportServiceTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), ["saved.png"])
     }
 
-    func testFilenameStemFollowsCleanShotNaming() {
+    func testFilenameStemFollowsTheDateNaming() {
         let date = Date(timeIntervalSince1970: 1_788_703_625)  // 2026-09-06 14:07:05 UTC
         XCTAssertEqual(ExportService.filenameStem(date: date, timeZone: TimeZone(secondsFromGMT: 0)!), "image-2026-09-06-14.07.05")
     }

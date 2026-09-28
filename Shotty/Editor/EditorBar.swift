@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Metrics and styles for the editor's top and bottom bars, measured against CleanShot X at 2x:
+/// Metrics and styles for the editor's top and bottom bars:
 /// 51 pt translucent bars, 26 pt capsule buttons filled with a light tint, and a 24 pt capsule
 /// strip for the drawing tools.
 enum EditorBar {
@@ -21,7 +21,7 @@ enum EditorBar {
     /// Fits the top bar with its widest tool options (Text) through Done.
     static let minimumWindowWidth: CGFloat = 900
 
-    /// Button fill: white at 20% in Dark Mode, which reads as CleanShot's #656666 on its bar.
+    /// Button fill: white at 20% in Dark Mode, which reads as #656666 on the bar.
     static let buttonFill = Color(nsColor: NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.2) : NSColor(white: 0, alpha: 0.1)
     })
@@ -31,9 +31,8 @@ enum EditorBar {
     })
 }
 
-/// A translucent system material that dims with the window like CleanShot's bars. Of the system
-/// materials, the sidebar one comes closest in Dark Mode: 67 active and 37 inactive against
-/// CleanShot's 63 and 35 (8-bit gray).
+/// A translucent system material that dims with the window. The sidebar material reads as
+/// 67 active and 37 inactive (8-bit gray) in Dark Mode.
 struct EditorBarBackground: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()

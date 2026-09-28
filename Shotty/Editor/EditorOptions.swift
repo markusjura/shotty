@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// CleanShot-style option buttons for the current tool or selection. Each shows its value with a
+/// Option buttons for the current tool or selection. Each shows its value with a
 /// chevron and opens a native menu below it. A choice applies to the selected objects and becomes
 /// the default for new ones. Color and stroke width are shared by all tools.
 struct EditorOptions: View {
@@ -45,7 +45,7 @@ struct EditorOptions: View {
         }
     }
 
-    /// CleanShot's palette as a column of swatches, with the color panel for anything else.
+    /// The annotation palette as a column of swatches, with the color panel for anything else.
     private func color(_ key: WritableKeyPath<EditorToolDefaults, RGBAColor>) -> some View {
         let mixed = model.hasMixedValues(key)
         let current = model.defaults[keyPath: key]
@@ -107,7 +107,7 @@ struct EditorOptions: View {
         }
     }
 
-    /// Style enums with rendered samples. `tinted` samples take the menu's text color, as CleanShot's arrows do.
+    /// Style enums with rendered samples. `tinted` samples, such as arrows, take the menu's text color.
     private func choice<Value: StyleChoice>(_ title: String, _ key: WritableKeyPath<EditorToolDefaults, Value>,
                                             samples: [Value: NSImage], tinted: Bool) -> some View {
         let current = model.defaults[keyPath: key]
@@ -355,7 +355,7 @@ private struct MenuAnchor: NSViewRepresentable {
     func updateNSView(_ view: NSView, context: Context) { reference.view = view }
 }
 
-/// A tinted capsule like CleanShot's toolbar options, darker while pressed or open.
+/// A tinted capsule for toolbar options, darker while pressed or open.
 private struct OptionButtonStyle: ButtonStyle {
     let isOpen: Bool
 
@@ -367,7 +367,7 @@ private struct OptionButtonStyle: ButtonStyle {
 }
 
 /// Builds the option menus. Rows with images show the selected value at full strength and the rest
-/// dimmed, as CleanShot does; plain rows use checkmarks.
+/// dimmed; plain rows use checkmarks.
 @MainActor
 private enum OptionMenu {
     static func make(showsState: Bool) -> NSMenu {
@@ -453,7 +453,7 @@ private enum OptionMenu {
         return dimmed(image, selected: selected)
     }
 
-    /// "Aa" at a size that follows the text size preset, like CleanShot's font size menu.
+    /// "Aa" at a size that follows the text size preset.
     static func textSample(pointSize: CGFloat) -> NSImage {
         let text = NSAttributedString(string: "Aa", attributes: [.font: NSFont.systemFont(ofSize: pointSize, weight: .medium)])
         let size = text.size()

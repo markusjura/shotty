@@ -126,7 +126,7 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
     override func layout() {
         super.layout()
         statusLabel.frame = CGRect(x: 34, y: bounds.height - 25, width: bounds.width - 68, height: 16)
-        // Proportions follow CleanShot's overlay: small corner buttons, two compact centered pills.
+        // Small corner buttons and two compact centered pills.
         let inset: CGFloat = 6, diameter = Chrome.iconButtonDiameter
         let pill = Chrome.cardPillSize, gap: CGFloat = 10
         controls[0].frame = CGRect(x: inset, y: bounds.height - inset - diameter, width: diameter, height: diameter)
@@ -180,7 +180,7 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
 
     private static let ciContext = CIContext(options: [.cacheIntermediates: false])
 
-    /// Blurs and darkens the capture at card resolution, like CleanShot's hover background.
+    /// Blurs and darkens the capture at card resolution for the hover background.
     /// Built once per image on first reveal, so cards that are never hovered cost nothing.
     private func makeBackdrop() -> CGImage? {
         guard let image, let source = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
@@ -420,7 +420,7 @@ private final class ThumbnailActionButton: NSButton {
     }
 }
 
-/// Dark glyphs sized to their button, like CleanShot's overlay icons. Corner icons are heavy; the pill
+/// Dark glyphs sized to their button. Corner icons are heavy; the pill
 /// checkmark is one weight lighter, like the Copy and Save labels it replaces. SF Symbols has no solid
 /// pencil, so Edit uses a small drawn one with the same weight as the xmark.
 @MainActor

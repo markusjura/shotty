@@ -350,7 +350,7 @@ final class AppCoordinator {
         }
     }
 
-    /// Quit asks nothing, as in CleanShot. Captures in progress are cancelled, a running save
+    /// Quit asks nothing. Captures in progress are cancelled, a running save
     /// finishes writing, and the session is discarded, so thumbnails simply disappear.
     /// Saved files are never touched.
     func prepareToQuit() async -> Bool {

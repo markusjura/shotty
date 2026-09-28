@@ -12,7 +12,7 @@ import SwiftUI
 enum Chrome {
     // MARK: Color
 
-    /// Light control surface, matching CleanShot's overlay pills.
+    /// Light control surface for overlay pills.
     static let controlFill = NSColor(white: 0.85, alpha: 0.96)
     static let controlFillPressed = NSColor(white: 0.7, alpha: 0.96)
     /// Label on `controlFill`; dark gray reads softer than black at small sizes.
@@ -31,7 +31,7 @@ enum Chrome {
             ? NSColor(white: 0.5, alpha: 1) : NSColor(white: 0.6, alpha: 0.55)
     }
     static var hairlineWidth: CGFloat { NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast ? 2 : 1 }
-    /// Faint outline around thumbnail cards, measured against CleanShot's: a soft light edge in
+    /// Faint outline around thumbnail cards: a soft light edge in
     /// Dark Mode, a soft dark edge in Light Mode. Falls back to `hairline` with Increase Contrast.
     static var cardOutline: NSColor {
         guard !NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast else { return hairline }
@@ -43,7 +43,7 @@ enum Chrome {
 
     // MARK: Window level
 
-    /// Thumbnails and capture overlays sit where CleanShot's do, just below the cursor: above app
+    /// Thumbnails and capture overlays sit just below the cursor: above app
     /// windows, full-screen apps, the menu bar, and other apps' floating panels.
     static let floatingLevel = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.cursorWindow)) - 2)
 
@@ -55,7 +55,7 @@ enum Chrome {
     static let cardPillSize = CGSize(width: 52, height: 27)
     static let iconButtonDiameter: CGFloat = 22
     static let controlFont = NSFont.systemFont(ofSize: 13, weight: .medium)
-    /// Copy and Save on thumbnail cards: a size smaller than `controlFont`, matching CleanShot's pills.
+    /// Copy and Save on thumbnail cards: a size smaller than `controlFont`, for compact pills.
     static let cardPillFont = NSFont.systemFont(ofSize: 12, weight: .medium)
 
     // MARK: Motion

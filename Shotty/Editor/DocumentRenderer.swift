@@ -107,7 +107,7 @@ final class DocumentRenderer {
             context.setLineWidth(style.width)
             context.move(to: start); context.addLine(to: end); context.strokePath()
         case .rectangle(let rect, let style):
-            // A filled rectangle is only its fill, like CleanShot's; the stroke width does not grow it.
+            // A filled rectangle is only its fill; the stroke width does not grow it.
             if let fill = style.fillColor {
                 context.setFillColor(fill.cgColor); context.fill(rect.standardized)
             } else {
