@@ -17,7 +17,7 @@ xcodebuild -project Shotty.xcodeproj -scheme Shotty -configuration Debug -destin
 - `osascript -e 'tell application id "local.markus.Shotty" to quit'` quits whichever build is running.
 - `Scripts/ui/shotty-ui <command>` drives and measures the running app. See below.
 
-Package and install only when I ask. Bump `CURRENT_PROJECT_VERSION` first, commit, quit Shotty, then run `Scripts/package.sh` and `Scripts/install.sh .build/releases/<zip>`.
+Package and install only when I ask. Bump `CURRENT_PROJECT_VERSION` first, commit, push to `main`, quit Shotty, then run `Scripts/package.sh` and `Scripts/install.sh .build/releases/<zip>`. `package.sh` refuses anything but a clean `HEAD` equal to `origin/main`. Fleet sync then installs the build on the other Macs; don't copy it there yourself.
 
 ## Verifying UI changes
 

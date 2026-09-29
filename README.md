@@ -4,7 +4,7 @@ A native macOS screenshot utility tailored to Markus's workflow.
 
 ## Build and test
 
-Requires an Apple Silicon Mac, macOS 26 or later, Xcode 27, and an existing Apple Development signing identity. Create a gitignored `Local.xcconfig` in the repository root containing `DEVELOPMENT_TEAM = YOUR_TEAM_ID`. The shared project includes it through `Config/Signing.xcconfig`; no certificate or private key belongs in the repository.
+Requires an Apple Silicon Mac, macOS 26 or later, Xcode 27, and the existing Apple Development signing identity. On another Mac, import that identity's certificate and private key instead of letting Xcode create a new certificate, so every Mac signs with the same designated requirement. Create a gitignored `Local.xcconfig` in the repository root containing `DEVELOPMENT_TEAM = YOUR_TEAM_ID`. The shared project includes it through `Config/Signing.xcconfig`; no certificate or private key belongs in the repository.
 
 Open `Shotty.xcodeproj` and select the shared Shotty scheme, or run:
 
@@ -17,15 +17,15 @@ xcodebuild -project Shotty.xcodeproj -scheme Shotty -configuration Debug -destin
 
 ## Package, install, and roll back
 
-Set `MARKETING_VERSION` and increase `CURRENT_PROJECT_VERSION` in the Shotty target, then package:
+Set `MARKETING_VERSION` and increase `CURRENT_PROJECT_VERSION` in the Shotty target, commit, and push to `main`, then package:
 
 ```sh
 Scripts/package.sh
 ```
 
-It builds Release, refuses to continue unless `codesign --verify --deep --strict` passes and the bundle ID is `local.markus.Shotty`, and writes to `.build/releases/`:
+It refuses to run unless the working tree is clean and `HEAD` is `origin/main`, so each build number names one pushed commit. It builds Release, refuses to continue unless `codesign --verify --deep --strict` passes and the bundle ID is `local.markus.Shotty`, and writes to `.build/releases/`:
 
-- `Shotty-<version>-<build>-<commit>.zip`, created with `ditto` so the signature survives. A `-dirty` suffix marks uncommitted changes.
+- `Shotty-<version>-<build>-<commit>.zip`, created with `ditto` so the signature survives.
 - A `.sha256` checksum beside it.
 - A `.txt` record of the signing authority, team, designated requirement, and entitlements.
 
@@ -38,7 +38,11 @@ The installer checks the checksum when the `.sha256` file is present, verifies t
 
 `Scripts/install.sh --rollback` reinstalls the previous build the same way and keeps the replaced one as the new previous build, so running it again returns to where you started. Only one previous build is kept. Settings in UserDefaults are never touched by either operation. A rollback therefore runs the older app against the newer settings, so check that it opens them before relying on it.
 
-Neither script strips quarantine or changes Gatekeeper settings. Judge a copied install by whether it actually launches. There is no auto-updater.
+Neither script strips quarantine or changes Gatekeeper settings. There is no auto-updater.
+
+## Fleet
+
+Install on any fleet Mac as above. Fleet sync from `markusjura/mac-settings` then observes the newer build in `/Applications`, archives it, and installs it on the other Macs within minutes. It quits a running Shotty gracefully and reopens it afterwards. Fleet refuses builds whose designated requirement differs from the one pinned in its policy. Check progress with `fleet status` (`shotty.activation`). Fleet never lowers its target, so it reinstalls the newer build within minutes of `install.sh --rollback`. Set `shotty.enabled` to false in the fleet policy first, or fix forward with a higher build number.
 
 ## Permissions
 
@@ -48,4 +52,4 @@ Grant permissions to the installed `/Applications/Shotty.app`, not to a build in
 - **Accessibility** is needed only for Auto Scroll and for "Dismiss thumbnail after pasting", which watches for ⌘V in other apps. Auto Scroll asks for it when you start it; manual scrolling capture works without it.
 - Input Monitoring, Full Disk Access, camera, and microphone are not needed.
 
-Keeping the bundle ID and signing identity stable keeps these grants across updates. On studio, grants have survived signed Release replacements with an unchanged designated requirement. Install and permission continuity on m1 is deferred to a separate fleet change.
+Keeping the bundle ID and signing identity stable keeps these grants across updates. Grants have survived signed Release replacements with an unchanged designated requirement, including fleet installs.

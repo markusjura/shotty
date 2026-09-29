@@ -8,6 +8,15 @@ set -euo pipefail
 cd "${0:A:h:h}"
 
 bundle_id=local.markus.Shotty
+
+# Fleet syncs the installed build to every Mac by build number, so each number must name exactly
+# one commit. Packaging only a clean, pushed main makes git serialize the bumps across machines.
+git fetch --quiet origin main
+[[ -z "$(git status --porcelain)" ]] || { print -u2 "Commit or stash your changes first."; exit 1 }
+[[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] || {
+  print -u2 "HEAD is not origin/main. Push the build bump on main first."; exit 1
+}
+
 Scripts/build.sh
 app=.build/Build/Products/Release/Shotty.app
 
@@ -20,7 +29,6 @@ codesign --verify --deep --strict --verbose=2 "$app"
 version=$(/usr/bin/defaults read "$PWD/$app/Contents/Info" CFBundleShortVersionString)
 build=$(/usr/bin/defaults read "$PWD/$app/Contents/Info" CFBundleVersion)
 commit=$(git rev-parse --short HEAD)
-[[ -z "$(git status --porcelain)" ]] || commit="$commit-dirty"
 name="Shotty-$version-$build-$commit"
 mkdir -p .build/releases
 zip=".build/releases/$name.zip"
