@@ -201,11 +201,10 @@ final class CaptureSelector {
     /// Area and window selection switch into each other with Space; the other modes never pick a window.
     private var selectsWindows: Bool { kind == .area || kind == .window }
 
-    /// A crosshair for drawing a screenshot region, before and while dragging; the
-    /// normal arrow for picking a window or a scrolling region. Set directly as well as through
-    /// cursor rects, because Shotty is not the active app and the frontmost app may otherwise keep
-    /// its cursor.
-    var cursor: NSCursor { kind == .window || kind == .scrolling ? .arrow : .captureCrosshair }
+    /// A crosshair for drawing an area or scrolling region, before and while dragging; the
+    /// normal arrow for picking a window. Set directly as well as through cursor rects, because
+    /// Shotty is not the active app and the frontmost app may otherwise keep its cursor.
+    var cursor: NSCursor { kind == .window ? .arrow : .captureCrosshair }
 
     func updateCursor() { cursor.set() }
 
@@ -529,9 +528,9 @@ final class CaptureSelector {
     }
 
     var drawsHandles: Bool { isAdjusting }
-    /// The pointer readout helps while drawing. It stays away once a region exists, and scrolling
-    /// capture never shows it; errors are always shown.
-    var showsReadout: Bool { errorMessage != nil || (kind != .scrolling && (selection == nil || drag != nil)) }
+    /// The pointer readout helps while drawing. It stays away once a region exists; errors are
+    /// always shown.
+    var showsReadout: Bool { errorMessage != nil || selection == nil || drag != nil }
 }
 
 final class SelectionPanel: NSPanel {
@@ -585,7 +584,7 @@ private final class SelectionView: NSView {
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel(selector.kind == .scrolling
-            ? "Scrolling capture. \(Self.scrollingInstruction) Arrow keys adjust. Return starts. Escape cancels."
+            ? "Scrolling capture. Drag to select the scrolling part of the screen. Arrow keys adjust. Return starts. Escape cancels."
             : "Capture selection. Drag to select. Arrow keys adjust. Return captures. Escape cancels.")
     }
     required init?(coder: NSCoder) { nil }
@@ -661,8 +660,6 @@ private final class SelectionView: NSView {
                 Chrome.drawSelection(rect)
             }
             if selector.drawsHandles { drawHandles(around: rect) }
-        } else if selector.kind == .scrolling {
-            drawInstruction()
         }
         let point = CGPoint(x: selector.pointer.x - display.frame.minX, y: selector.pointer.y - display.frame.minY)
         guard selector.showsReadout, bounds.contains(point) else { return }
@@ -679,8 +676,6 @@ private final class SelectionView: NSView {
         NSBezierPath(roundedRect: label, xRadius: 5, yRadius: 5).fill()
         (message as NSString).draw(at: CGPoint(x: label.minX + 6, y: label.minY + 4), withAttributes: attributes)
     }
-
-    static let scrollingInstruction = "Drag to capture the scrolling part of the screen."
 
     /// White corner brackets and edge bars drawn just outside the region, clear of its pixels.
     private func drawHandles(around rect: CGRect) {
@@ -718,21 +713,6 @@ private final class SelectionView: NSView {
         NSColor.white.setStroke()
         path.stroke()
         NSGraphicsContext.restoreGraphicsState()
-    }
-
-    /// The scrolling prompt, centered on each display until a region is drawn. Sized like
-    /// 20 pt regular text in a 59 pt pill, with no shadow.
-    private func drawInstruction() {
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 20, weight: .regular),
-                                                         .foregroundColor: Chrome.controlLabel]
-        let text = Self.scrollingInstruction as NSString
-        let size = text.size(withAttributes: attributes)
-        let padding = CGSize(width: 24, height: 18)
-        let pill = CGRect(x: bounds.midX - size.width / 2 - padding.width, y: bounds.midY - size.height / 2 - padding.height,
-                          width: size.width + 2 * padding.width, height: size.height + 2 * padding.height)
-        Chrome.controlFill.setFill()
-        NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
-        text.draw(at: CGPoint(x: pill.minX + padding.width, y: pill.minY + padding.height), withAttributes: attributes)
     }
 
     private func point(_ event: NSEvent) -> CGPoint { window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation }
