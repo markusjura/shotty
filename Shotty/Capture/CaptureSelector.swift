@@ -649,7 +649,7 @@ private final class SelectionView: NSView {
             preview.draw(in: local(selected))
         }
         // Nothing covers the screen until a region exists. An area or scrolling region is outlined
-        // in white with a faint wash; a hovered window gets a blue tint.
+        // in white with a light grey wash; a hovered window gets a blue tint.
         if let selected {
             let rect = local(selected)
             if selector.kind == .window {

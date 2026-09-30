@@ -18,10 +18,11 @@ enum Chrome {
     /// Label on `controlFill`; dark gray reads softer than black at small sizes.
     static let controlLabel = NSColor(white: 0.14, alpha: 1)
     static let controlLabelDisabled = NSColor(white: 0.14, alpha: 0.4)
-    /// A capture region: an opaque white border with a faint white wash inside. The screen
-    /// around it keeps its own colors.
+    /// A capture region: an opaque white border with a light grey wash inside. The wash greys white
+    /// slightly and brightens darks and colors; it only vanishes on content of its own grey (about
+    /// 179). The screen around it keeps its own colors.
     static let selectionBorder = NSColor.white
-    static let selectionTint = NSColor.white.withAlphaComponent(0.1)
+    static let selectionTint = NSColor(white: 0.70, alpha: 0.22)
     /// Small dark readouts such as selection dimensions.
     static let readoutFill = NSColor.black.withAlphaComponent(0.78)
 
