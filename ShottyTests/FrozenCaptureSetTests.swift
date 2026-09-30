@@ -1,9 +1,76 @@
 import CoreGraphics
 import Foundation
+import ScreenCaptureKit
 import XCTest
 @testable import Shotty
 
 final class FrozenCaptureSetTests: XCTestCase {
+    func testUnavailableWindowDoesNotAbortOrReorderDisplayCaptures() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let raster = try FrozenRasterFile.store(fixture(), directory: directory, remainingDiskBytes: 1_000_000, limits: .init())
+        let requests = [true, true, false].map {
+            FrozenCaptureBatch.Request(estimatedBytes: raster.byteCount, isWindow: $0, diagnosticLabel: "fixture")
+        }
+        let results = try await FrozenCaptureBatch.capture(requests, maximumDiskBytes: raster.byteCount * 3, concurrency: 3) { index in
+            if index == 1 { throw NSError(domain: SCStreamErrorDomain, code: SCStreamError.Code.internalError.rawValue) }
+            if index == 0 { try await Task.sleep(for: .milliseconds(20)) }
+            return raster
+        }
+        XCTAssertEqual(results.count, 3)
+        XCTAssertEqual(results[0]?.id, raster.id)
+        XCTAssertNil(results[1])
+        XCTAssertEqual(results[2]?.id, raster.id)
+    }
+
+    func testUnavailableWindowReturnsItsDiskReservation() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let raster = try FrozenRasterFile.store(fixture(), directory: directory, remainingDiskBytes: 1_000_000, limits: .init())
+        let requests = [true, false].map {
+            FrozenCaptureBatch.Request(estimatedBytes: raster.byteCount, isWindow: $0, diagnosticLabel: "fixture")
+        }
+        let results = try await FrozenCaptureBatch.capture(requests, maximumDiskBytes: raster.byteCount, concurrency: 3) { index in
+            if index == 0 { throw NSError(domain: SCStreamErrorDomain, code: SCStreamError.Code.internalError.rawValue) }
+            return raster
+        }
+        XCTAssertNil(results[0])
+        XCTAssertEqual(results[1]?.id, raster.id)
+    }
+
+    func testDisplayPermissionAndResourceFailuresStillAbortFreezing() async {
+        let cases: [(isWindow: Bool, error: NSError)] = [
+            (false, NSError(domain: SCStreamErrorDomain, code: SCStreamError.Code.internalError.rawValue)),
+            (true, NSError(domain: SCStreamErrorDomain, code: SCStreamError.Code.userDeclined.rawValue)),
+            (true, NSError(domain: SCStreamErrorDomain, code: SCStreamError.Code.missingEntitlements.rawValue)),
+            (true, FrozenCaptureFailure.diskLimit as NSError),
+            (true, FrozenCaptureFailure.resourceLimit as NSError),
+            (true, NSError(domain: "UnrelatedError", code: SCStreamError.Code.internalError.rawValue))
+        ]
+        for (isWindow, error) in cases {
+            let request = FrozenCaptureBatch.Request(estimatedBytes: 1, isWindow: isWindow, diagnosticLabel: "fixture")
+            do {
+                _ = try await FrozenCaptureBatch.capture([request], maximumDiskBytes: 1, concurrency: 1) { _ in throw error }
+                XCTFail("Expected \(error) to abort freezing")
+            } catch let actual as NSError {
+                XCTAssertEqual(actual.domain, error.domain)
+                XCTAssertEqual(actual.code, error.code)
+            }
+        }
+    }
+
+    func testWindowCaptureCancellationStillAbortsFreezing() async {
+        let request = FrozenCaptureBatch.Request(estimatedBytes: 1, isWindow: true, diagnosticLabel: "fixture")
+        do {
+            _ = try await FrozenCaptureBatch.capture([request], maximumDiskBytes: 1, concurrency: 1) { _ in
+                throw CancellationError()
+            }
+            XCTFail("Expected cancellation")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+    }
+
     func testRawRoundTripPreservesPixelsPaddingAndColorSpace() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

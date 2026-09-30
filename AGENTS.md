@@ -42,3 +42,4 @@ Save test captures only to `~/Downloads`. Afterwards, quit Shotty, move the test
 
 - On macOS 27, `NSMenu` hides item images unless the item sets `preferredImageVisibility = .visible`. An image-only item without it shows as an empty row.
 - The editor's `NSHostingView` sets the window's minimum size from the SwiftUI content and overrides `window.minSize`. Constrain the root view with `.frame(minWidth:)` instead.
+- On macOS 27, ScreenCaptureKit can list a ChatGPT popover as an on-screen window but fail its screenshot with `SCStreamError.internalError`. Frozen acquisition omits both variants of that optional window so display and area capture can continue. Permission, display, and resource failures still abort.

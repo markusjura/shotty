@@ -84,6 +84,60 @@ struct FrozenDisplaySnapshot: Sendable {
     let raster: FrozenRasterDescriptor
 }
 
+/// A window is an optional selection target; display pixels are required for area selection.
+/// Keep results in request order, including failures, so a failed window cannot shift another raster's target.
+enum FrozenCaptureBatch {
+    struct Request: Sendable {
+        let estimatedBytes: Int
+        let isWindow: Bool
+        let diagnosticLabel: String
+    }
+
+    static func capture(_ requests: [Request], maximumDiskBytes: Int, concurrency: Int,
+                        operation: @escaping @Sendable (Int) async throws -> FrozenRasterDescriptor) async throws -> [FrozenRasterDescriptor?] {
+        let logger = Logger(subsystem: "local.markus.Shotty", category: "FrozenCapture")
+        return try await withThrowingTaskGroup(of: (Int, FrozenRasterDescriptor?).self) { group in
+            var results = [FrozenRasterDescriptor?](repeating: nil, count: requests.count)
+            var completed = 0
+            // Stored bytes of finished captures plus the estimates of running ones.
+            var diskBytes = 0
+            func record(_ index: Int, _ raster: FrozenRasterDescriptor?) {
+                diskBytes -= requests[index].estimatedBytes - (raster?.byteCount ?? 0)
+                results[index] = raster
+                completed += 1
+            }
+            for (index, request) in requests.enumerated() {
+                while index - completed >= concurrency || diskBytes + request.estimatedBytes > maximumDiskBytes,
+                      let (done, raster) = try await group.next() {
+                    record(done, raster)
+                }
+                try Task.checkCancellation()
+                guard diskBytes + request.estimatedBytes <= maximumDiskBytes else {
+                    logger.error("Frozen set rejected \(request.diagnosticLabel, privacy: .public) estimate=\(request.estimatedBytes) disk=\(diskBytes)")
+                    throw FrozenCaptureFailure.diskLimit
+                }
+                diskBytes += request.estimatedBytes
+                group.addTask {
+                    do { return (index, try await operation(index)) }
+                    catch {
+                        try Task.checkCancellation()
+                        let failure = error as NSError
+                        // ScreenCaptureKit can list a transient window but fail to capture it,
+                        // notably a ChatGPT popover on macOS 27. This is not a TCC denial.
+                        guard request.isWindow, failure.domain == SCStreamErrorDomain,
+                              failure.code == SCStreamError.Code.internalError.rawValue else { throw error }
+                        logger.warning("Frozen window unavailable \(request.diagnosticLabel, privacy: .public) domain=\(failure.domain, privacy: .public) code=\(failure.code)")
+                        return (index, nil)
+                    }
+                }
+            }
+            for try await (index, raster) in group { record(index, raster) }
+            try Task.checkCancellation()
+            return results
+        }
+    }
+}
+
 /// All acquisition finishes before this value is returned. An overlay and its
 /// eventual export must both load the same descriptor, never capture another frame.
 /// Call close at session end. Deinitialization also removes the private directory.
@@ -158,32 +212,23 @@ actor FrozenCaptureSet {
                     throw error
                 }
             }
-            // Each capture may store at most its estimate and returns the unused rest when it finishes.
-            // Leaving the group, even by throwing, waits for every capture, so the cleanup below never
-            // deletes files that a capture still writes.
-            let rasters = try await withThrowingTaskGroup(of: (Int, FrozenRasterDescriptor).self) { group in
-                var rasters: [(Int, FrozenRasterDescriptor)] = []
-                // Stored bytes of finished captures plus the estimates of running ones.
-                var diskBytes = 0
-                for (index, (job, estimate)) in zip(jobs, estimates).enumerated() {
-                    while index - rasters.count >= concurrentCaptures || diskBytes + estimate > limits.maximumDiskBytes,
-                          let (done, raster) = try await group.next() {
-                        diskBytes -= estimates[done] - raster.byteCount
-                        rasters.append((done, raster))
-                    }
-                    guard diskBytes + estimate <= limits.maximumDiskBytes else {
-                        logger.error("Frozen set rejected \(job.diagnosticLabel, privacy: .public) estimate=\(estimate) disk=\(diskBytes)")
-                        throw FrozenCaptureFailure.diskLimit
-                    }
-                    diskBytes += estimate
-                    group.addTask { (index, try await capture(job, directory: directory, remainingDiskBytes: estimate, limits: limits)) }
-                }
-                for try await raster in group { rasters.append(raster) }
-                return rasters.sorted { $0.0 < $1.0 }.map(\.1)
+            let requests = zip(jobs, estimates).map { job, estimate in
+                FrozenCaptureBatch.Request(estimatedBytes: estimate, isWindow: job.isWindow, diagnosticLabel: job.diagnosticLabel)
+            }
+            // The batch joins all tasks before throwing, so cleanup never removes files still being written.
+            let captureJobs = jobs
+            let rasters = try await FrozenCaptureBatch.capture(requests, maximumDiskBytes: limits.maximumDiskBytes,
+                                                              concurrency: concurrentCaptures) { index in
+                try await capture(captureJobs[index], directory: directory, remainingDiskBytes: estimates[index], limits: limits)
             }
             var windows: [FrozenWindowSnapshot] = []
             var displays: [FrozenDisplaySnapshot] = []
+            var unavailableWindows = Set<CGWindowID>()
             for (job, raster) in zip(jobs, rasters) {
+                guard let raster else {
+                    if case .window(let id, _) = job.target { unavailableWindows.insert(id) }
+                    continue
+                }
                 switch job.target {
                 case .window(let id, let frame):
                     windows.append(FrozenWindowSnapshot(windowID: id, frame: frame, pointPixelScale: job.filter.pointPixelScale,
@@ -192,14 +237,17 @@ actor FrozenCaptureSet {
                     displays.append(FrozenDisplaySnapshot(displayID: id, frame: frame, pointPixelScale: job.filter.pointPixelScale, raster: raster))
                 }
             }
+            // Both variants are needed for window selection and Option's shadow toggle.
+            windows.removeAll { unavailableWindows.contains($0.windowID) }
             try Task.checkCancellation()
             // Prevent binding invocation-time frames to pixels acquired after a move.
             let latest = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
-            let latestEligibleIDs = Set(eligible(latest.windows).map(\.windowID))
-            let initialWindowIDs = Set(selectedWindows.map(\.windowID))
+            let capturedWindows = selectedWindows.filter { !unavailableWindows.contains($0.windowID) }
+            let latestEligibleIDs = Set(eligible(latest.windows).map(\.windowID)).subtracting(unavailableWindows)
+            let initialWindowIDs = Set(capturedWindows.map(\.windowID))
             let initialDisplayIDs = Set(selectedDisplays.map(\.displayID))
             let latestDisplayIDs = Set(latest.displays.map(\.displayID))
-            let changedWindows = selectedWindows.filter { initial in
+            let changedWindows = capturedWindows.filter { initial in
                 !latest.windows.contains { $0.windowID == initial.windowID && $0.isOnScreen && $0.frame == initial.frame }
             }
             let changedDisplays = selectedDisplays.filter { initial in
