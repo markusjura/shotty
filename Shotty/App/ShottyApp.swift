@@ -35,7 +35,7 @@ struct ShottyApp: App {
                 ForEach(Self.zoomCommands, id: \.self) { commandButton($0) }
             }
         }
-        MenuBarExtra("Shotty", systemImage: "viewfinder", isInserted: Binding(
+        MenuBarExtra(isInserted: Binding(
             get: { delegate.coordinator.preferences.general.showsMenuBarIcon },
             set: { delegate.coordinator.preferences.general.showsMenuBarIcon = $0 })) {
             ForEach(CommandGroup.capture.commands, id: \.self) { commandButton($0) }
@@ -44,8 +44,19 @@ struct ShottyApp: App {
             Divider()
             SettingsButton()
             Button("Quit Shotty") { NSApp.terminate(nil) }.keyboardShortcut("q")
+        } label: {
+            Image(nsImage: Self.menuBarIcon)
         }
     }
+
+    /// The menu bar `viewfinder`, larger and heavier than the default status item symbol so it matches
+    /// system items such as Time Machine and Display in size and stroke weight.
+    private static let menuBarIcon: NSImage = {
+        let symbol = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "Shotty")!
+        let image = symbol.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .medium))!
+        image.isTemplate = true
+        return image
+    }()
 
     /// Editor zoom lives in the View menu with the thumbnail commands, not with the other editor commands.
     private static let zoomCommands: [CommandID] = [.zoomIn, .zoomOut, .zoomToFit, .actualSize]
