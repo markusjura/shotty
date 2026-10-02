@@ -13,7 +13,8 @@ set -euo pipefail
 
 bundle_id=local.markus.Shotty
 installed=/Applications/Shotty.app
-keep_dir="$HOME/Library/Application Support/Shotty Installer"
+# Spotlight skips .noindex folders, so launchers like Raycast never list the kept build and its old icon.
+keep_dir="$HOME/Library/Application Support/Shotty Installer.noindex"
 previous="$keep_dir/Shotty.previous.app"
 
 fail() { print -u2 "$1"; exit 1 }
