@@ -47,18 +47,26 @@ case "click":
     mouse(.mouseMoved, target); usleep(50_000)
     mouse(.leftMouseDown, target); usleep(50_000)
     mouse(.leftMouseUp, target)
-case "drag":
+case "drag", "drag-path":
     // Slow enough for drag and drop receivers: a hold after the press, even steps, a hold before release.
-    let from = point(1), to = point(3), steps = args.count > 5 ? Int(number(5)) : 30
-    mouse(.mouseMoved, from); usleep(100_000)
-    mouse(.leftMouseDown, from); usleep(150_000)
-    for step in 1...steps {
-        let t = Double(step) / Double(steps)
-        mouse(.leftMouseDragged, CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t))
-        usleep(15_000)
+    let points: [CGPoint]
+    if args.first == "drag-path" {
+        guard args.count >= 5, (args.count - 1).isMultiple(of: 2) else { fail("usage: drag-path x1 y1 x2 y2 [x3 y3 ...]") }
+        points = stride(from: 1, to: args.count, by: 2).map(point)
+    } else { points = [point(1), point(3)] }
+    let steps = args.first == "drag" && args.count > 5 ? Int(number(5)) : 30
+    guard steps > 0 else { fail("drag steps must be positive") }
+    mouse(.mouseMoved, points[0]); usleep(100_000)
+    mouse(.leftMouseDown, points[0]); usleep(150_000)
+    for (from, to) in zip(points, points.dropFirst()) {
+        for step in 1...steps {
+            let t = Double(step) / Double(steps)
+            mouse(.leftMouseDragged, CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t))
+            usleep(15_000)
+        }
     }
     usleep(200_000)
-    mouse(.leftMouseUp, to)
+    mouse(.leftMouseUp, points[points.count - 1])
 case "menu":
     guard args.count > 1 else { fail("usage: menu <menu> [item]") }
     guard let bar: AXUIElement = attribute(app().1, kAXMenuBarAttribute),
@@ -138,6 +146,7 @@ default:
     fail("""
     usage: shotty-ui <command>
       move x y | click x y | drag x1 y1 x2 y2 [steps]
+      drag-path x1 y1 x2 y2 [x3 y3 ...]
       menu <menu> [item] | button <title> | windows [bundleID] | resize <title> w h | close <bundleID> <title>
       focus | front | text <bundleID> | cursor | clip mark | clip wait <out.png>
       keys <text> | key <code> [command,shift,option,control]

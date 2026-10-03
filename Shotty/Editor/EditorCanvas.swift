@@ -71,6 +71,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
     private var anchor: CGPoint?
     private var windowAnchor: CGPoint?
     private var lastDrag: (point: CGPoint, modifiers: NSEvent.ModifierFlags)?
+    private var arrowDragPath: [CGPoint] = []
     private var autopan: Task<Void, Never>?
     private var autopanGeneration = 0
     private var marquee: CGRect?
@@ -603,6 +604,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
             selected = []
         default:
             gesture = .draw(UUID())
+            if tool == .arrow, preferences.editor.tools.arrow.style == .curved { arrowDragPath = [point] }
             selected = []
         }
     }
@@ -630,6 +632,9 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         var state = original
         switch gesture {
         case .draw(let id):
+            if tool == .arrow, preferences.editor.tools.arrow.style == .curved, arrowDragPath.last != point {
+                arrowDragPath.append(point)
+            }
             if let annotation = makeAnnotation(id: id, start: anchor, end: point, modifiers: modifiers) { state.annotations.append(annotation) }
         case .move(let start, _):
             var offset = CGSize(width: delta.dx, height: delta.dy)
@@ -681,6 +686,9 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
     override func mouseUp(with event: NSEvent) {
         stopAutopan()
         guard let finished = gesture else { return }
+        if case .draw = finished, tool == .arrow, preferences.editor.tools.arrow.style == .curved {
+            drag(to: event.locationInWindow, modifiers: event.modifierFlags)
+        }
         let travelled = windowAnchor.map { hypot(event.locationInWindow.x - $0.x, event.locationInWindow.y - $0.y) } ?? 0
         let result = draft
         let before = selectionBeforeGesture
@@ -722,6 +730,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
 
     private func resetGesture() {
         draft = nil; gestureState = nil; anchor = nil; windowAnchor = nil; gesture = nil; marquee = nil; lastDrag = nil
+        arrowDragPath = []
         needsDisplay = true
     }
 
@@ -773,7 +782,9 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
         guard !rect.isNull || tool == .arrow || tool == .line else { return nil }
         let content: AnnotationContent
         switch tool {
-        case .arrow: content = .arrow(start: start, end: endpoint, bend: nil, style: defaults.arrow)
+        case .arrow:
+            let bend = defaults.arrow.style == .curved ? EditorGeometry.bend(start: start, end: endpoint, along: arrowDragPath) : nil
+            content = .arrow(start: start, end: endpoint, bend: bend, style: defaults.arrow)
         case .line: content = .line(start: start, end: endpoint, style: defaults.line)
         case .rectangle: content = .rectangle(rect: rect, style: defaults.rectangle)
         case .filledRectangle: content = .rectangle(rect: rect, style: defaults.filledRectangle)
