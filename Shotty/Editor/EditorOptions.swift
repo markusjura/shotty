@@ -245,8 +245,6 @@ private final class DimmingView: NSView {
         slider.minValue = range.lowerBound; slider.maxValue = range.upperBound
         slider.doubleValue = model.defaults.spotlight.dimPercent
         slider.isContinuous = true
-        // The small control's knob grows less when pressed, which suits a menu row.
-        slider.controlSize = .small
         slider.target = self; slider.action = #selector(slid)
         slider.setAccessibilityLabel("Dimming")
         value.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
