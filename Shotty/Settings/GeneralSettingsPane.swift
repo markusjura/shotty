@@ -8,15 +8,16 @@ struct GeneralSettingsPane: View {
 
     var body: some View {
         Form {
-            Section {
-                Picker("Appearance", selection: $preferences.general.appearance) {
+            Section("Appearance") {
+                Picker("Theme", selection: $preferences.general.appearance) {
                     Text("System").tag(AppearancePreference.system)
                     Text("Light").tag(AppearancePreference.light)
                     Text("Dark").tag(AppearancePreference.dark)
                 }
                 .pickerStyle(.radioGroup)
+                Toggle("Translucent sidebar", isOn: $preferences.general.usesTranslucentSidebar)
             }
-            Section {
+            Section("App") {
                 Toggle("Show in menu bar", isOn: $preferences.general.showsMenuBarIcon)
                 Toggle("Show in Dock", isOn: $preferences.general.showsDockIcon)
                 Toggle("Open at login", isOn: Binding(get: { loginStatus == .enabled || loginStatus == .requiresApproval }, set: setLogin))
@@ -29,10 +30,10 @@ struct GeneralSettingsPane: View {
                     }
                 }
                 if let loginError {
-                    Text(loginError).secondaryNote()
+                    Text(loginError).settingsNote()
                 }
             }
-            Section {
+            Section("Sounds") {
                 Toggle("Play sounds", isOn: $preferences.general.playsSounds)
             }
         }

@@ -29,11 +29,11 @@ struct CaptureSettingsPane: View {
             }
             if preferences.capture.outputs.count == 1 {
                 Text("At least one option must be enabled.")
-                    .secondaryNote()
+                    .settingsNote()
             }
             Toggle("Dismiss thumbnail after pasting", isOn: $preferences.thumbnails.dismissesAfterPaste)
             if preferences.thumbnails.dismissesAfterPaste && !AXIsProcessTrusted() {
-                Text("Needs Accessibility access to notice ⌘V in other apps.").secondaryNote()
+                Text("Needs Accessibility access to notice ⌘V in other apps.").settingsNote()
             }
         }
     }
@@ -43,6 +43,7 @@ struct CaptureSettingsPane: View {
             LabeledContent("Folder") {
                 HStack(spacing: 8) {
                     Text(FileManager.default.displayName(atPath: preferences.capture.destination.url.path))
+                        .settingsValue()
                         .help(preferences.capture.destination.url.path)
                     Button("Choose…", action: chooseFolder)
                 }
@@ -51,7 +52,7 @@ struct CaptureSettingsPane: View {
                 Button("Use Downloads") { apply(SaveDestination.downloads) }
             }
             if let message = destinationMessage ?? SaveDestinationCheck.status(of: preferences.capture.destination.url).message {
-                Label(message, systemImage: "exclamationmark.triangle").secondaryNote()
+                Label(message, systemImage: "exclamationmark.triangle").settingsNote()
             }
         }
     }
@@ -81,15 +82,18 @@ struct CaptureSettingsPane: View {
                 Text("Display profile").tag(ColorHandlingPreference.preserveSource)
                 Text("sRGB").tag(ColorHandlingPreference.convertToSRGB)
             }
+            .buttonStyle(.borderless)
             Picker("Resolution", selection: $preferences.capture.outputScale) {
                 Text("Native pixels").tag(OutputScalePreference.native)
                 Text("1× (points)").tag(OutputScalePreference.logical)
             }
+            .buttonStyle(.borderless)
             Picker("Fullscreen", selection: $preferences.capture.fullscreenTarget) {
                 Text("Current display").tag(FullscreenTarget.pointerDisplay)
                 Text("Main display").tag(FullscreenTarget.mainDisplay)
                 Text("Each display").tag(FullscreenTarget.allDisplays)
             }
+            .buttonStyle(.borderless)
         }
     }
 
@@ -110,7 +114,7 @@ struct CaptureSettingsPane: View {
                     .disabled(preferences.text.outputs == [output])
             }
             if preferences.text.outputs.contains(.saveText) {
-                Text("Saved as UTF-8 in the save location above.").secondaryNote()
+                Text("Saved as UTF-8 in the save location above.").settingsNote()
             }
             Toggle("Keep line breaks", isOn: $preferences.text.preservesLineBreaks)
             Toggle("Detect languages automatically", isOn: $preferences.text.detectsLanguageAutomatically)
@@ -128,6 +132,7 @@ struct CaptureSettingsPane: View {
                 }
             }
             .fixedSize()
+            .buttonStyle(.borderless)
             .disabled(recognitionLanguages.isEmpty)
         }
         ForEach(Array(preferences.text.languages.enumerated()), id: \.element) { index, identifier in
@@ -145,7 +150,7 @@ struct CaptureSettingsPane: View {
         if preferences.text.detectsLanguageAutomatically {
             Text(preferences.text.languages.isEmpty ? "Add a language to turn off automatic detection."
                                                     : "Used when automatic detection is turned off.")
-                .secondaryNote()
+                .settingsNote()
         }
     }
 
@@ -160,7 +165,7 @@ struct CaptureSettingsPane: View {
             }
             .pickerStyle(.segmented)
             Stepper(value: $preferences.scrolling.maximumAxisPixels, in: ScrollingPreferences.axisPixelRange, step: 1_000) {
-                Text("Maximum length: \(preferences.scrolling.maximumAxisPixels.formatted()) pixels")
+                LabeledContent("Maximum length") { Text("\(preferences.scrolling.maximumAxisPixels.formatted()) pixels").settingsValue() }
             }
         }
     }

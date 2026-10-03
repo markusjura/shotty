@@ -16,6 +16,7 @@ struct ThumbnailSettingsPane: View {
                     Text("Right center").tag(ThumbnailPlacement.rightCenter)
                     Text("Bottom right").tag(ThumbnailPlacement.bottomRight)
                 }
+                .buttonStyle(.borderless)
                 Picker("Size", selection: $preferences.thumbnails.size) {
                     Text("Small").tag(ThumbnailSize.small)
                     Text("Medium").tag(ThumbnailSize.medium)
@@ -32,11 +33,12 @@ struct ThumbnailSettingsPane: View {
                         }
                     }
                 }
+                .buttonStyle(.borderless)
                 Toggle("Hide while capturing", isOn: $preferences.thumbnails.hidesDuringCapture)
                 if case .display(let uuid, _) = preferences.thumbnails.display, !screens.contains(where: { $0.uuid == uuid }) {
-                    Text("Uses the main display until this one reconnects.").secondaryNote()
+                    Text("Uses the main display until this one reconnects.").settingsNote()
                 } else if preferences.thumbnails.display == .followPointer {
-                    Text("The whole stack moves to the display under the pointer.").secondaryNote()
+                    Text("The whole stack moves to the display under the pointer.").settingsNote()
                 }
             }
             Section("Closing") {
@@ -45,14 +47,15 @@ struct ThumbnailSettingsPane: View {
                     Text("Dismiss").tag(ThumbnailAutoClose.dismiss)
                     Text("Save, then dismiss").tag(ThumbnailAutoClose.saveThenDismiss)
                 }
+                .buttonStyle(.borderless)
                 if preferences.thumbnails.autoClose != .never {
                     Stepper(value: $preferences.thumbnails.autoCloseDelaySeconds, in: ThumbnailPreferences.autoCloseDelayRange) {
-                        LabeledContent("After", value: "\(preferences.thumbnails.autoCloseDelaySeconds) seconds")
+                        LabeledContent("After") { Text("\(preferences.thumbnails.autoCloseDelaySeconds) seconds").settingsValue() }
                     }
                     Text(preferences.thumbnails.autoClose == .dismiss
                          ? "Discards unsaved captures. Hovering, editing, or a failed save pauses it."
                          : "Saves first. A failed save keeps the thumbnail.")
-                        .secondaryNote()
+                        .settingsNote()
                 }
                 Toggle("Dismiss after saving", isOn: $preferences.thumbnails.dismissesAfterSave)
                 Toggle("Dismiss after dragging out", isOn: $preferences.thumbnails.dismissesAfterDrag)

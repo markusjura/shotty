@@ -2,8 +2,10 @@ import AppKit
 import Carbon.HIToolbox
 import SwiftUI
 
-/// Native push button that records one shortcut. Click, Space, or Return starts recording;
-/// Escape cancels, Delete clears, and modifier-only presses are ignored. While recording, the
+/// Button that records one shortcut, drawn like Raycast's hotkey recorder: plain text at rest, a
+/// thin border on hover, a thick border while recording, and a clear button on hover once a
+/// shortcut is set. Click, Space, or Return starts recording; Escape cancels, Delete or the clear
+/// button clears, and modifier-only presses are ignored. While recording, the
 /// registry suspends global hotkeys so existing bindings can be re-recorded.
 struct ShortcutRecorder: NSViewRepresentable {
     let commands: CommandRegistry
@@ -35,10 +37,25 @@ final class ShortcutRecorderButton: NSButton {
     private var isRecording = false
     private var resignObservation: NSObjectProtocol?
     private var liveModifiers: Shortcut.Modifiers = []
+    private var isHovering = false { didSet { needsDisplay = true } }
+
+    // Raycast's hotkey recorder colors, except the recording border.
+    private static let valueColor = NSColor.settings(light: 0x000000, dark: 0xFFFFFF)
+    private static let placeholderColor = NSColor.settings(light: 0x959595, dark: 0x757575)
+    private static let hoverBorder = NSColor.settings(light: 0xC7C7C7, dark: 0x474747)
+    /// The accent color, like the other selected controls, so recording reads clearly as active.
+    private static let recordingBorder = NSColor.controlAccentColor
+    private static let clearColor = NSColor.settings(light: 0x707070, dark: 0x979797)
+    private static let font = NSFont.systemFont(ofSize: 13)
+    /// The visible box is 142 × 26 pt; the view is 1 pt larger on each side for the recording border.
+    private static let boxInset: CGFloat = 1
+    private static let textInset: CGFloat = 8
 
     init() {
         super.init(frame: .zero)
-        bezelStyle = .push
+        isBordered = false
+        // The recording border marks focus instead.
+        focusRingType = .none
         setButtonType(.momentaryPushIn)
         target = self
         action = #selector(toggleRecording)
@@ -49,7 +66,52 @@ final class ShortcutRecorderButton: NSButton {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    override var intrinsicContentSize: NSSize { NSSize(width: 150, height: super.intrinsicContentSize.height) }
+    override var intrinsicContentSize: NSSize { NSSize(width: 144, height: 28) }
+
+    private var box: NSRect { bounds.insetBy(dx: Self.boxInset, dy: Self.boxInset) }
+
+    /// The clear button's hit area, present while hovering a set shortcut.
+    private var clearRect: NSRect? {
+        guard isHovering, !isRecording, shortcut != nil else { return nil }
+        return NSRect(x: box.maxX - 24, y: box.minY, width: 24, height: box.height)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let path = NSBezierPath(roundedRect: box, xRadius: 5, yRadius: 5)
+        if isRecording {
+            // Centered on the box edge, so it reaches 1 pt outside, as in Raycast.
+            Self.recordingBorder.setStroke(); path.lineWidth = 2; path.stroke()
+        } else if isHovering {
+            let inner = NSBezierPath(roundedRect: box.insetBy(dx: 0.5, dy: 0.5), xRadius: 4.5, yRadius: 4.5)
+            Self.hoverBorder.setStroke(); inner.lineWidth = 1; inner.stroke()
+        }
+        let color = isRecording || shortcut == nil ? Self.placeholderColor : Self.valueColor
+        let text = NSAttributedString(string: title, attributes: [.font: Self.font, .foregroundColor: color])
+        let size = text.size()
+        text.draw(at: NSPoint(x: box.minX + Self.textInset, y: box.midY - size.height / 2))
+        if let clearRect, let mark = NSImage(systemSymbolName: "xmark", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 10, weight: .medium).applying(.init(paletteColors: [Self.clearColor]))) {
+            mark.draw(in: NSRect(x: clearRect.maxX - Self.textInset - mark.size.width, y: clearRect.midY - mark.size.height / 2,
+                                 width: mark.size.width, height: mark.size.height))
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) { isHovering = true }
+    override func mouseExited(with event: NSEvent) { isHovering = false }
+
+    override func mouseDown(with event: NSEvent) {
+        if let clearRect, clearRect.contains(convert(event.locationInWindow, from: nil)) {
+            onRecord?(nil)
+            return
+        }
+        super.mouseDown(with: event)
+    }
 
     @objc private func toggleRecording() {
         if isRecording { stopRecording() } else { startRecording() }
@@ -121,6 +183,7 @@ final class ShortcutRecorderButton: NSButton {
             value = shortcut?.displayString ?? "Record Shortcut"
         }
         title = value
+        needsDisplay = true
         setAccessibilityLabel("\(commandTitle) shortcut")
         setAccessibilityValue(isRecording ? "Recording" : (shortcut == nil ? "None" : value))
     }

@@ -9,7 +9,7 @@ struct EditorSettingsPane: View {
             Section("Copy and save") {
                 Toggle("Close editor after copying", isOn: $preferences.editor.closesAfterCopy)
                 Toggle("Close editor after saving", isOn: $preferences.editor.closesAfterSave)
-                Text("Option-click Copy to invert closing, or Save to choose a location.").secondaryNote()
+                Text("Option-click Copy to invert closing, or Save to choose a location.").settingsNote()
             }
         }
     }

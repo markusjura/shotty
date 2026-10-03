@@ -28,12 +28,12 @@ struct ShortcutSettingsPane: View {
                     .fixedSize()
             }
             if let problem = problems[id] {
-                Label(problem.message, systemImage: "exclamationmark.triangle").secondaryNote()
+                Label(problem.message, systemImage: "exclamationmark.triangle").settingsNote()
             } else if commands.registrationFailures.contains(id) {
                 Label("Another app or macOS already uses this shortcut. Choose a different one.", systemImage: "exclamationmark.triangle")
-                    .secondaryNote()
+                    .settingsNote()
             } else if let advisory = commands.advisory(for: id) {
-                Text(advisory).secondaryNote()
+                Text(advisory).settingsNote()
             }
         }
         .accessibilityElement(children: .contain)
