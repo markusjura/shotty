@@ -15,6 +15,15 @@ xcodebuild -project Shotty.xcodeproj -scheme Shotty -configuration Debug -destin
 
 `Scripts/build.sh` builds the signed Release app at `.build/Build/Products/Release/Shotty.app`. The target uses Hardened Runtime, no App Sandbox, and no entitlements. This is private Apple Development signing, not a notarized Developer ID release, so a copied build may not launch as trusted on another Mac.
 
+## Develop
+
+```sh
+Scripts/run.sh dev        # build Debug and switch to Shotty Dev
+Scripts/run.sh installed  # switch back to /Applications/Shotty.app
+```
+
+The Debug build is Shotty Dev, bundle ID `local.markus.Shotty.dev`. It has its own preferences, capture folders, and permission grants, so it never touches the installed Shotty's state, and Spotlight and Raycast list it separately. The two share hotkeys, so only one runs: `run.sh` quits both before launching one, and Shotty Dev quits the installed build when it launches and quits itself when the installed build launches. That check exists only in Debug builds. To start Shotty Dev with your current settings, run `defaults export local.markus.Shotty - | defaults import local.markus.Shotty.dev -` while both are quit.
+
 ## Package, install, and roll back
 
 Set `MARKETING_VERSION` and increase `CURRENT_PROJECT_VERSION` in the Shotty target, commit, and push to `main`, then package:
@@ -46,7 +55,7 @@ Install on any fleet Mac as above. Fleet sync from `markusjura/mac-settings` the
 
 ## Permissions
 
-Grant permissions to the installed `/Applications/Shotty.app`, not to a build in `.build`. Grants are per Mac; signing does not carry them to another machine.
+Grant permissions to the installed `/Applications/Shotty.app`. Shotty Dev has its own bundle ID, so it needs its own grants once; they then survive rebuilds. Grants are per Mac; signing does not carry them to another machine.
 
 - **Screen Recording** is required for every capture mode, including OCR. Shotty asks on the first capture and links to System Settings > Privacy & Security > Screen & System Audio Recording. macOS may require relaunching Shotty after granting it.
 - **Accessibility** is needed only for Auto Scroll and for "Dismiss thumbnail after pasting", which watches for ⌘V in other apps. Auto Scroll asks for it when you start it; manual scrolling capture works without it.

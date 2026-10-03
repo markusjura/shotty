@@ -81,12 +81,18 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
     /// While any editor is open, Shotty is a regular app with its menu bar, Dock icon, and app switcher entry.
     private var editors: [UUID: EditorWindowController] = [:] { didSet { updateActivationPolicy() } }
     private var openingEditors = Set<UUID>()
+    #if DEBUG
+    private var installedLaunchObservation: NSKeyValueObservation?
+    #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Tooltips, such as the editor tool names, appear after 0.7 s instead of AppKit's 1 s.
         // A global NSInitialToolTipDelay set by the user still wins.
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 700])
         guard NSClassFromString("XCTestCase") == nil else { return }
+        #if DEBUG
+        keepOneShottyRunning()
+        #endif
         coordinator.thumbnails.commands = commands
         coordinator.recognizeText = { [weak self] image, settings, ticket in self?.textCapture.start(image, settings: settings, ticket: ticket) }
         coordinator.startScrolling = { [weak self] region, display, settings, ticket in
@@ -119,6 +125,22 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static let launchedBeforeKey = "launchedBefore"
+
+    #if DEBUG
+    /// Shotty Dev and the installed Shotty share hotkeys, so only the one opened last keeps running.
+    /// Launching Shotty Dev quits the installed build, and launching the installed build quits
+    /// Shotty Dev. Only Debug builds carry this, so the installed build has no launch-time checks.
+    private func keepOneShottyRunning() {
+        let installedID = "local.markus.Shotty"
+        NSRunningApplication.runningApplications(withBundleIdentifier: installedID).forEach { $0.terminate() }
+        installedLaunchObservation = NSWorkspace.shared.observe(\.runningApplications, options: [.new]) { _, change in
+            guard change.newValue?.contains(where: { $0.bundleIdentifier == installedID }) == true else { return }
+            // Quit from a run loop pass, not a main-queue block: quitting waits on a main-actor
+            // task, which can't run while the main queue is busy with this block.
+            RunLoop.main.perform { NSApp.terminate(nil) }
+        }
+    }
+    #endif
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 

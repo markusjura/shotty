@@ -12,9 +12,10 @@ xcodebuild -project Shotty.xcodeproj -scheme Shotty -configuration Debug -destin
 
 - `<base> build` builds the Debug app without launching it.
 - `<base> test -only-testing:ShottyTests/<TestClass>` runs one test class.
-- `<base> test` runs all unit tests in about 10 s. Run it in the foreground. It quits a running Debug build.
-- `Scripts/run.sh dev` rebuilds and relaunches the Debug build. Debug is unoptimized, so measure performance with a Release build.
-- `osascript -e 'tell application id "local.markus.Shotty" to quit'` quits whichever build is running.
+- `<base> test` runs all unit tests in about 10 s. Run it in the foreground. It quits a running Shotty Dev.
+- `Scripts/run.sh dev` rebuilds and relaunches Shotty Dev, the Debug build. `Scripts/run.sh installed` switches back to `/Applications/Shotty.app`. Debug is unoptimized, so measure performance with a Release build.
+- Shotty Dev has its own bundle ID, `local.markus.Shotty.dev`, plus its own preferences, captures, and permission grants. Its app menu is "Shotty Dev", so open Settings with `shotty-ui menu "Shotty Dev" "Settings…"`. Only one of the two runs: Shotty Dev quits the installed build when it launches and quits itself when the installed build launches.
+- `osascript -e 'tell application id "local.markus.Shotty.dev" to quit'` quits Shotty Dev. Use `local.markus.Shotty` for the installed build.
 - `Scripts/ui/shotty-ui <command>` drives and measures the running app. See below.
 
 Signing needs the login keychain, which is locked in plain SSH sessions. There `codesign` fails with `errSecInternalComponent`. Build from the Mac's GUI session instead, for example a Codex remote-control session or a Terminal on that Mac.
@@ -23,7 +24,7 @@ Package and install only when I ask. Bump `CURRENT_PROJECT_VERSION` first, commi
 
 ## Verifying UI changes
 
-`Scripts/ui/shotty-ui` drives the app and measures the result as text. Run it without arguments for usage. It compiles itself into `.build` on first use.
+`Scripts/ui/shotty-ui` drives the app and measures the result as text. It targets Shotty Dev when it runs, else the installed Shotty. Run it without arguments for usage. It compiles itself into `.build` on first use.
 
 - Prefer checks that print text over screenshots. `windows`, `cursor`, `focus`, `front`, `text`, and `clip wait` answer most questions without an image.
 - Coordinates are global points from the top left of the main display. Screenshots and videos are in pixels, twice the points on this Mac's displays.

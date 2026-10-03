@@ -3,7 +3,7 @@ import Foundation
 /// Only transient capture rasters live here. Durable documents use CaptureSessionStore.
 enum CaptureScratchSpace {
     static var directory: URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("Shotty-CaptureScratch", isDirectory: true)
+        FileManager.default.temporaryDirectory.appendingPathComponent("\(Bundle.main.appName)-CaptureScratch", isDirectory: true)
     }
     static func prepare() throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,

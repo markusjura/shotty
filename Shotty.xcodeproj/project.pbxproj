@@ -239,8 +239,9 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = local.markus.Shotty;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = local.markus.Shotty.dev;
+				PRODUCT_MODULE_NAME = Shotty;
+				PRODUCT_NAME = "Shotty Dev";
 			};
 			name = Debug;
 		};
@@ -283,7 +284,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = local.markus.ShottyTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Shotty.app/Contents/MacOS/Shotty";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Shotty Dev.app/Contents/MacOS/Shotty Dev";
 			};
 			name = Debug;
 		};

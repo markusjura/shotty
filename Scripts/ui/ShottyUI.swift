@@ -4,7 +4,9 @@ import ApplicationServices
 // Pointer, menu, window, and Accessibility helpers for verifying Shotty. Run through `shotty-ui`.
 // Coordinates are global points with the origin at the top left of the main display.
 
-let bundleID = "local.markus.Shotty"
+/// Shotty Dev when it runs, else the installed Shotty. Only one of them runs at a time.
+let bundleID = ["local.markus.Shotty.dev", "local.markus.Shotty"]
+    .first { !NSRunningApplication.runningApplications(withBundleIdentifier: $0).isEmpty } ?? "local.markus.Shotty.dev"
 let args = Array(CommandLine.arguments.dropFirst())
 let source = CGEventSource(stateID: .hidSystemState)
 

@@ -28,7 +28,7 @@ actor CaptureSessionStore {
 
     nonisolated static var defaultDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Shotty/Session", isDirectory: true)
+            .appendingPathComponent("\(Bundle.main.appName)/Session", isDirectory: true)
     }
 
     init(directory: URL = CaptureSessionStore.defaultDirectory) {
