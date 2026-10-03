@@ -108,19 +108,32 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
         hotKeys = GlobalHotKeyCenter(registry: commands) { [weak self] in self?.execute($0) }
         hotKeys?.start()
         Task { await coordinator.launch() }
+        // Shotty starts silently, so a first launch would otherwise show nothing. Open Settings
+        // once on Permissions, where the user grants the Screen Recording access every capture needs.
+        if !UserDefaults.standard.bool(forKey: Self.launchedBeforeKey) {
+            UserDefaults.standard.set(true, forKey: Self.launchedBeforeKey)
+            UserDefaults.standard.set(SettingsPane.permissions.rawValue, forKey: SettingsView.paneKey)
+            showSettings()
+        }
     }
+
+    private static let launchedBeforeKey = "launchedBefore"
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showSettings()
+        return false
+    }
+
+    /// Opens Settings through its app menu command, the one bridge from AppKit to the SwiftUI window.
+    private func showSettings() {
         NSApp.activate()
-        // Open Settings through its app menu command, the one bridge from AppKit to the SwiftUI window.
         if let menu = NSApp.mainMenu?.items.compactMap(\.submenu).first(where: { menu in
             menu.items.contains { $0.keyEquivalent == "," && $0.keyEquivalentModifierMask.contains(.command) }
         }), let index = menu.items.firstIndex(where: { $0.keyEquivalent == "," && $0.keyEquivalentModifierMask.contains(.command) }) {
             menu.performActionForItem(at: index)
         }
-        return false
     }
 
     func execute(_ command: CommandID) {
