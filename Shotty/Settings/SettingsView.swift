@@ -32,23 +32,25 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 /// straight to the typed stores, which persist immediately and reject invalid values.
 struct SettingsView: View {
     static let windowID = "settings"
+    /// Settings reopens on the pane the user last viewed. First launch sets it to Permissions.
+    static let paneKey = "settingsPane"
     let preferences: AppPreferences
     let commands: CommandRegistry
-    @State private var pane: SettingsPane? = .general
+    @AppStorage(SettingsView.paneKey) private var pane = SettingsPane.general
 
     var body: some View {
         // A native split view gives Finder's full-height translucent sidebar under the traffic lights
         // and a toolbar that blends into the pane instead of a separate titlebar band.
         NavigationSplitView {
-            List(SettingsPane.allCases, selection: $pane) { pane in
+            // Ignore deselection so a pane is always shown.
+            List(SettingsPane.allCases, selection: Binding<SettingsPane?> { pane } set: { if let new = $0 { pane = new } }) { pane in
                 Label(pane.title, systemImage: pane.symbol)
             }
             .navigationSplitViewColumnWidth(180)
             .toolbar(removing: .sidebarToggle)
         } detail: {
-            let selected = pane ?? .general
             Group {
-                switch selected {
+                switch pane {
                 case .general: GeneralSettingsPane(preferences: preferences)
                 case .capture: CaptureSettingsPane(preferences: preferences)
                 case .thumbnails: ThumbnailSettingsPane(preferences: preferences)
@@ -58,14 +60,14 @@ struct SettingsView: View {
                 }
             }
             .formStyle(.grouped)
-            .id(selected)
+            .id(pane)
         }
-        .navigationTitle((pane ?? .general).title)
+        .navigationTitle(pane.title)
         .toolbar(removing: .title)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 // Finder's toolbar title: 15 pt semibold.
-                Text((pane ?? .general).title).font(.system(size: 15, weight: .semibold))
+                Text(pane.title).font(.system(size: 15, weight: .semibold))
             }
             .sharedBackgroundVisibility(.hidden)
         }
