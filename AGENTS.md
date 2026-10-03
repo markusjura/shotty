@@ -34,6 +34,7 @@ Package and install only when I ask. Bump `CURRENT_PROJECT_VERSION` first, commi
 - A process that exits right after posting a mouse event sometimes drops it, and the pointer stays where it was. `shotty-ui` waits 8 ms after each post; do the same in ad-hoc tools. When a hover state looks stuck, first check where the pointer actually is.
 - Don't script Finder or TextEdit with osascript. It hangs behind an Automation prompt. Use `windows`, `close`, and `text` instead.
 - `drag` holds before and after moving, so drop targets such as Finder accept it. A capture selection needs only a few steps.
+- `drag-path x1 y1 x2 y2 [x3 y3 ...]` keeps the button held through multiple segments, for testing curved arrow gestures.
 - Use Computer Use for exploratory checks, judging how something looks, or apps the tool can't drive. For repeatable checks, the tool is faster and cheaper.
 
 ### Clean up

@@ -70,6 +70,21 @@ enum EditorGeometry {
         CGPoint(x: (start.x + end.x) / 2 - (end.y - start.y) * 0.2, y: (start.y + end.y) / 2 + (end.x - start.x) * 0.2)
     }
 
+    /// Like Spotty, bend toward the drag's largest deviation from the chord. A quadratic
+    /// peaks halfway to its control point; cap that offset at the arrow's length.
+    static func bend(start: CGPoint, end: CGPoint, along path: [CGPoint]) -> CGPoint {
+        let dx = end.x - start.x, dy = end.y - start.y, length = hypot(dx, dy)
+        guard length > 0 else { return start }
+        let offsetFromChord = { (point: CGPoint) in
+            ((point.x - start.x) * dy - (point.y - start.y) * dx) / length
+        }
+        let farthest = path.map(offsetFromChord).max { abs($0) < abs($1) } ?? 0
+        guard abs(farthest) >= max(8, length * 0.06) else { return defaultBend(start: start, end: end) }
+        let offset = min(max(farthest * 2, -length), length)
+        return CGPoint(x: (start.x + end.x) / 2 + dy / length * offset,
+                       y: (start.y + end.y) / 2 - dx / length * offset)
+    }
+
     // MARK: Hit testing
 
     /// Distance from `point` to the visible part of an annotation: 0 inside filled interiors,
