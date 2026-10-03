@@ -208,6 +208,17 @@ final class CaptureSelector {
 
     func updateCursor() { cursor.set() }
 
+    /// Makes the panel under a dragged pointer key and sets the cursor again. The pressed panel keeps
+    /// receiving the drag on other displays, but an inactive app can set the cursor only over its key
+    /// window, so the crosshair would otherwise turn into the arrow there.
+    func dragFocus(at point: CGPoint) {
+        if let panel = panels.first(where: { NSMouseInRect(point, $0.frame, false) }), !panel.isKeyWindow {
+            panel.makeKey()
+            panel.makeFirstResponder(panel.contentView)
+        }
+        updateCursor()
+    }
+
     /// The selection surfaces and their controls. Captures leave these out and keep every other
     /// Shotty window, so thumbnails and Settings stay visible while selecting.
     private var overlayWindowIDs: Set<CGWindowID> {
@@ -724,8 +735,17 @@ private final class SelectionView: NSView {
         takeKeyFocus()
         selector.mouseDown(at: point(event), modifiers: event.modifierFlags)
     }
-    override func mouseDragged(with event: NSEvent) { selector.updatePointer(point(event), modifiers: event.modifierFlags) }
-    override func mouseUp(with event: NSEvent) { selector.mouseUp(at: point(event), modifiers: event.modifierFlags) }
+    override func mouseDragged(with event: NSEvent) {
+        let point = point(event)
+        selector.dragFocus(at: point)
+        selector.updatePointer(point, modifiers: event.modifierFlags)
+    }
+    /// AppKit shows the arrow when a drag that crossed displays ends, so the cursor is set again once
+    /// the release is handled. A confirmed or canceled selection has closed its panels by then.
+    override func mouseUp(with event: NSEvent) {
+        selector.mouseUp(at: point(event), modifiers: event.modifierFlags)
+        DispatchQueue.main.async { [selector] in if selector.isActive { selector.updateCursor() } }
+    }
     override func flagsChanged(with event: NSEvent) { selector.modifiersChanged(event.modifierFlags) }
     override func keyDown(with event: NSEvent) { selector.keyDown(event) }
     override func keyUp(with event: NSEvent) { selector.keyUp(event) }
