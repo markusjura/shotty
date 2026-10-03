@@ -1,7 +1,7 @@
 #!/bin/zsh
 # Switches between the development build, Shotty Dev, and the installed Shotty.
 # Usage:
-#   Scripts/run.sh dev        # build Debug, quit both, launch Shotty Dev
+#   Scripts/run.sh dev        # build Debug, quit both, launch ~/Applications/Shotty Dev.app
 #   Scripts/run.sh installed  # quit both, launch /Applications/Shotty.app
 # Shotty Dev has its own bundle ID, preferences, captures, and permission grants, so opening
 # "Shotty" or "Shotty Dev" by name always starts that build. They share hotkeys, so Shotty Dev quits
@@ -17,7 +17,8 @@ running() { [[ -n "$(lsappinfo find bundleid="$1")" ]] }
 
 case "${1:-}" in
   dev)
-    app="$PWD/.build/acceptance-tests/Build/Products/Debug/Shotty Dev.app"
+    built="$PWD/.build/acceptance-tests/Build/Products/Debug/Shotty Dev.app"
+    app=~/Applications/"Shotty Dev.app"
     # Build before quitting, so a failed build leaves the running app alone. Tests use the same
     # derived data, so a build after a test run is incremental.
     xcodebuild -quiet -project Shotty.xcodeproj -scheme Shotty -configuration Debug \
@@ -37,6 +38,19 @@ for id in $installed_id $dev_id; do
   for _ in {1..75}; do running $id || break; sleep 0.2; done
   running $id && fail "$id didn't quit within 15 s. Quit it, then retry."
 done
+
+# Spotlight skips hidden folders like .build, so Spotlight, Raycast, and System Settings' app pickers
+# only list a copy in ~/Applications. Every checkout and worktree updates that one copy. It runs after
+# the quit, so it never replaces a running app, and the staged copy keeps a failed ditto from leaving
+# a half-written app. Grants follow the signature and bundle ID, so they carry over to the copy.
+if [[ -n "${built:-}" ]]; then
+  staged="${app:h}/.Shotty Dev.app.new"
+  mkdir -p "${app:h}"
+  rm -rf "$staged"
+  ditto "$built" "$staged"
+  rm -rf "$app"
+  mv "$staged" "$app"
+fi
 
 open "$app"
 print "Launched $app ($(/usr/bin/defaults read "$app/Contents/Info" CFBundleShortVersionString) build $(/usr/bin/defaults read "$app/Contents/Info" CFBundleVersion))"

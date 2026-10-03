@@ -18,11 +18,11 @@ xcodebuild -project Shotty.xcodeproj -scheme Shotty -configuration Debug -destin
 ## Develop
 
 ```sh
-Scripts/run.sh dev        # build Debug and switch to Shotty Dev
+Scripts/run.sh dev        # build Debug and switch to ~/Applications/Shotty Dev.app
 Scripts/run.sh installed  # switch back to /Applications/Shotty.app
 ```
 
-The Debug build is Shotty Dev, bundle ID `local.markus.Shotty.dev`. It has its own preferences, capture folders, and permission grants, so it never touches the installed Shotty's state, and Spotlight and Raycast list it separately. The two share hotkeys, so only one runs: `run.sh` quits both before launching one, and Shotty Dev quits the installed build when it launches and quits itself when the installed build launches. That check exists only in Debug builds. To start Shotty Dev with your current settings, run `defaults export local.markus.Shotty - | defaults import local.markus.Shotty.dev -` while both are quit.
+The Debug build is Shotty Dev, bundle ID `local.markus.Shotty.dev`. It has its own preferences, capture folders, and permission grants, so it never touches the installed Shotty's state, and Spotlight and Raycast list it separately. `run.sh dev` copies the build to `~/Applications/Shotty Dev.app` and launches that copy, because Spotlight doesn't index the hidden `.build` folder. Every checkout and worktree replaces the same copy. The two share hotkeys, so only one runs: `run.sh` quits both before launching one, and Shotty Dev quits the installed build when it launches and quits itself when the installed build launches. That check exists only in Debug builds. To start Shotty Dev with your current settings, run `defaults export local.markus.Shotty - | defaults import local.markus.Shotty.dev -` while both are quit.
 
 ## Package, install, and roll back
 

@@ -13,7 +13,7 @@ xcodebuild -project Shotty.xcodeproj -scheme Shotty -configuration Debug -destin
 - `<base> build` builds the Debug app without launching it.
 - `<base> test -only-testing:ShottyTests/<TestClass>` runs one test class.
 - `<base> test` runs all unit tests in about 10 s. Run it in the foreground. It quits a running Shotty Dev.
-- `Scripts/run.sh dev` rebuilds and relaunches Shotty Dev, the Debug build. `Scripts/run.sh installed` switches back to `/Applications/Shotty.app`. Debug is unoptimized, so measure performance with a Release build.
+- `Scripts/run.sh dev` rebuilds Shotty Dev, the Debug build, and relaunches it from `~/Applications/Shotty Dev.app`. Spotlight skips `.build`, so only that copy shows up in Spotlight, Raycast, and System Settings. Every checkout and worktree replaces the same copy. `Scripts/run.sh installed` switches back to `/Applications/Shotty.app`. Debug is unoptimized, so measure performance with a Release build.
 - Shotty Dev has its own bundle ID, `local.markus.Shotty.dev`, plus its own preferences, captures, and permission grants. Its app menu is "Shotty Dev", so open Settings with `shotty-ui menu "Shotty Dev" "Settings…"`. Only one of the two runs: Shotty Dev quits the installed build when it launches and quits itself when the installed build launches.
 - `osascript -e 'tell application id "local.markus.Shotty.dev" to quit'` quits Shotty Dev. Use `local.markus.Shotty` for the installed build.
 - `Scripts/ui/shotty-ui <command>` drives and measures the running app. See below.
