@@ -19,8 +19,11 @@ func number(_ index: Int) -> Double {
     return value
 }
 func point(_ index: Int) -> CGPoint { CGPoint(x: number(index), y: number(index + 1)) }
+/// Posts one mouse event. Exiting right after posting sometimes drops the event, so a `move` would
+/// leave the pointer where it was; the short wait lets it through.
 func mouse(_ type: CGEventType, _ point: CGPoint) {
     CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+    usleep(8_000)
 }
 func attribute<T>(_ element: AXUIElement, _ name: String) -> T? {
     var value: CFTypeRef?

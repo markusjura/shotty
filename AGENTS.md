@@ -31,6 +31,7 @@ Package and install only when I ask. Bump `CURRENT_PROJECT_VERSION` first, commi
 - Take screenshots with `screencapture -x -l <window id>` for one window or `screencapture -x -R x,y,w,h` for a region. Shrink large ones with `sips -Z 900` before viewing.
 - For animation, flicker, or anything that moves, record first and measure: `record 1 6 out.mov &`, act, then `motion out.mov x y w h`. Look only at the frames it flags, using `frames`.
 - Type with `keys` and `key`, which go through System Events. Posted key events may not reach other apps.
+- A process that exits right after posting a mouse event sometimes drops it, and the pointer stays where it was. `shotty-ui` waits 8 ms after each post; do the same in ad-hoc tools. When a hover state looks stuck, first check where the pointer actually is.
 - Don't script Finder or TextEdit with osascript. It hangs behind an Automation prompt. Use `windows`, `close`, and `text` instead.
 - `drag` holds before and after moving, so drop targets such as Finder accept it. A capture selection needs only a few steps.
 - Use Computer Use for exploratory checks, judging how something looks, or apps the tool can't drive. For repeatable checks, the tool is faster and cheaper.
