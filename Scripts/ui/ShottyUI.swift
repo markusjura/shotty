@@ -71,9 +71,10 @@ case "drag", "drag-path":
     usleep(200_000)
     mouse(.leftMouseUp, points[points.count - 1])
 case "menu":
+    // `Shotty` names the app menu of either build, which Shotty Dev titles "Shotty Dev".
     guard args.count > 1 else { fail("usage: menu <menu> [item]") }
     guard let bar: AXUIElement = attribute(app().1, kAXMenuBarAttribute),
-          let menu = children(bar).first(where: { title($0) == args[1] }),
+          let menu = args[1] == "Shotty" ? children(bar).dropFirst().first : children(bar).first(where: { title($0) == args[1] }),
           let items = children(menu).first.map(children) else { fail("no menu \(args[1])") }
     if args.count < 3 {
         items.map(title).filter { !$0.isEmpty }.forEach { print($0) }

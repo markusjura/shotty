@@ -4,23 +4,11 @@ This file documents guidance for agents working in this repository. Record only 
 
 ## Commands
 
-Use the narrowest scope that validates the change. Debug builds and tests share this base command:
-
-```sh
-xcodebuild -project Shotty.xcodeproj -scheme Shotty -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/acceptance-tests
-```
-
-- `<base> build` builds the Debug app without launching it.
-- `<base> test -only-testing:ShottyTests/<TestClass>` runs one test class.
-- `<base> test` runs all unit tests in about 10 s. Run it in the foreground. It quits a running Shotty Dev.
-- `Scripts/run.sh dev` rebuilds Shotty Dev, the Debug build, and relaunches it from `~/Applications/Shotty Dev.app`. Spotlight skips `.build`, so only that copy shows up in Spotlight, Raycast, and System Settings. Every checkout and worktree replaces the same copy. `Scripts/run.sh installed` switches back to `/Applications/Shotty.app`. Debug is unoptimized, so measure performance with a Release build.
-- Shotty Dev has its own bundle ID, `local.markus.Shotty.dev`, plus its own preferences, captures, and permission grants. Its app menu is "Shotty Dev", so open Settings with `shotty-ui menu "Shotty Dev" "Settings…"`. Only one of the two runs: Shotty Dev quits the installed build when it launches and quits itself when the installed build launches.
-- `osascript -e 'tell application id "local.markus.Shotty.dev" to quit'` quits Shotty Dev. Use `local.markus.Shotty` for the installed build.
-- `Scripts/ui/shotty-ui <command>` drives and measures the running app. See below.
-
-Signing needs the login keychain, which is locked in plain SSH sessions. There `codesign` fails with `errSecInternalComponent`. Build from the Mac's GUI session instead, for example a Codex remote-control session or a Terminal on that Mac.
-
-Package and install only when I ask. Bump `CURRENT_PROJECT_VERSION` first, commit, push to `main`, quit Shotty, then run `Scripts/package.sh` and `Scripts/install.sh .build/releases/<zip>`. `package.sh` refuses anything but a clean `HEAD` equal to `origin/main`. Fleet sync then installs the build on the other Macs; don't copy it there yourself.
+- `Scripts/run.sh dev` builds and relaunches Shotty Dev. Run it after every successful change, so the running app matches the code.
+- `Scripts/run.sh installed` switches back to the installed Shotty.
+- `Scripts/test.sh [TestClass]` runs all unit tests or one class.
+- `Scripts/log.sh` streams Shotty's log: capture selection, frozen captures, storage, launch and quit.
+- `Scripts/release.sh` bumps the build number, pushes to `main`, packages, and installs. Only when I ask. Never change `MARKETING_VERSION`.
 
 ## Verifying UI changes
 
@@ -36,4 +24,4 @@ Package and install only when I ask. Bump `CURRENT_PROJECT_VERSION` first, commi
 
 ### Clean up
 
-Save test captures only to `~/Downloads`. Afterwards, quit Shotty, move the test files to the Trash, and clear the clipboard.
+Save test captures only to `~/Downloads`. Afterwards, move the test files to the Trash and clear the clipboard. If the task was only your own verification, run `Scripts/run.sh installed`; otherwise leave Shotty Dev running for me.

@@ -9,11 +9,11 @@ Requires an Apple Silicon Mac, macOS 26 or later, Xcode 27, and the existing App
 Open `Shotty.xcodeproj` and select the shared Shotty scheme, or run:
 
 ```sh
-Scripts/build.sh
-xcodebuild -project Shotty.xcodeproj -scheme Shotty -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/acceptance-tests test
+Scripts/xcode.sh release build
+Scripts/test.sh
 ```
 
-`Scripts/build.sh` builds the signed Release app at `.build/Build/Products/Release/Shotty.app`. The target uses Hardened Runtime, no App Sandbox, and no entitlements. This is private Apple Development signing, not a notarized Developer ID release, so a copied build may not launch as trusted on another Mac.
+`Scripts/xcode.sh release build` builds the signed Release app at `.build/Build/Products/Release/Shotty.app`. The target uses Hardened Runtime, no App Sandbox, and no entitlements. This is private Apple Development signing, not a notarized Developer ID release, so a copied build may not launch as trusted on another Mac.
 
 ## Develop
 
@@ -26,22 +26,15 @@ The Debug build is Shotty Dev, bundle ID `local.markus.Shotty.dev`. It has its o
 
 ## Package, install, and roll back
 
-Set `MARKETING_VERSION` and increase `CURRENT_PROJECT_VERSION` in the Shotty target, commit, and push to `main`, then package:
+`Scripts/release.sh` increases `CURRENT_PROJECT_VERSION` in the Shotty target, commits, pushes to `main`, then packages, installs, and launches the build with the two scripts below. `MARKETING_VERSION` only changes by hand.
 
-```sh
-Scripts/package.sh
-```
-
-It refuses to run unless the working tree is clean and `HEAD` is `origin/main`, so each build number names one pushed commit. It builds Release, refuses to continue unless `codesign --verify --deep --strict` passes and the bundle ID is `local.markus.Shotty`, and writes to `.build/releases/`:
+`Scripts/package.sh` refuses to run unless the working tree is clean and `HEAD` is `origin/main`, so each build number names one pushed commit. It builds Release, refuses to continue unless `codesign --verify --deep --strict` passes and the bundle ID is `local.markus.Shotty`, and writes to `.build/releases/`:
 
 - `Shotty-<version>-<build>-<commit>.zip`, created with `ditto` so the signature survives.
 - A `.sha256` checksum beside it.
 - A `.txt` record of the signing authority, team, designated requirement, and entitlements.
 
-Install on the same Mac:
-
-1. Quit Shotty from its menu. Captures live only while Shotty runs: quitting discards them and keeps saved files, and a launch after a crash starts empty. The installer refuses to run while Shotty is running; it does not quit the app for you.
-2. Run `Scripts/install.sh .build/releases/Shotty-<version>-<build>-<commit>.zip`.
+To install on the same Mac, run `Scripts/install.sh .build/releases/Shotty-<version>-<build>-<commit>.zip`. It asks a running Shotty to quit first, like its Quit menu item. Captures live only while Shotty runs: quitting discards them and keeps saved files, and a launch after a crash starts empty.
 
 The installer checks the checksum when the `.sha256` file is present, verifies the signature and bundle ID, and warns before installing a build whose designated requirement differs from the installed one, because macOS ties permission grants to it. It unpacks into a private work directory on the `/Applications` volume and replaces `/Applications/Shotty.app` by renaming; if placing the new build fails, the old one is moved back. The replaced build is then kept at `~/Library/Application Support/Shotty Installer.noindex/Shotty.previous.app`. If that last step fails, the new install stays and the script prints where the replaced build was left.
 

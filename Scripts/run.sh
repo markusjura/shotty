@@ -19,10 +19,8 @@ case "${1:-}" in
   dev)
     built="$PWD/.build/acceptance-tests/Build/Products/Debug/Shotty Dev.app"
     app=~/Applications/"Shotty Dev.app"
-    # Build before quitting, so a failed build leaves the running app alone. Tests use the same
-    # derived data, so a build after a test run is incremental.
-    xcodebuild -quiet -project Shotty.xcodeproj -scheme Shotty -configuration Debug \
-      -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/acceptance-tests build
+    # Build before quitting, so a failed build leaves the running app alone.
+    Scripts/xcode.sh debug -quiet build
     ;;
   installed)
     app=/Applications/Shotty.app

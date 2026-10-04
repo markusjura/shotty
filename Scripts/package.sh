@@ -17,7 +17,7 @@ git fetch --quiet origin main
   print -u2 "HEAD is not origin/main. Push the build bump on main first."; exit 1
 }
 
-Scripts/build.sh
+Scripts/xcode.sh release build
 app=.build/Build/Products/Release/Shotty.app
 
 # Refuse to package anything that is unsigned, altered, or not the stable bundle identity.

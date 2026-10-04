@@ -3,7 +3,7 @@
 # Usage:
 #   Scripts/install.sh path/to/Shotty-<version>-<build>-<commit>.zip
 #   Scripts/install.sh --rollback      # swap the installed build with the previous one
-# Quit Shotty from its menu first, so it can finish running saves and clear its captures itself.
+# A running Shotty is asked to quit, like its Quit menu item, so it finishes running saves and clears its captures.
 # Settings (UserDefaults) are never touched.
 # Gatekeeper and quarantine are left alone; judge an install by whether it launches.
 #
@@ -28,7 +28,6 @@ verify() {
 }
 
 [[ $# -eq 1 ]] || fail "Usage: Scripts/install.sh <Shotty.zip> | --rollback"
-pgrep -xq Shotty && fail "Shotty is running. Quit it from its menu, then retry."
 mkdir -p "$keep_dir"
 work=$(mktemp -d /Applications/.Shotty-install.XXXXXX)
 # Removes only what this run created. A displaced build that could not be kept is left for recovery.
@@ -47,9 +46,18 @@ confirm_requirement() {
   print
 }
 
+running() { [[ -n "$(lsappinfo find bundleid=$bundle_id)" ]] }
+
 # Moves `replacement` into /Applications/Shotty.app, leaving the displaced build at $work/old.app.
+# Quits a running Shotty first. Any earlier failure leaves it running.
 replace_installed() {
   local replacement="$1"
+  if running; then
+    osascript -e "tell application id \"$bundle_id\" to quit"
+    # Quit waits up to 10 s for running exports.
+    for _ in {1..75}; do running || break; sleep 0.2; done
+    running && fail "Shotty didn't quit within 15 s. Quit it, then retry."
+  fi
   [[ -d "$installed" ]] && mv "$installed" "$work/old.app"
   if ! mv "$replacement" "$installed"; then
     [[ -d "$work/old.app" ]] && mv "$work/old.app" "$installed"
