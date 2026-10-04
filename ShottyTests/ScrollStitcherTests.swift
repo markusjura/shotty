@@ -39,15 +39,54 @@ final class ScrollStitcherTests: XCTestCase {
         assertSame(withoutNoise(output), withoutNoise(transposed(document(offset: 0, extent: 900 + 300))))
     }
 
-    /// Frames dropped during a fast scroll leave mostly blank frames that share no content. A heading
-    /// found in both must not align them while the rest of their content disagrees.
-    func testFramesSharingOnlyARepeatedHeadingDoNotAlign() throws {
-        let heading = [7_001, 7_002, 7_003]
-        let earlier = sparse(Array(zip(100..., heading)) + [(20, 1), (50, 2), (200, 3), (250, 4)])
-        let later = sparse(Array(zip(10..., heading)) + Array(zip(stride(from: 40, to: 200, by: 20), 11...)))
-        var stitcher = try withViewport(earlier) { ScrollStitcher(first: $0) }
-        XCTAssertNotEqual(try withViewport(later) { stitcher.add($0) }, .moved)
-        XCTAssertEqual(stitcher.extent, 300)
+    /// Rows of a gradient are each uniform across the line but unique, so exact matching aligns them.
+    func testUniformRowsOfAGradientStillAlign() throws {
+        let gradient = { (offset: Int, extent: Int) in
+            Page(width: 80, rows: (offset..<(offset + extent)).map { Array(repeating: Self.mixed($0) | 0xFF, count: 80) })
+        }
+        let output = try stitch([0, 120, 260].map { gradient($0, 300) })
+        assertSame(output, gradient(0, 560))
+    }
+
+    /// Scaled content draws each line two or three scanlines tall, so every line matches its neighbors.
+    func testScaledContentAlignsDespitePixelNoise() throws {
+        for scale in [2, 3] {
+            let scaled = { (offset: Int, extent: Int) in
+                Page(width: 80, rows: (offset..<(offset + extent)).map { row in (0..<80).map { Self.mixed(row / scale, $0) | 0xFF } })
+            }
+            let output = try stitch([noisy(scaled(0, 300), seed: 1), noisy(scaled(101, 300), seed: 2)])
+            assertSame(withoutNoise(output), withoutNoise(scaled(0, 401)))
+        }
+    }
+
+    /// Frames dropped during a fast scroll leave frames that share no content. A heading found in
+    /// both must not align them while the rest of their content, repeated or not, disagrees.
+    func testFramesSharingOnlyAHeadingDoNotAlign() throws {
+        let heading = [(0, 7_001), (1, 7_002), (2, 7_003)]
+        let pairs = [
+            // Mostly blank, with different content apart from the heading.
+            (heading.map { (100 + $0, $1) } + [(20, 1), (50, 2), (200, 3), (250, 4)],
+             heading.map { (10 + $0, $1) } + (0..<8).map { (40 + 20 * $0, 11 + $0) }),
+            // Filled with one repeated line each, a different one in each frame.
+            ((0..<300).map { ($0, 1) } + heading.map { (100 + $0, $1) },
+             (0..<300).map { ($0, 2) } + heading.map { (10 + $0, $1) }),
+        ]
+        for (earlier, later) in pairs {
+            var stitcher = try withViewport(page(earlier)) { ScrollStitcher(first: $0) }
+            XCTAssertNotEqual(try withViewport(page(later)) { stitcher.add($0) }, .moved)
+            XCTAssertEqual(stitcher.extent, 300)
+        }
+    }
+
+    /// Lines of smooth content match their neighbors within noise, so a frame that only changed in
+    /// place matches one line up or down as well as where it is.
+    func testSmoothContentChangedInPlaceDoesNotMove() throws {
+        let gradient = Page(width: 80, rows: (0..<200).map { row in (0..<80).map { UInt32($0 / 10 * 20) << 16 | UInt32(row) << 8 | 0xFF } })
+        var changed = gradient
+        for row in changed.rows.indices { for column in stride(from: 0, to: 80, by: 10) { changed.rows[row][column] += 0x100 } }
+        var stitcher = try withViewport(gradient) { ScrollStitcher(first: $0) }
+        XCTAssertEqual(try withViewport(changed) { stitcher.add($0) }, .unchanged)
+        XCTAssertEqual(stitcher.extent, 200)
     }
 
     func testGrowthStopsAtTheLimitAndKeepsTheAcceptedImage() throws {
@@ -87,8 +126,9 @@ final class ScrollStitcherTests: XCTestCase {
         return Page(width: width, rows: chrome(0x1234_5601, header) + body + chrome(0x6543_2101, footer))
     }
 
-    /// A blank 300-row viewport with content in the given rows. Rows with equal seeds are equal.
-    private func sparse(_ rows: [(row: Int, seed: Int)]) -> Page {
+    /// A blank 300-row viewport with content in the given rows. Equal seeds make equal rows, and
+    /// later entries replace earlier ones.
+    private func page(_ rows: [(row: Int, seed: Int)]) -> Page {
         var page = Page(width: 80, rows: Array(repeating: Array(repeating: 0xFFFF_FFFF, count: 80), count: 300))
         for (row, seed) in rows { page.rows[row] = (0..<page.width).map { Self.mixed(seed, $0) | 0xFF } }
         return page
