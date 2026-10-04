@@ -29,6 +29,16 @@ final class ScrollStitcherTests: XCTestCase {
         assertSame(output, document(offset: 0, extent: 200 + 300))
     }
 
+    /// While a trackpad scroll is in motion, each frame is composited at a subpixel offset, so no
+    /// line is bit-identical between frames. Noise in green's low bit stands in for that.
+    func testFramesCapturedMidScrollAlignDespitePixelNoise() throws {
+        let offsets = [0, 37, 220, 400, 360, 610, 790, 900]
+        let frames = offsets.enumerated().map { frame, offset in noisy(document(offset: offset), seed: frame + 1) }
+        assertSame(withoutNoise(try stitch(frames)), withoutNoise(document(offset: 0, extent: 900 + 300)))
+        let output = try stitch(frames.map(transposed), horizontal: true)
+        assertSame(withoutNoise(output), withoutNoise(transposed(document(offset: 0, extent: 900 + 300))))
+    }
+
     func testGrowthStopsAtTheLimitAndKeepsTheAcceptedImage() throws {
         var stitcher = try withViewport(document(offset: 0)) { ScrollStitcher(first: $0, limits: .init(maximumExtent: 500)) }
         XCTAssertEqual(try withViewport(document(offset: 150)) { stitcher.add($0) }, .moved)
@@ -60,10 +70,36 @@ final class ScrollStitcherTests: XCTestCase {
         let width = 80
         let body = (offset..<(offset + extent - header - footer)).map { row -> [UInt32] in
             guard row % 5 != 0 else { return Array(repeating: 0xFFFF_FFFF, count: width) }
-            return (0..<width).map { column in column < 6 ? UInt32(truncatingIfNeeded: row &* 2_654_435_761) | 0xFF : UInt32(column % 7) << 8 | 0xFF }
+            return (0..<width).map { column in column < 6 ? Self.mixed(row, column) | 0xFF : UInt32(column % 7) << 8 | 0xFF }
         }
         let chrome = { (seed: UInt32, count: Int) in (0..<count).map { row in (0..<width).map { UInt32($0 + row) &* seed | 0xFF } } }
         return Page(width: width, rows: chrome(0x1234_5601, header) + body + chrome(0x6543_2101, footer))
+    }
+
+    private static let noiseBit: UInt32 = 0x100
+
+    /// Flips green's low bit in about a quarter of the pixels, in a pattern unique to `seed`.
+    private func noisy(_ page: Page, seed: Int) -> Page {
+        var page = page
+        for row in page.rows.indices {
+            for column in 0..<page.width where Self.mixed(row, column, seed) & 3 == 0 {
+                page.rows[row][column] ^= Self.noiseBit
+            }
+        }
+        return page
+    }
+
+    private func withoutNoise(_ page: Page) -> Page {
+        Page(width: page.width, rows: page.rows.map { $0.map { $0 & ~Self.noiseBit } })
+    }
+
+    /// Deterministic, well-distributed bits for each combination of `values`.
+    private static func mixed(_ values: Int...) -> UInt32 {
+        let mixed = values.reduce(UInt64(0x9E37_79B9_7F4A_7C15)) { state, value in
+            let state = (state ^ UInt64(bitPattern: Int64(value))) &* 0xBF58_476D_1CE4_E5B9
+            return state ^ (state >> 31)
+        }
+        return UInt32(truncatingIfNeeded: mixed >> 16)
     }
 
     private func transposed(_ page: Page) -> Page {
