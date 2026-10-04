@@ -231,15 +231,18 @@ struct ScrollStitcher {
         guard !isFull else { return .full }
         let currentRows = frame.lines(along: .vertical)
         guard currentRows.hashes != rows.hashes else { return .unchanged }
-        let currentColumns = axis == .vertical ? nil : frame.lines(along: .horizontal)
-        var candidates: [(ScrollAxis, ScrollLines, ScrollLines)] = []
-        if axis != .horizontal { candidates.append((.vertical, rows, currentRows)) }
-        if axis != .vertical, let columns, let currentColumns { candidates.append((.horizontal, columns, currentColumns)) }
-        let matches = candidates.compactMap { axis, previous, current in
-            Self.match(previous, current, bands: self.axis == axis ? bands : Bands()).map { (axis, $0) }
-        }
+        let vertical = axis == .horizontal ? nil : Self.match(rows, currentRows, bands: axis == .vertical ? bands : Bands())
         // Before the axis is known, the axis that moved wins over one that merely stayed in place.
-        guard let (matchedAxis, match) = matches.first(where: { $0.1.displacement != 0 }) ?? matches.first else {
+        // Columns cost far more to read than rows, so they are only read when rows did not move.
+        var currentColumns: ScrollLines?
+        var horizontal: Match?
+        if axis != .vertical, vertical.map({ $0.displacement == 0 }) ?? true, let columns {
+            let current = frame.lines(along: .horizontal)
+            currentColumns = current
+            horizontal = Self.match(columns, current, bands: axis == .horizontal ? bands : Bands())
+        }
+        let moving = [(ScrollAxis.vertical, vertical), (.horizontal, horizontal)].compactMap { axis, match in match.map { (axis, $0) } }
+        guard let (matchedAxis, match) = moving.first(where: { $0.1.displacement != 0 }) ?? moving.first else {
             return .unmatched
         }
         guard match.displacement != 0 else {
@@ -361,8 +364,10 @@ struct ScrollStitcher {
         return votes
     }
 
-    /// The displacement that clearly wins `votes`, if at least half the overlapping lines confirm it.
-    /// `same(earlier, line)` compares a line of the previous frame with one of the current frame.
+    /// The displacement that clearly wins `votes`, if at least half the overlapping lines with content
+    /// confirm it. Blank lines match any other blank line, so frames that share no content but are
+    /// mostly blank would otherwise confirm a few chance votes. `same(earlier, line)` compares a line
+    /// of the previous frame with one of the current frame.
     private static func moved(by votes: [Int: Int], _ previous: ScrollLines, _ current: ScrollLines, bands known: Bands,
                               same: (Int, Int) -> Bool) -> Match? {
         let ranked = votes.filter { $0.key != 0 }.sorted { $0.value > $1.value }
@@ -372,8 +377,9 @@ struct ScrollStitcher {
         let extent = previous.count
         let bands = stationaryBands(previous.hashes, current.hashes, displacement: best.key, known: known, same: same)
         let overlap = (bands.leading + max(0, -best.key))..<(extent - bands.trailing - max(0, best.key))
-        let agreeing = overlap.count { same($0 + best.key, $0) }
-        guard !overlap.isEmpty && agreeing * 2 >= overlap.count else { return nil }
+        let confirming = overlap.filter(current.hasContent)
+        let agreeing = confirming.count { same($0 + best.key, $0) }
+        guard !confirming.isEmpty && agreeing * 2 >= confirming.count else { return nil }
         return Match(displacement: best.key, bands: bands)
     }
 
