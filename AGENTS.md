@@ -1,6 +1,6 @@
 # Project instructions
 
-This file documents guidance for agents working in this repository. Record only non-obvious pitfalls, surprises, and constraints, and add new ones when you discover them.
+This file documents guidance for agents working in this repository. Record only non-obvious pitfalls, surprises, and constraints of the workflow and tools, and add new ones when you discover them. Explain code pitfalls in a comment where they apply, not here.
 
 ## Commands
 
@@ -31,20 +31,9 @@ Package and install only when I ask. Bump `CURRENT_PROJECT_VERSION` first, commi
 - Take screenshots with `screencapture -x -l <window id>` for one window or `screencapture -x -R x,y,w,h` for a region. Shrink large ones with `sips -Z 900` before viewing.
 - For animation, flicker, or anything that moves, record first and measure: `record 1 6 out.mov &`, act, then `motion out.mov x y w h`. Look only at the frames it flags, using `frames`.
 - Type with `keys` and `key`, which go through System Events. Posted key events may not reach other apps.
-- A process that exits right after posting a mouse event sometimes drops it, and the pointer stays where it was. `shotty-ui` waits 8 ms after each post; do the same in ad-hoc tools. When a hover state looks stuck, first check where the pointer actually is.
 - Don't script Finder or TextEdit with osascript. It hangs behind an Automation prompt. Use `windows`, `close`, and `text` instead.
-- `drag` holds before and after moving, so drop targets such as Finder accept it. A capture selection needs only a few steps.
-- `drag-path x1 y1 x2 y2 [x3 y3 ...]` keeps the button held through multiple segments, for testing curved arrow gestures.
 - Use Computer Use for exploratory checks, judging how something looks, or apps the tool can't drive. For repeatable checks, the tool is faster and cheaper.
 
 ### Clean up
 
 Save test captures only to `~/Downloads`. Afterwards, quit Shotty, move the test files to the Trash, and clear the clipboard.
-
-## AppKit pitfalls
-
-- The grouped `Form` fills sections with a translucent system color that `.listRowBackground`, `.backgroundStyle`, and `.foregroundStyle` don't change. Settings uses `SettingsFormStyle` to draw sections in `SettingsColor`; keep panes on plain `Form`, `Section`, and controls.
-- On macOS 27, `NSMenu` hides item images unless the item sets `preferredImageVisibility = .visible`. An image-only item without it shows as an empty row.
-- The editor's `NSHostingView` sets the window's minimum size from the SwiftUI content and overrides `window.minSize`. Constrain the root view with `.frame(minWidth:)` instead.
-- The selection panels never activate Shotty, and an inactive app can set the cursor only over its key window. A drag keeps going to the pressed panel after the pointer moves to another display, so that display's panel must become key during the drag, or the cursor turns into the arrow. AppKit also shows the arrow when such a drag ends, so set the cursor again after the release is handled.
-- On macOS 27, ScreenCaptureKit can list a ChatGPT popover as an on-screen window but fail its screenshot with `SCStreamError.internalError`. Frozen acquisition omits both variants of that optional window so display and area capture can continue. Permission, display, and resource failures still abort.
