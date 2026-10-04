@@ -39,6 +39,17 @@ final class ScrollStitcherTests: XCTestCase {
         assertSame(withoutNoise(output), withoutNoise(transposed(document(offset: 0, extent: 900 + 300))))
     }
 
+    /// Frames dropped during a fast scroll leave mostly blank frames that share no content. A heading
+    /// found in both must not align them while the rest of their content disagrees.
+    func testFramesSharingOnlyARepeatedHeadingDoNotAlign() throws {
+        let heading = [7_001, 7_002, 7_003]
+        let earlier = sparse(Array(zip(100..., heading)) + [(20, 1), (50, 2), (200, 3), (250, 4)])
+        let later = sparse(Array(zip(10..., heading)) + Array(zip(stride(from: 40, to: 200, by: 20), 11...)))
+        var stitcher = try withViewport(earlier) { ScrollStitcher(first: $0) }
+        XCTAssertNotEqual(try withViewport(later) { stitcher.add($0) }, .moved)
+        XCTAssertEqual(stitcher.extent, 300)
+    }
+
     func testGrowthStopsAtTheLimitAndKeepsTheAcceptedImage() throws {
         var stitcher = try withViewport(document(offset: 0)) { ScrollStitcher(first: $0, limits: .init(maximumExtent: 500)) }
         XCTAssertEqual(try withViewport(document(offset: 150)) { stitcher.add($0) }, .moved)
@@ -74,6 +85,13 @@ final class ScrollStitcherTests: XCTestCase {
         }
         let chrome = { (seed: UInt32, count: Int) in (0..<count).map { row in (0..<width).map { UInt32($0 + row) &* seed | 0xFF } } }
         return Page(width: width, rows: chrome(0x1234_5601, header) + body + chrome(0x6543_2101, footer))
+    }
+
+    /// A blank 300-row viewport with content in the given rows. Rows with equal seeds are equal.
+    private func sparse(_ rows: [(row: Int, seed: Int)]) -> Page {
+        var page = Page(width: 80, rows: Array(repeating: Array(repeating: 0xFFFF_FFFF, count: 80), count: 300))
+        for (row, seed) in rows { page.rows[row] = (0..<page.width).map { Self.mixed(seed, $0) | 0xFF } }
+        return page
     }
 
     private static let noiseBit: UInt32 = 0x100
