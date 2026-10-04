@@ -316,6 +316,22 @@ struct ScrollStitcher {
         let bands: Bands
     }
 
+    /// Displacements this close count as the same alignment. Scrolling by a fraction of a line, or
+    /// content drawn two or three scanlines tall, leaves neighboring displacements nearly as good.
+    private static let slack = 1
+
+    /// Displacement votes, and which lines of the current frame may confirm the winner: those whose
+    /// matches in the earlier frame all lie within `slack` of one line, like a scanline drawn twice
+    /// by Retina scaling. Blank and other repeated lines match all over, so they agree with any
+    /// displacement and would confirm chance votes between unrelated frames.
+    private struct Ballot {
+        var votes: [Int: Int] = [:]
+        var confirmers: [Bool]
+
+        /// Whether a line whose matches span `lines` of the earlier frame, nil for none, may confirm.
+        static func confirms(_ lines: ClosedRange<Int>?) -> Bool { lines.map { $0.count <= 2 * slack + 1 } ?? true }
+    }
+
     /// Nil when the frames share no reliable alignment. Exact hashes are tried first, as they are
     /// cheaper and stricter; profiles only run when hashes find nothing.
     private static func match(_ previous: ScrollLines, _ current: ScrollLines, bands known: Bands) -> Match? {
@@ -329,57 +345,67 @@ struct ScrollStitcher {
     }
 
     /// Every line whose hash is unique in both frames votes for the displacement onto the earlier one.
-    private static func exactVotes(_ previous: [UInt64], _ current: [UInt64]) -> [Int: Int] {
-        var previousIndex = [UInt64: Int](minimumCapacity: previous.count)
-        for (line, hash) in previous.enumerated() { previousIndex[hash] = previousIndex[hash] == nil ? line : -1 }
+    private static func exactVotes(_ previous: [UInt64], _ current: [UInt64]) -> Ballot {
+        var occurrences = [UInt64: ClosedRange<Int>](minimumCapacity: previous.count)
+        for (line, hash) in previous.enumerated() { occurrences[hash] = (occurrences[hash]?.lowerBound ?? line)...line }
         var currentCount = [UInt64: Int](minimumCapacity: current.count)
         for hash in current { currentCount[hash, default: 0] += 1 }
-        var votes: [Int: Int] = [:]
+        var ballot = Ballot(confirmers: current.map { Ballot.confirms(occurrences[$0]) })
         for (line, hash) in current.enumerated() where currentCount[hash] == 1 {
-            if let earlier = previousIndex[hash], earlier >= 0 { votes[earlier - line, default: 0] += 1 }
+            if let earlier = occurrences[hash], earlier.count == 1 { ballot.votes[earlier.lowerBound - line, default: 0] += 1 }
         }
-        return votes
+        return ballot
     }
 
     /// Every line with content votes for each displacement onto an earlier line it matches within
     /// noise. Matching lines have totals within `spans` tolerances of each other, so each line is
     /// only compared with the earlier lines in that window of totals.
-    private static func similarVotes(_ previous: ScrollLines, _ current: ScrollLines) -> [Int: Int] {
+    private static func similarVotes(_ previous: ScrollLines, _ current: ScrollLines) -> Ballot {
         let window = Int32(ScrollLines.spans) * current.tolerance
         let earlier = (0..<previous.count).map { (total: previous.total(of: $0), line: $0) }.sorted { $0.total < $1.total }
-        var votes: [Int: Int] = [:]
-        for line in 0..<current.count where current.hasContent(line) {
+        var ballot = Ballot(confirmers: Array(repeating: true, count: current.count))
+        for line in 0..<current.count {
             let total = current.total(of: line)
+            let hasContent = current.hasContent(line)
             // The first earlier line whose total is within the window.
             var (low, high) = (0, earlier.count)
             while low < high {
                 let middle = (low + high) / 2
                 if earlier[middle].total < total - window { low = middle + 1 } else { high = middle }
             }
-            for candidate in earlier[low...].prefix(while: { $0.total <= total + window })
-            where current.line(line, matches: candidate.line, of: previous) {
-                votes[candidate.line - line, default: 0] += 1
+            var matched: ClosedRange<Int>?
+            for candidate in earlier[low...] {
+                // A line without content only needs to know whether it confirms.
+                guard candidate.total <= total + window, hasContent || Ballot.confirms(matched) else { break }
+                guard current.line(line, matches: candidate.line, of: previous) else { continue }
+                matched = matched.map { min($0.lowerBound, candidate.line)...max($0.upperBound, candidate.line) } ?? candidate.line...candidate.line
+                if hasContent { ballot.votes[candidate.line - line, default: 0] += 1 }
             }
+            ballot.confirmers[line] = Ballot.confirms(matched)
         }
-        return votes
+        return ballot
     }
 
-    /// The displacement that clearly wins `votes`, if at least half the overlapping lines with content
-    /// confirm it. Blank lines match any other blank line, so frames that share no content but are
-    /// mostly blank would otherwise confirm a few chance votes. `same(earlier, line)` compares a line
-    /// of the previous frame with one of the current frame.
-    private static func moved(by votes: [Int: Int], _ previous: ScrollLines, _ current: ScrollLines, bands known: Bands,
+    /// The displacement that clearly wins the ballot, if at least half of the confirming lines in the
+    /// overlap agree with it and staying in place does not explain the confirming lines as well.
+    /// Smooth content, such as a gradient, matches its neighbors, so a frame that only changed in
+    /// place would otherwise move by a line. `same(earlier, line)` compares a line of the previous
+    /// frame with one of the current frame.
+    private static func moved(by ballot: Ballot, _ previous: ScrollLines, _ current: ScrollLines, bands known: Bands,
                               same: (Int, Int) -> Bool) -> Match? {
-        let ranked = votes.filter { $0.key != 0 }.sorted { $0.value > $1.value }
+        let ranked = ballot.votes.filter { $0.key != 0 }.sorted { $0.value > $1.value }
         guard let best = ranked.first else { return nil }
-        let rival = ranked.dropFirst().first { abs($0.key - best.key) > 1 }?.value ?? 0
+        let rival = ranked.dropFirst().first { abs($0.key - best.key) > slack }?.value ?? 0
         guard best.value >= 3 && best.value >= 2 * rival else { return nil }
         let extent = previous.count
         let bands = stationaryBands(previous.hashes, current.hashes, displacement: best.key, known: known, same: same)
-        let overlap = (bands.leading + max(0, -best.key))..<(extent - bands.trailing - max(0, best.key))
-        let confirming = overlap.filter(current.hasContent)
-        let agreeing = confirming.count { same($0 + best.key, $0) }
-        guard !confirming.isEmpty && agreeing * 2 >= confirming.count else { return nil }
+        let overlap = ((bands.leading + max(0, -best.key))..<(extent - bands.trailing - max(0, best.key))).filter { ballot.confirmers[$0] }
+        let agreeing = overlap.count { same($0 + best.key, $0) }
+        guard !overlap.isEmpty && agreeing * 2 >= overlap.count else { return nil }
+        let unmoved = (bands.leading..<(extent - bands.trailing)).filter { ballot.confirmers[$0] }
+        let staying = unmoved.count { same($0, $0) }
+        // Compared as shares, since the overlap is smaller than the whole frame.
+        guard staying * overlap.count < agreeing * unmoved.count else { return nil }
         return Match(displacement: best.key, bands: bands)
     }
 
