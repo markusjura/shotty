@@ -2,6 +2,17 @@
 
 A native macOS screenshot utility tailored to Markus's workflow.
 
+## Install
+
+Shotty needs macOS 26 or later.
+
+1. Download the DMG from the [latest release](https://github.com/markusjura/shotty/releases/latest) and open it.
+2. Drag Shotty onto Applications.
+3. Open Shotty from Applications. macOS says it can't verify Shotty, because Shotty isn't notarized by Apple. Click Done.
+4. Open System Settings > Privacy & Security, click Open Anyway next to the message about Shotty, and confirm with your password.
+
+Shotty runs from the menu bar. On your first capture, it asks you to allow Screen Recording in System Settings. Auto Scroll asks for Accessibility the first time you start it.
+
 ## Build and test
 
 Requires an Apple Silicon Mac, macOS 26 or later, Xcode 27, and the existing Apple Development signing identity. On another Mac, import that identity's certificate and private key instead of letting Xcode create a new certificate, so every Mac signs with the same designated requirement. Create a gitignored `Local.xcconfig` in the repository root containing `DEVELOPMENT_TEAM = YOUR_TEAM_ID`. The shared project includes it through `Config/Signing.xcconfig`; no certificate or private key belongs in the repository.
@@ -24,17 +35,20 @@ Scripts/run.sh installed  # switch back to /Applications/Shotty.app
 
 The Debug build is Shotty Dev, bundle ID `local.markus.Shotty.dev`. It has its own preferences, capture folders, and permission grants, so it never touches the installed Shotty's state, and Spotlight and Raycast list it separately. `run.sh dev` copies the build to `~/Applications/Shotty Dev.app` and launches that copy, because Spotlight doesn't index the hidden `.build` folder. Every checkout and worktree replaces the same copy. The two share hotkeys, so only one runs: `run.sh` quits both before launching one, and Shotty Dev quits the installed build when it launches and quits itself when the installed build launches. That check exists only in Debug builds. To start Shotty Dev with your current settings, run `defaults export local.markus.Shotty - | defaults import local.markus.Shotty.dev -` while both are quit.
 
-## Package, install, and roll back
+## Release, package, install, and roll back
 
-`Scripts/release.sh` increases `CURRENT_PROJECT_VERSION` in the Shotty target, commits, pushes to `main`, then packages, installs, and launches the build with the two scripts below. `MARKETING_VERSION` only changes by hand.
+`Config/Version.xcconfig` holds the version, and the build number equals it. `Scripts/release.sh [patch|minor|major|X.Y.Z]` bumps it (patch by default), commits `chore: release <version>`, and pushes that commit to `main` together with tag `v<version>`. It then packages, installs, and launches the release with the scripts below, and publishes it with `Scripts/publish.sh <version>`. If a step after the push fails, it prints the remaining steps to run by hand.
 
-`Scripts/package.sh` refuses to run unless the working tree is clean and `HEAD` is `origin/main`, so each build number names one pushed commit. It builds Release, refuses to continue unless `codesign --verify --deep --strict` passes and the bundle ID is `local.markus.Shotty`, and writes to `.build/releases/`:
+`Scripts/package.sh` refuses to run unless the working tree is clean and `HEAD` is `origin/main`, so each version names one pushed commit. It builds Release, refuses to continue unless `codesign --verify --deep --strict` passes and the bundle ID is `local.markus.Shotty`, and writes to `.build/releases/`:
 
-- `Shotty-<version>-<build>-<commit>.zip`, created with `ditto` so the signature survives.
-- A `.sha256` checksum beside it.
+- `Shotty-<version>.zip`, created with `ditto` so the signature survives. `install.sh` and fleet use it.
+- `Shotty-<version>.dmg`, built by `uvx dmgbuild` with the layout in `Config/dmg.py`. It opens to a window for dragging Shotty onto Applications. `swift Scripts/GenerateDMGBackground.swift Config` regenerates its background.
+- A `.sha256` checksum beside each.
 - A `.txt` record of the signing authority, team, designated requirement, and entitlements.
 
-To install on the same Mac, run `Scripts/install.sh .build/releases/Shotty-<version>-<build>-<commit>.zip`. It asks a running Shotty to quit first, like its Quit menu item. Captures live only while Shotty runs: quitting discards them and keeps saved files, and a launch after a crash starts empty.
+`Scripts/publish.sh <version>` creates or updates the GitHub release for tag `v<version>` with the DMG and its checksum. The notes list the commits since the previous tag, without chores, followed by the Install section above.
+
+To install on the same Mac, run `Scripts/install.sh .build/releases/Shotty-<version>.zip`. It refuses a ZIP older than the installed version. It asks a running Shotty to quit first, like its Quit menu item. Captures live only while Shotty runs: quitting discards them and keeps saved files, and a launch after a crash starts empty.
 
 The installer checks the checksum when the `.sha256` file is present, verifies the signature and bundle ID, and warns before installing a build whose designated requirement differs from the installed one, because macOS ties permission grants to it. It unpacks into a private work directory on the `/Applications` volume and replaces `/Applications/Shotty.app` by renaming; if placing the new build fails, the old one is moved back. The replaced build is then kept at `~/Library/Application Support/Shotty Installer.noindex/Shotty.previous.app`. If that last step fails, the new install stays and the script prints where the replaced build was left.
 
@@ -44,7 +58,7 @@ Neither script strips quarantine or changes Gatekeeper settings. There is no aut
 
 ## Fleet
 
-Install on any fleet Mac as above. Fleet sync from `markusjura/mac-settings` then observes the newer build in `/Applications`, archives it, and installs it on the other Macs within minutes. It quits a running Shotty gracefully and reopens it afterwards. Fleet refuses builds whose designated requirement differs from the one pinned in its policy. Check progress with `fleet status` (`shotty.activation`). Fleet never lowers its target, so it reinstalls the newer build within minutes of `install.sh --rollback`. Set `shotty.enabled` to false in the fleet policy first, or fix forward with a higher build number.
+Install on any fleet Mac as above. Fleet sync from `markusjura/mac-settings` then observes the newer version in `/Applications`, archives it, and installs it on the other Macs within minutes. It quits a running Shotty gracefully and reopens it afterwards. Fleet refuses builds whose designated requirement differs from the one pinned in its policy. Check progress with `fleet status` (`shotty.activation`). Fleet never lowers its target, so it reinstalls the newer build within minutes of `install.sh --rollback`. Set `shotty.enabled` to false in the fleet policy first, or fix forward with a higher version.
 
 ## Permissions
 

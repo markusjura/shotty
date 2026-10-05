@@ -8,7 +8,7 @@ This file documents guidance for agents working in this repository. Record only 
 - `Scripts/run.sh installed` switches back to the installed Shotty.
 - `Scripts/test.sh [TestClass]` runs all unit tests or one class.
 - `Scripts/log.sh` streams Shotty's log: capture selection, frozen captures, storage, launch and quit.
-- `Scripts/release.sh` bumps the build number, pushes to `main`, packages, and installs. Only when I ask. Never change `MARKETING_VERSION`.
+- Run `Scripts/release.sh` and `Scripts/publish.sh` only when I ask.
 
 ## Verifying UI changes
 

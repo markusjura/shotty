@@ -51,4 +51,10 @@ if [[ -n "${built:-}" ]]; then
 fi
 
 open "$app"
-print "Launched $app ($(/usr/bin/defaults read "$app/Contents/Info" CFBundleShortVersionString) build $(/usr/bin/defaults read "$app/Contents/Info" CFBundleVersion))"
+version=$(/usr/bin/defaults read "$app/Contents/Info" CFBundleShortVersionString)
+# Every dev build between releases has the same version, so name the commit it was built from.
+if [[ -n "${built:-}" ]]; then
+  version+=" @ $(git rev-parse --short HEAD)"
+  [[ -z "$(git status --porcelain)" ]] || version+=" with uncommitted changes"
+fi
+print "Launched $app ($version)"

@@ -1,8 +1,9 @@
 #!/bin/zsh
 # Installs a packaged Shotty build into /Applications, keeping the replaced build for rollback.
 # Usage:
-#   Scripts/install.sh path/to/Shotty-<version>-<build>-<commit>.zip
+#   Scripts/install.sh path/to/Shotty-<version>.zip
 #   Scripts/install.sh --rollback      # swap the installed build with the previous one
+# A ZIP older than the installed version is refused; --rollback is the only way back.
 # A running Shotty is asked to quit, like its Quit menu item, so it finishes running saves and clears its captures.
 # Settings (UserDefaults) are never touched.
 # Gatekeeper and quarantine are left alone; judge an install by whether it launches.
@@ -19,9 +20,7 @@ previous="$keep_dir/Shotty.previous.app"
 
 fail() { print -u2 "$1"; exit 1 }
 requirement() { codesign -d -r- "$1" 2>&1 | sed -n 's/^designated => //p' }
-describe() {
-  print "$(/usr/bin/defaults read "$1/Contents/Info" CFBundleShortVersionString) ($(/usr/bin/defaults read "$1/Contents/Info" CFBundleVersion))"
-}
+describe() { /usr/bin/defaults read "$1/Contents/Info" CFBundleShortVersionString }
 verify() {
   codesign --verify --deep --strict "$1" || fail "Signature verification failed for $1."
   [[ "$(/usr/bin/defaults read "$1/Contents/Info" CFBundleIdentifier)" == "$bundle_id" ]] || fail "$1 is not $bundle_id."
@@ -105,6 +104,10 @@ ditto -x -k "$zip" "$work/unpacked"
 [[ -d "$work/unpacked/Shotty.app" ]] || fail "$zip does not contain Shotty.app at its top level."
 mv "$work/unpacked/Shotty.app" "$work/new.app"
 verify "$work/new.app"
+autoload -Uz is-at-least
+if [[ -d "$installed" ]] && ! is-at-least "$(describe "$installed")" "$(describe "$work/new.app")"; then
+  fail "$zip has $(describe "$work/new.app"), older than the installed $(describe "$installed"). Use --rollback to go back."
+fi
 
 confirm_requirement "$work/new.app"
 replace_installed "$work/new.app"
