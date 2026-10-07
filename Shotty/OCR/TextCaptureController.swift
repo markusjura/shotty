@@ -15,6 +15,9 @@ final class TextCaptureController {
     /// True while recognition and its automatic outputs run; the review window does not block new captures.
     private(set) var isActive = false
 
+    /// True while the result panel or a review window shows recognized text.
+    var isShowingResults: Bool { panel.isVisible || review.isOpen }
+
     init(coordinator: AppCoordinator) { self.coordinator = coordinator }
 
     func start(_ image: CGImage, settings: CaptureOutputSnapshot, ticket: ClipboardWriter.Ticket) {

@@ -20,6 +20,8 @@ final class TextResultPanel {
     private var panel: NSPanel?
     private var hideTask: Task<Void, Never>?
 
+    var isVisible: Bool { panel?.isVisible == true }
+
     /// `autoHide` closes the panel after a few seconds; errors and skipped copies stay visible.
     func show(symbol: String, message: String, detail: String? = nil, actions: [Action], autoHide: Bool) {
         hideTask?.cancel()

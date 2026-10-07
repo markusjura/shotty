@@ -18,4 +18,7 @@ security show-keychain-info login.keychain >/dev/null 2>&1 || {
   print -u2 "The login keychain is locked, so signing would fail. Build from the Mac's GUI session."; exit 1
 }
 
-exec xcodebuild -project Shotty.xcodeproj -scheme Shotty -destination 'platform=macOS,arch=arm64' $settings "$@"
+# SwiftPM otherwise looks up github.com credentials in the keychain to download Sparkle, and that
+# lookup can wait forever on a keychain prompt. Sparkle is public, so it needs no credentials.
+exec xcodebuild -project Shotty.xcodeproj -scheme Shotty -destination 'platform=macOS,arch=arm64' \
+  -packageAuthorizationProvider netrc $settings "$@"

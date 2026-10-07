@@ -30,6 +30,9 @@ esac
 autoload -Uz is-at-least
 [[ "$next" != "$current" ]] && is-at-least "$current" "$next" || fail "$next is not above the current $current."
 [[ -z "$(git tag --list "v$next")" ]] || fail "Tag v$next already exists."
+# Publishing signs the update for Sparkle, so make sure it can before the version is taken.
+[[ "$(Scripts/sparkle.sh generate_keys -p)" == "$(plutil -extract SUPublicEDKey raw Config/Info.plist)" ]] ||
+  fail "The login keychain has no Sparkle key matching SUPublicEDKey in Config/Info.plist."
 
 sed -i '' "s/^MARKETING_VERSION = .*/MARKETING_VERSION = $next/" $config
 git commit --quiet -m "chore: release $next" $config

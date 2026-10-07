@@ -6,6 +6,10 @@
 	objectVersion = 71;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A00000000000000000000105 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000106 /* Sparkle */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		A00000000000000000000207 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -33,6 +37,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A00000000000000000000105 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -85,6 +90,9 @@
 				A00000000000000000000004 /* Shotty */,
 			);
 			name = Shotty;
+			packageProductDependencies = (
+				A00000000000000000000106 /* Sparkle */,
+			);
 			productName = Shotty;
 			productReference = A00000000000000000000101 /* Shotty.app */;
 			productType = "com.apple.product-type.application";
@@ -127,6 +135,9 @@
 				Base,
 			);
 			mainGroup = A00000000000000000000002;
+			packageReferences = (
+				A00000000000000000000020 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			productRefGroup = A00000000000000000000003 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -334,6 +345,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A00000000000000000000020 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.10.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A00000000000000000000106 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A00000000000000000000020 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A00000000000000000000001 /* Project object */;
 }

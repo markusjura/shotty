@@ -93,17 +93,19 @@ struct SettingsFormStyle: FormStyle {
     }
 }
 
-/// A flat button in `SettingsColor.controlFill`, as Raycast's settings buttons.
-private struct SettingsButtonStyle: ButtonStyle {
+/// A flat button in `SettingsColor.controlFill`, as Raycast's settings buttons. The prominent
+/// variant fills with the accent color, for the one action a row asks the user to take.
+struct SettingsButtonStyle: ButtonStyle {
+    var isProminent = false
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .background(SettingsColor.controlFill, in: RoundedRectangle(cornerRadius: 6))
+            .background(isProminent ? Color.accentColor : SettingsColor.controlFill, in: RoundedRectangle(cornerRadius: 6))
             .overlay(RoundedRectangle(cornerRadius: 6).fill(SettingsColor.primaryText.opacity(configuration.isPressed ? 0.08 : 0)))
-            .foregroundStyle(SettingsColor.primaryText)
+            .foregroundStyle(isProminent ? Color.white : SettingsColor.primaryText)
             .opacity(isEnabled ? 1 : 0.5)
             .contentShape(RoundedRectangle(cornerRadius: 6))
     }
@@ -147,11 +149,13 @@ extension View {
 }
 
 /// A Settings sidebar row as in Raycast's settings: an accent icon and primary text, with a gray
-/// fill when selected. The List keeps its own selection, so clicks, arrow keys, and
-/// VoiceOver work as usual; only the system highlight is turned off, by `HidesSelectionHighlight`.
+/// fill when selected, and the blue update dot at the trailing edge when asked. The List keeps its
+/// own selection, so clicks, arrow keys, and VoiceOver work as usual; only the system highlight is
+/// turned off, by `HidesSelectionHighlight`.
 struct SettingsSidebarRow: View {
     let pane: SettingsPane
     let isSelected: Bool
+    var showsUpdateDot = false
     @Environment(\.appearsActive) private var appearsActive
 
     var body: some View {
@@ -168,6 +172,9 @@ struct SettingsSidebarRow: View {
         // the selection by one change. The row draws its own selection, so it opts out.
         .environment(\.backgroundProminence, .standard)
         .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+        .overlay(alignment: .trailing) {
+            if showsUpdateDot { UpdateDot().padding(.trailing, 4) }
+        }
         .padding(.horizontal, 5)
         .background {
             if isSelected {

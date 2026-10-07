@@ -4,5 +4,16 @@
 <dict>
     <key>NSScreenCaptureUsageDescription</key>
     <string>Shotty captures selected screen content locally for screenshots and text recognition.</string>
+    <!-- Sparkle updates. Scripts/publish.sh uploads appcast.xml to each release, so "latest" always
+         names the newest version. The private key for SUPublicEDKey is in the login keychain. -->
+    <key>SUFeedURL</key>
+    <string>https://github.com/markusjura/shotty/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>zfNAovkUOEVGX+Fw//AkIqkZFZBY4hOVS2btsUX9KuA=</string>
+    <!-- Check and install automatically without asking first. Settings > General can turn both off. -->
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUAutomaticallyUpdate</key>
+    <true/>
 </dict>
 </plist>

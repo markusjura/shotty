@@ -24,6 +24,8 @@ final class AppCoordinator {
     var startScrolling: ((CGRect, CGDirectDisplayID, CaptureOutputSnapshot, ClipboardWriter.Ticket) -> Void)?
     var stopAuxiliaryCapture: (() async -> Void)?
     var auxiliaryCaptureActive: (() -> Bool)?
+    /// True while recognized text is on screen, in its result panel or a review window.
+    var textResultsOpen: (() -> Bool)?
     var hasEditor: ((UUID) -> Bool)?
     private var captureTask: Task<Void, Never>?
     private var holds: [UUID: Int] = [:]
@@ -32,6 +34,15 @@ final class AppCoordinator {
     private let stillCapture = StillCaptureService()
     /// Drags need their file as they start, so they render on the main actor with their own renderer.
     @ObservationIgnored private lazy var dragRenderer = DocumentRenderer()
+
+    /// True while relaunching would interrupt the user or lose work: before launch finishes, while
+    /// selecting, capturing, or recognizing text, while recognized text is on screen, and while any
+    /// capture is retained. Quit discards the whole session, so a capture with a visible or hidden
+    /// thumbnail, in an editor, or being exported counts.
+    var hasWork: Bool {
+        !ready || isCapturing || pendingAcceptances > 0 || !records.isEmpty || !holds.isEmpty
+            || auxiliaryCaptureActive?() == true || textResultsOpen?() == true
+    }
 
     /// Tests pass preferences backed by their own defaults suite.
     init(preferences: AppPreferences = AppPreferences()) { self.preferences = preferences }
