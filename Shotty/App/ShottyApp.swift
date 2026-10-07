@@ -7,7 +7,7 @@ struct ShottyApp: App {
     var body: some Scene {
         // A window rather than a Settings scene, which SwiftUI always keeps at a fixed size.
         Window("Settings", id: SettingsView.windowID) {
-            SettingsView(preferences: delegate.coordinator.preferences, commands: delegate.commands)
+            SettingsView(preferences: delegate.coordinator.preferences, commands: delegate.commands, updater: delegate.updater)
                 .onAppear { delegate.settingsIsOpen = true }
                 .onDisappear { delegate.settingsIsOpen = false }
         }
@@ -45,10 +45,12 @@ struct ShottyApp: App {
             Divider()
             ForEach(CommandGroup.thumbnails.commands, id: \.self) { commandButton($0) }
             Divider()
+            UpdateMenuItem(updater: delegate.updater)
             SettingsButton()
             Button("Quit Shotty") { NSApp.terminate(nil) }.keyboardShortcut("q")
         } label: {
-            Image(nsImage: Self.menuBarIcon)
+            // A blue dot marks an update that needs the user.
+            Image(nsImage: delegate.updater.needsAttention ? Self.menuBarIconWithDot : Self.menuBarIcon)
         }
     }
 
@@ -58,6 +60,27 @@ struct ShottyApp: App {
         let symbol = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "Shotty")!
         let image = symbol.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .medium))!
         image.isTemplate = true
+        return image
+    }()
+
+    /// The icon with a blue dot in its top right corner. A template image can't carry color, so this
+    /// one draws the glyph itself in the menu bar's label color, resolved each time it draws.
+    private static let menuBarIconWithDot: NSImage = {
+        let image = NSImage(size: menuBarIcon.size, flipped: false) { bounds in
+            menuBarIcon.draw(in: bounds)
+            NSColor.labelColor.set()
+            bounds.fill(using: .sourceAtop)
+            let dot = CGRect(x: bounds.maxX - 6, y: bounds.maxY - 6, width: 6, height: 6)
+            // A clear ring keeps the dot apart from the viewfinder corner it overlaps.
+            NSGraphicsContext.current?.compositingOperation = .clear
+            NSBezierPath(ovalIn: dot.insetBy(dx: -1.5, dy: -1.5)).fill()
+            NSGraphicsContext.current?.compositingOperation = .sourceOver
+            NSColor.systemBlue.setFill()
+            NSBezierPath(ovalIn: dot).fill()
+            return true
+        }
+        image.cacheMode = .never
+        image.accessibilityDescription = "Shotty, update available"
         return image
     }()
 
@@ -76,6 +99,7 @@ struct ShottyApp: App {
 final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
     let coordinator = AppCoordinator()
     let commands = CommandRegistry()
+    lazy var updater = AppUpdater(environment: .init(isBusy: { [coordinator] in coordinator.hasWork }))
     private lazy var textCapture = TextCaptureController(coordinator: coordinator)
     private lazy var scrollingCapture = ScrollingCaptureController(coordinator: coordinator)
     private var hotKeys: GlobalHotKeyCenter?
@@ -107,6 +131,7 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
         }
         coordinator.auxiliaryCaptureActive = { [weak self] in self?.textCapture.isActive == true || self?.scrollingCapture.isActive == true }
         coordinator.stopAuxiliaryCapture = { [weak self] in await self?.textCapture.stop(); await self?.scrollingCapture.stop() }
+        coordinator.textResultsOpen = { [weak self] in self?.textCapture.isShowingResults == true }
         coordinator.openEditor = { [weak self] in self?.openEditor($0) }
         coordinator.hasEditor = { [weak self] in self?.editors[$0] != nil || self?.openingEditors.contains($0) == true }
         commands.availability = { [weak self] command in
@@ -121,6 +146,8 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
         observePreferences()
         hotKeys = GlobalHotKeyCenter(registry: commands) { [weak self] in self?.execute($0) }
         hotKeys?.start()
+        // Creating the updater starts Sparkle's schedule; the menu bar may have created it already.
+        _ = updater
         Task { await coordinator.launch() }
         // Shotty starts silently, so a first launch would otherwise show nothing. Open Settings
         // once on Permissions, where the user grants the Screen Recording access every capture needs.

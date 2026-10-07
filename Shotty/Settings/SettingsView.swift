@@ -36,6 +36,7 @@ struct SettingsView: View {
     static let paneKey = "settingsPane"
     let preferences: AppPreferences
     let commands: CommandRegistry
+    let updater: AppUpdater
     @AppStorage(SettingsView.paneKey) private var pane = SettingsPane.general
     @State private var history = SettingsHistory()
 
@@ -46,7 +47,7 @@ struct SettingsView: View {
         NavigationSplitView {
             // Ignore deselection so a pane is always shown. Rows draw the selection fill themselves.
             List(SettingsPane.allCases, selection: Binding<SettingsPane?> { pane } set: { if let new = $0 { open(new) } }) { item in
-                SettingsSidebarRow(pane: item, isSelected: item == pane)
+                SettingsSidebarRow(pane: item, isSelected: item == pane, showsUpdateDot: item == .general && updater.needsAttention)
                     .listRowInsets(EdgeInsets())
             }
             .navigationSplitViewColumnWidth(180)
@@ -59,7 +60,7 @@ struct SettingsView: View {
         } detail: {
             Group {
                 switch pane {
-                case .general: GeneralSettingsPane(preferences: preferences)
+                case .general: GeneralSettingsPane(preferences: preferences, updater: updater)
                 case .capture: CaptureSettingsPane(preferences: preferences)
                 case .thumbnails: ThumbnailSettingsPane(preferences: preferences)
                 case .editor: EditorSettingsPane(preferences: preferences)

@@ -8,6 +8,8 @@ import UniformTypeIdentifiers
 final class TextReviewWindow {
     private var windows: [Date: (window: NSWindow, observer: NSObjectProtocol)] = [:]
 
+    var isOpen: Bool { !windows.isEmpty }
+
     /// `createdAt` identifies the recognition.
     func show(_ result: RecognizedTextResult, settings: CaptureOutputSnapshot, createdAt: Date, clipboard: ClipboardWriter) {
         NSApp.activate()
