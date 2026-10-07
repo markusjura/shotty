@@ -31,7 +31,7 @@ final class AppUpdater: NSObject {
         case idle
         /// Check Now is waiting for the feed.
         case checking
-        /// Check Now failed. Scheduled checks fail silently and stay idle.
+        /// Check Now's check or its download failed. Scheduled cycles fail silently and stay idle.
         case failed(offline: Bool)
         /// Sparkle is downloading an update to install automatically.
         case downloading(Release)
@@ -95,6 +95,8 @@ final class AppUpdater: NSObject {
     @ObservationIgnored private var installUpdate: (() -> Void)?
     @ObservationIgnored private var readySince = Date.distantPast
     @ObservationIgnored private var idleTimer: Timer?
+    /// Set by Check Now until its update cycle ends, so only that cycle reports an error.
+    @ObservationIgnored private var checkingNow = false
     private var updater: SPUUpdater { controller.updater }
 
     /// Tests pass `startsUpdater: false`, so Sparkle never checks a feed.
@@ -122,6 +124,7 @@ final class AppUpdater: NSObject {
     /// Sparkle, as in tests, only the status changes.
     func checkForUpdates() {
         status = .checking
+        checkingNow = true
         if isRunning { updater.checkForUpdatesInBackground() }
     }
 
@@ -177,19 +180,30 @@ extension AppUpdater: SPUUpdaterDelegate {
     }
 
     /// Ends a check or download that didn't leave an update waiting for the user. Only a failed
-    /// Check Now reports its error; a no-update result and scheduled failures settle on idle.
+    /// Check Now, including its download, reports its error; a no-update result and scheduled
+    /// failures settle on idle. An available update stays until a check finds no update, as when
+    /// its release was withdrawn.
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: (any Error)?) {
         lastChecked = updater.lastUpdateCheckDate ?? lastChecked
+        let checkedNow = checkingNow
+        checkingNow = false
+        let error = error as NSError?
+        let noUpdate = error?.domain == SUSparkleErrorDomain && error?.code == Int(SUError.noUpdateError.rawValue)
         switch status {
-        case .checking:
-            let error = error as NSError?
-            let noUpdate = error?.domain == SUSparkleErrorDomain && error?.code == Int(SUError.noUpdateError.rawValue)
-            status = if let error, !noUpdate { .failed(offline: Self.isOffline(error)) } else { .idle }
-        case .downloading:
-            status = .idle
-        case .idle, .failed, .available, .ready:
+        case .checking, .downloading:
+            status = if checkedNow, let error, !noUpdate { .failed(offline: Self.isOffline(error)) } else { .idle }
+        case .available:
+            if noUpdate { status = .idle }
+        case .idle, .failed, .ready:
             break
         }
+    }
+
+    /// The user chose in Sparkle's window. A skipped update is gone until the user checks again.
+    /// A dismissed one, as with Remind Me Later, stays available. Install proceeds in Sparkle.
+    func updater(_ updater: SPUUpdater, userDidMake choice: SPUUserUpdateChoice, forUpdate updateItem: SUAppcastItem,
+                 state: SPUUserUpdateState) {
+        if choice == .skip, case .available = status { status = .idle }
     }
 
     #if DEBUG
@@ -208,11 +222,5 @@ extension AppUpdater: @preconcurrency SPUStandardUserDriverDelegate {
     func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
         guard !handleShowingUpdate else { return }
         status = .available(Release(update))
-    }
-
-    /// The user installed, skipped, or postponed the update in Sparkle's window. A postponed update
-    /// comes back with a later scheduled check.
-    func standardUserDriverWillFinishUpdateSession() {
-        if case .available = status { status = .idle }
     }
 }
