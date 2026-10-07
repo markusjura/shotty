@@ -144,7 +144,7 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
             guard change.newValue?.contains(where: { $0.bundleIdentifier == installedID }) == true else { return }
             // Quit from a run loop pass, not a main-queue block: quitting waits on a main-actor
             // task, which can't run while the main queue is busy with this block.
-            RunLoop.main.perform { NSApp.terminate(nil) }
+            RunLoop.main.perform { MainActor.assumeIsolated { NSApp.terminate(nil) } }
         }
     }
     #endif
