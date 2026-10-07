@@ -144,7 +144,7 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
             guard change.newValue?.contains(where: { $0.bundleIdentifier == installedID }) == true else { return }
             // Quit from a run loop pass, not a main-queue block: quitting waits on a main-actor
             // task, which can't run while the main queue is busy with this block.
-            RunLoop.main.perform { NSApp.terminate(nil) }
+            RunLoop.main.perform { MainActor.assumeIsolated { NSApp.terminate(nil) } }
         }
     }
     #endif
@@ -182,7 +182,7 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func openEditor(_ id: UUID) {
-        if let editor = editors[id] { NSApp.activate(); editor.window?.makeKeyAndOrderFront(nil); return }
+        if let editor = editors[id] { bringForward(editor.window); return }
         guard !openingEditors.contains(id) else { return }
         openingEditors.insert(id); coordinator.retain(id)
         Task { [self] in
@@ -195,9 +195,19 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
                 editor.didClose = { [weak self] in
                     self?.editors.removeValue(forKey: id); self?.coordinator.editorClosed(id)
                 }
-                NSApp.activate(); editor.window?.makeKeyAndOrderFront(nil)
+                bringForward(editor.window)
             } catch { coordinator.showError(error, title: "Couldn't open editor") }
         }
+    }
+
+    /// Clicks on thumbnails don't activate Shotty, and an editor opened after a capture appears
+    /// while another app is active. macOS refuses a plain `activate()` then, so the editor would
+    /// show without keyboard focus and its shortcuts wouldn't reach it. Ordering the window front
+    /// regardless still shows it if activation fails anyway.
+    private func bringForward(_ window: NSWindow?) {
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKeyAndOrderFront(nil)
+        window?.orderFrontRegardless()
     }
 
     private func observePreferences() {
