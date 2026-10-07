@@ -17,7 +17,7 @@ struct PermissionSettingsPane: View {
         Form {
             Section("Screen Recording") {
                 status(screenRecording, granted: "Allowed", missing: screenRecordingRequested ? "Not allowed" : "Not requested")
-                Text("Required for every capture.").settingsNote()
+                    .settingsRowNote("Required for every capture.")
                 if !screenRecording {
                     HStack {
                         if !screenRecordingRequested {
@@ -25,16 +25,12 @@ struct PermissionSettingsPane: View {
                         }
                         Button("Open System Settings") { SystemSettingsLink.open(SystemSettingsLink.screenRecording) }
                     }
-                    if screenRecordingRequested {
-                        Text("Turn Shotty on in System Settings, then reopen it if asked.")
-                            .settingsNote()
-                    }
+                    .settingsRowNote(screenRecordingRequested ? "Turn Shotty on in System Settings, then reopen it if asked." : nil)
                 }
             }
             Section("Accessibility") {
                 status(accessibility, granted: "Allowed", missing: "Not allowed")
-                Text("Needed for Auto Scroll and for dismissing thumbnails after pasting.")
-                    .settingsNote()
+                    .settingsRowNote("Needed for Auto Scroll and for dismissing thumbnails after pasting.")
                 if !accessibility {
                     Button("Open System Settings") { SystemSettingsLink.open(SystemSettingsLink.accessibility) }
                 }
@@ -45,9 +41,8 @@ struct PermissionSettingsPane: View {
                 if folder == .available {
                     LabeledContent("Status") { Text(FileManager.default.displayName(atPath: url.path)).settingsValue() }
                 } else {
-                    status(false, granted: "", missing: "Unavailable")
+                    status(false, granted: "", missing: "Unavailable").settingsRowNote(folder.message)
                 }
-                if let message = folder.message { Text(message).settingsNote() }
             }
             Section("Login item") {
                 LabeledContent("Status") { Text(loginStatus.summary).settingsValue() }
@@ -59,19 +54,15 @@ struct PermissionSettingsPane: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in refresh() }
     }
 
-    /// A status row with a white checkmark on system green when granted, as in System Settings, or a gray cross.
+    /// A status row with an outlined green checkmark when granted, as in Raycast's settings, or a gray cross.
+    /// Both glyphs are outlined circles of one size, so the row keeps its alignment when the status changes.
     private func status(_ ok: Bool, granted: String, missing: String) -> some View {
         LabeledContent("Status") {
             Label {
                 Text(ok ? granted : missing)
             } icon: {
-                if ok {
-                    Image(systemName: "checkmark.circle.fill")
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, Color(nsColor: .systemGreen))
-                } else {
-                    Image(systemName: "xmark.circle").foregroundStyle(SettingsColor.secondaryText)
-                }
+                Image(systemName: ok ? "checkmark.circle" : "xmark.circle")
+                    .foregroundStyle(ok ? SettingsColor.success : SettingsColor.secondaryText)
             }
             .foregroundStyle(ok ? SettingsColor.primaryText : SettingsColor.secondaryText)
         }

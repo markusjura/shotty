@@ -14,6 +14,9 @@ enum SettingsColor {
     static let controlFill = dynamic(light: 0xE0E0E0, dark: 0x323333)
     static let primaryText = dynamic(light: 0x000000, dark: 0xFFFFFF)
     static let secondaryText = dynamic(light: 0x646464, dark: 0xA4A4A4)
+    /// Success and granted states, such as an allowed permission's checkmark: deep green on light and
+    /// mint on dark, after Raycast's passed checks. Both keep at least 3:1 against `section` for icons.
+    static let success = dynamic(light: 0x248A3D, dark: 0x90D7AD)
     /// The line under the toolbar while it is hovered or the window is inactive: the system
     /// separator in light mode, and the window's inactive outer border over the canvas in dark mode.
     static let toolbarLine = Color(nsColor: NSColor(name: nil) { appearance in
@@ -67,7 +70,7 @@ struct SettingsFormStyle: FormStyle {
                             }
                             row.frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 10)
-                                .frame(minHeight: 36)
+                                .frame(minHeight: settingsRowHeight)
                         }
                     }
                     .padding(.vertical, 0.5)
@@ -85,6 +88,7 @@ struct SettingsFormStyle: FormStyle {
         .foregroundStyle(SettingsColor.primaryText)
         .toggleStyle(SettingsToggleStyle())
         .labeledContentStyle(SettingsLabeledContentStyle())
+        .labelStyle(SettingsLabelStyle())
         .horizontalRadioGroupLayout()
         // Buttons are flat fills, like Raycast's settings buttons. Menu pickers and menus set
         // `.buttonStyle(.borderless)` themselves, which shows them as text and chevrons, like
@@ -136,15 +140,97 @@ private struct SettingsLabeledContentStyle: LabeledContentStyle {
     }
 }
 
+/// An icon beside its text, as in status rows and warnings. Tighter than the system style, whose gap
+/// is nearly as wide as the row's trailing inset. A wrapped title keeps the icon on its first line.
+private struct SettingsLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            // The title carries the meaning, so VoiceOver reads only that.
+            configuration.icon.fontWeight(.medium).accessibilityHidden(true)
+            configuration.title
+        }
+    }
+}
+
+/// The height of a one-line row, which a row's content is centered in.
+private let settingsRowHeight: CGFloat = 36
+/// The space between a note and the separator or section edge around it. A one-line note row
+/// gets it from centering in the row height; wrapped and attached notes keep it explicitly.
+private let settingsNoteInset: CGFloat = 10
+
 extension View {
-    /// Secondary explanatory text in Settings, in the settings secondary color.
+    /// A description row for several rows of a section, such as an Option-click that changes both
+    /// closing toggles. It sits below a separator, unlike `settingsRowNote(_:)`, which belongs to
+    /// the one row above it. A section with a single row uses a row note instead.
     func settingsNote() -> some View {
-        font(.callout).foregroundStyle(SettingsColor.secondaryText)
+        font(.callout).foregroundStyle(SettingsColor.secondaryText).padding(.vertical, settingsNoteInset)
+    }
+
+    /// A note below this row that concerns only it, such as what its value means. There's no
+    /// separator between them. Pass nil when there's nothing to say.
+    func settingsRowNote(_ text: String?) -> some View {
+        NotedRow(row: self, note: text.map { Text($0) })
+    }
+
+    /// A problem with this row the user can fix, such as a missing folder or a taken shortcut, as a
+    /// note with an exclamation circle that matches the status checkmark and cross. Pass nil when
+    /// there's no problem.
+    func settingsRowWarning(_ message: String?) -> some View {
+        NotedRow(row: self, note: message.map { Label($0, systemImage: "exclamationmark.circle") })
     }
 
     /// A read-only value beside a label, in the settings secondary color.
     func settingsValue() -> some View {
         foregroundStyle(SettingsColor.secondaryText)
+    }
+}
+
+/// A row and, when there is one, its note in the muted note style. The row keeps one place in
+/// the view tree either way, so a note appearing doesn't recreate it, which would drop the focus of
+/// a control such as a shortcut recorder.
+private struct NotedRow<Row: View, Note: View>: View {
+    let row: Row
+    let note: Note?
+
+    var body: some View {
+        NotedRowLayout {
+            row
+            if let note {
+                note.font(.callout).foregroundStyle(SettingsColor.secondaryText)
+            }
+        }
+    }
+}
+
+/// Without a note, lays the row out as if it stood alone. With one, keeps the row where it would be
+/// alone, centered in the row height, so the note never moves it. The note follows 4 pt below the
+/// row, with the note inset above the next separator.
+private struct NotedRowLayout: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let (row, note) = frames(width: proposal.width, subviews: subviews) else {
+            return subviews[0].sizeThatFits(proposal)
+        }
+        return CGSize(width: proposal.width ?? max(row.width, note.width), height: note.maxY + settingsNoteInset)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let (row, note) = frames(width: bounds.width, subviews: subviews) else {
+            subviews[0].place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
+            return
+        }
+        for (subview, frame) in zip(subviews, [row, note]) {
+            subview.place(at: CGPoint(x: bounds.minX, y: bounds.minY + frame.minY), proposal: ProposedViewSize(frame.size))
+        }
+    }
+
+    /// The row's and the note's frames, or nil without a note.
+    private func frames(width: CGFloat?, subviews: Subviews) -> (row: CGRect, note: CGRect)? {
+        guard subviews.count == 2 else { return nil }
+        let proposal = ProposedViewSize(width: width, height: nil)
+        let row = subviews[0].sizeThatFits(proposal), note = subviews[1].sizeThatFits(proposal)
+        let rowTop = max(0, (settingsRowHeight - row.height) / 2)
+        return (CGRect(origin: CGPoint(x: 0, y: rowTop), size: row),
+                CGRect(origin: CGPoint(x: 0, y: rowTop + row.height + 4), size: note))
     }
 }
 

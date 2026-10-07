@@ -22,6 +22,7 @@ struct GeneralSettingsPane: View {
                 Toggle("Show in menu bar", isOn: $preferences.general.showsMenuBarIcon)
                 Toggle("Show in Dock", isOn: $preferences.general.showsDockIcon)
                 Toggle("Open at login", isOn: Binding(get: { loginStatus == .enabled || loginStatus == .requiresApproval }, set: setLogin))
+                    .settingsRowWarning(loginError)
                 if loginStatus == .requiresApproval {
                     LabeledContent("Login item") {
                         HStack {
@@ -29,9 +30,6 @@ struct GeneralSettingsPane: View {
                         }
                         .accessibilityElement(children: .contain)
                     }
-                }
-                if let loginError {
-                    Text(loginError).settingsNote()
                 }
             }
             Section("Sounds") {

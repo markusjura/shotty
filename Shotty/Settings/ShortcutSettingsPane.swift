@@ -18,25 +18,18 @@ struct ShortcutSettingsPane: View {
         }
     }
 
-    /// The title and recorder share one line; a note goes below them, so it never moves the recorder.
+    /// The title and recorder share one line, with a problem or else an advisory below them.
     private func row(_ id: CommandID) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(id.title)
-                Spacer()
-                ShortcutRecorder(commands: commands, command: id) { problems[id] = $0 }
-                    .fixedSize()
-            }
-            if let problem = problems[id] {
-                Label(problem.message, systemImage: "exclamationmark.triangle").settingsNote()
-            } else if commands.registrationFailures.contains(id) {
-                Label("Another app or macOS already uses this shortcut. Choose a different one.", systemImage: "exclamationmark.triangle")
-                    .settingsNote()
-            } else if let advisory = commands.advisory(for: id) {
-                Text(advisory).settingsNote()
-            }
+        let problem = problems[id]?.message ?? (commands.registrationFailures.contains(id)
+            ? "Another app or macOS already uses this shortcut. Choose a different one." : nil)
+        return HStack {
+            Text(id.title)
+            Spacer()
+            ShortcutRecorder(commands: commands, command: id) { problems[id] = $0 }
+                .fixedSize()
         }
-        .accessibilityElement(children: .contain)
+        .settingsRowWarning(problem)
+        .settingsRowNote(problem == nil ? commands.advisory(for: id) : nil)
     }
 
     private func report(_ result: [CommandID: ShortcutProblem], for ids: [CommandID]) {

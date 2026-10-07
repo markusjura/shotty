@@ -43,7 +43,7 @@ private struct UpdateStatusRow: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                    if let detail = detail(now: context.date) { Text(detail).settingsNote() }
+                    if let detail = detail(now: context.date) { Text(detail).font(.callout).settingsValue() }
                 }
                 Spacer()
                 action

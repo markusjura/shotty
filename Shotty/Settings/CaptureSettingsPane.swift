@@ -32,9 +32,8 @@ struct CaptureSettingsPane: View {
                     .settingsNote()
             }
             Toggle("Dismiss thumbnail after pasting", isOn: $preferences.thumbnails.dismissesAfterPaste)
-            if preferences.thumbnails.dismissesAfterPaste && !AXIsProcessTrusted() {
-                Text("Needs Accessibility access to notice ⌘V in other apps.").settingsNote()
-            }
+                .settingsRowNote(preferences.thumbnails.dismissesAfterPaste && !AXIsProcessTrusted()
+                                 ? "Needs Accessibility access to notice ⌘V in other apps." : nil)
         }
     }
 
@@ -48,11 +47,9 @@ struct CaptureSettingsPane: View {
                     Button("Choose…", action: chooseFolder)
                 }
             }
+            .settingsRowWarning(destinationMessage ?? SaveDestinationCheck.status(of: preferences.capture.destination.url).message)
             if preferences.capture.destination != .downloads {
                 Button("Use Downloads") { apply(SaveDestination.downloads) }
-            }
-            if let message = destinationMessage ?? SaveDestinationCheck.status(of: preferences.capture.destination.url).message {
-                Label(message, systemImage: "exclamationmark.triangle").settingsNote()
             }
         }
     }
@@ -112,9 +109,8 @@ struct CaptureSettingsPane: View {
             ForEach(TextOutput.allCases, id: \.self) { output in
                 Toggle(output.title, isOn: membership(\.text.outputs, output))
                     .disabled(preferences.text.outputs == [output])
-            }
-            if preferences.text.outputs.contains(.saveText) {
-                Text("Saved as UTF-8 in the save location above.").settingsNote()
+                    .settingsRowNote(output == .saveText && preferences.text.outputs.contains(.saveText)
+                                     ? "Saved as UTF-8 in the save location above." : nil)
             }
             Toggle("Keep line breaks", isOn: $preferences.text.preservesLineBreaks)
             Toggle("Detect languages automatically", isOn: $preferences.text.detectsLanguageAutomatically)

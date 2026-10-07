@@ -34,12 +34,8 @@ struct ThumbnailSettingsPane: View {
                     }
                 }
                 .buttonStyle(.borderless)
+                .settingsRowNote(displayNote)
                 Toggle("Hide while capturing", isOn: $preferences.thumbnails.hidesDuringCapture)
-                if case .display(let uuid, _) = preferences.thumbnails.display, !screens.contains(where: { $0.uuid == uuid }) {
-                    Text("Uses the main display until this one reconnects.").settingsNote()
-                } else if preferences.thumbnails.display == .followPointer {
-                    Text("The whole stack moves to the display under the pointer.").settingsNote()
-                }
             }
             Section("Closing") {
                 Picker("Close automatically", selection: $preferences.thumbnails.autoClose) {
@@ -52,10 +48,9 @@ struct ThumbnailSettingsPane: View {
                     Stepper(value: $preferences.thumbnails.autoCloseDelaySeconds, in: ThumbnailPreferences.autoCloseDelayRange) {
                         LabeledContent("After") { Text("\(preferences.thumbnails.autoCloseDelaySeconds) seconds").settingsValue() }
                     }
-                    Text(preferences.thumbnails.autoClose == .dismiss
-                         ? "Discards unsaved captures. Hovering, editing, or a failed save pauses it."
-                         : "Saves first. A failed save keeps the thumbnail.")
-                        .settingsNote()
+                    .settingsRowNote(preferences.thumbnails.autoClose == .dismiss
+                                     ? "Discards unsaved captures. Hovering, editing, or a failed save pauses it."
+                                     : "Saves first. A failed save keeps the thumbnail.")
                 }
                 Toggle("Dismiss after saving", isOn: $preferences.thumbnails.dismissesAfterSave)
                 Toggle("Dismiss after dragging out", isOn: $preferences.thumbnails.dismissesAfterDrag)
@@ -65,6 +60,13 @@ struct ThumbnailSettingsPane: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
             refreshScreens()
         }
+    }
+
+    private var displayNote: String? {
+        if case .display(let uuid, _) = preferences.thumbnails.display, !screens.contains(where: { $0.uuid == uuid }) {
+            return "Uses the main display until this one reconnects."
+        }
+        return preferences.thumbnails.display == .followPointer ? "The whole stack moves to the display under the pointer." : nil
     }
 
     /// Connected displays plus a remembered one that is currently disconnected.
