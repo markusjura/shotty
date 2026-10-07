@@ -8,6 +8,8 @@ struct ShottyApp: App {
         // A window rather than a Settings scene, which SwiftUI always keeps at a fixed size.
         Window("Settings", id: SettingsView.windowID) {
             SettingsView(preferences: delegate.coordinator.preferences, commands: delegate.commands)
+                .onAppear { delegate.settingsIsOpen = true }
+                .onDisappear { delegate.settingsIsOpen = false }
         }
         // System Settings' toolbar height and control size.
         .windowToolbarStyle(.unified)
@@ -81,6 +83,11 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
     /// While any editor is open, Shotty is a regular app with its menu bar, Dock icon, and app switcher entry.
     private var editors: [UUID: EditorWindowController] = [:] { didSet { updateActivationPolicy() } }
     private var openingEditors = Set<UUID>()
+    /// Open Settings makes Shotty a regular app, so the window gets a Dock icon, a Cmd-Tab entry,
+    /// and the app menu, and window switchers list it like any other window.
+    var settingsIsOpen = false {
+        didSet { updateActivationPolicy() }
+    }
     #if DEBUG
     private var installedLaunchObservation: NSKeyValueObservation?
     #endif
@@ -207,8 +214,12 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
     private func updateActivationPolicy() {
         // Read the preference unconditionally so preference observation keeps tracking it.
         let preferred = coordinator.preferences.general.activationPolicy
-        let policy = editors.isEmpty ? preferred : .regular
-        if NSApp.activationPolicy() != policy { NSApp.setActivationPolicy(policy) }
+        let policy = settingsIsOpen || !editors.isEmpty ? .regular : preferred
+        guard NSApp.activationPolicy() != policy else { return }
+        NSApp.setActivationPolicy(policy)
+        // Activate after becoming a regular app so Settings comes forward with the app menu. Only
+        // Settings activates, so a login launch with the Dock icon on doesn't take focus.
+        if settingsIsOpen { NSApp.activate() }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
