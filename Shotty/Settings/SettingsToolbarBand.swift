@@ -58,32 +58,40 @@ private struct HoverTracker: NSViewRepresentable {
 }
 
 /// The translucent sidebar: a behind-window material under a white wash, tuned to Raycast's
-/// translucent sidebar (light #F3F3F3, dark #1B1D1D; inactive #F5F5F5 and #1F2020 over a dark desktop).
+/// translucent sidebar (dark #1B1D1D; inactive #1F2020 over a dark desktop). Dark mode's
+/// `underPageBackground` takes on the desktop's tint, but in light mode it stays a flat gray, so
+/// light mode uses `sidebar`, which blurs what's behind the window as Finder's sidebar does. Its
+/// wash keeps the selected row's #DADADA fill visible over dark windows, and the inactive state
+/// close to Raycast's #F5F5F5.
 struct SidebarMaterial: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.appearsActive) private var appearsActive
 
     var body: some View {
-        BehindWindowMaterial().overlay(Color.white.opacity(wash))
+        BehindWindowMaterial(material: colorScheme == .dark ? .underPageBackground : .sidebar)
+            .overlay(Color.white.opacity(wash))
     }
 
     private var wash: Double {
         switch (colorScheme, appearsActive) {
         case (.dark, true): 0
         case (.dark, false): 0.02
-        case (_, true): 0.3
-        case (_, false): 0.42
+        case (_, true): 0.5
+        case (_, false): 0.55
         }
     }
 }
 
 private struct BehindWindowMaterial: NSViewRepresentable {
+    let material: NSVisualEffectView.Material
+
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
-        view.material = .underPageBackground
         view.blendingMode = .behindWindow
         return view
     }
 
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {
+        view.material = material
+    }
 }
