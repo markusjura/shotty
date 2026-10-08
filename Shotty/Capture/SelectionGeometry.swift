@@ -31,6 +31,17 @@ enum SelectionGeometry {
         displays.filter { $0.frame.intersects(selection) }.map(\.scale).max() ?? 1
     }
 
+    /// A recording covers one display. The region is clipped to the display under its center,
+    /// or the one it overlaps most; nil when it overlaps none.
+    static func recordingRegion(_ region: CGRect, displays: [(id: CGDirectDisplayID, frame: CGRect)])
+        -> (rect: CGRect, display: CGDirectDisplayID)? {
+        let center = CGPoint(x: region.midX, y: region.midY)
+        let area: (CGRect) -> CGFloat = { let overlap = $0.intersection(region); return overlap.isNull ? 0 : overlap.width * overlap.height }
+        guard let display = displays.first(where: { $0.frame.contains(center) }) ?? displays.max(by: { area($0.frame) < area($1.frame) }),
+              area(display.frame) > 0 else { return nil }
+        return (region.intersection(display.frame).integral.intersection(display.frame), display.id)
+    }
+
     /// Edges whose hit band of `tolerance` contains `point`; a corner yields two edges.
     /// When a thin rectangle puts both opposite edges in range, the nearer one wins.
     static func edges(near point: CGPoint, of rect: CGRect, tolerance: CGFloat) -> SelectionEdges? {

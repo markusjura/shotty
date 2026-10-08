@@ -3,11 +3,11 @@ import SwiftUI
 
 /// Metrics and styles for the editor's top and bottom bars:
 /// 51 pt translucent bars, 26 pt capsule buttons filled with a light tint, and a 24 pt capsule
-/// strip for the drawing tools.
+/// strip for the drawing tools and the clip formats.
 enum EditorBar {
     static let height: CGFloat = 51
     static let buttonHeight: CGFloat = 26
-    /// The one font for text and symbols in the bars: button titles, option values, and zoom.
+    /// The one font for text and symbols in the bars: button titles, option values, zoom, and times.
     static let font = Font.system(size: 13, weight: .medium)
     @MainActor static let nsFont = NSFont.systemFont(ofSize: 13, weight: .medium)
     static let iconButtonWidth: CGFloat = 36
@@ -18,7 +18,9 @@ enum EditorBar {
     static let edgeInset: CGFloat = 13
     static let buttonSpacing: CGFloat = 6
     static let groupSpacing: CGFloat = 12
-    /// Fits the top bar with its widest tool options (Text) through Done.
+    /// The video editor's play button, timeline, and time, between the player and the bottom bar.
+    static let timelineHeight: CGFloat = 60
+    /// Fits the image editor's top bar with its widest tool options (Text) through Done.
     static let minimumWindowWidth: CGFloat = 900
 
     /// Button fill: white at 20% in Dark Mode, which reads as #656666 on the bar. AppKit views
@@ -70,7 +72,7 @@ extension View {
     }
 }
 
-/// Puts a label that sizes itself on the bars' capsule. Tools and option buttons use it;
+/// Puts a label that sizes itself on the bars' capsule. Tools, formats, and option buttons use it;
 /// `isOpen` keeps an option button darkened while its menu is showing.
 struct EditorCapsuleButtonStyle: ButtonStyle {
     var fill = EditorBar.buttonFill
@@ -101,6 +103,6 @@ extension ButtonStyle where Self == EditorBarButtonStyle {
     /// Text capsule such as Done.
     static var editorBar: Self { .init() }
     static var editorBarProminent: Self { .init(isProminent: true) }
-    /// Icon-only capsule such as Copy and Save.
+    /// Icon-only capsule such as Crop, Copy, and Save.
     static var editorBarIcon: Self { .init(width: EditorBar.iconButtonWidth) }
 }

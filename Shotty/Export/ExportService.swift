@@ -1,5 +1,4 @@
 import CoreGraphics
-import CryptoKit
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -16,26 +15,6 @@ struct ExportOptions: Equatable, Sendable {
     var jpegBackground: RGBAColor = .white
 
     var fileExtension: String { format == .png ? "png" : "jpg" }
-}
-
-/// Content hash catches edits even when another application preserves size and timestamps.
-struct FileFingerprint: Codable, Equatable, Sendable {
-    let sha256: String
-
-    static func read(at url: URL) throws -> FileFingerprint {
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        var hash = SHA256()
-        while let chunk = try handle.read(upToCount: 1_048_576), !chunk.isEmpty { hash.update(data: chunk) }
-        return FileFingerprint(sha256: hash.finalize().map { String(format: "%02x", $0) }.joined())
-    }
-}
-
-struct ExportReceipt: Equatable, Sendable {
-    let captureID: UUID
-    let revision: Int
-    let destinationURL: URL
-    let fingerprint: FileFingerprint
 }
 
 /// One serial renderer/encoder shared by copy and save. No clipboard/UI access.
@@ -59,7 +38,7 @@ actor ExportService {
     /// Bound an individual decoded raster to 256 MiB of RGBA pixels before decoding.
     static let maximumPixels = 64 * 1_024 * 1_024
 
-    func fingerprint(at url: URL) throws -> FileFingerprint { try FileFingerprint.read(at: url) }
+    func fingerprint(at url: URL) throws -> FileFingerprint { try FileFingerprint(hashingFileAt: url) }
 
     func encodedData(_ snapshot: CaptureSnapshot, options: ExportOptions = .init()) throws -> Data {
         try Self.encodedData(snapshot, options: options, renderer: documentRenderer)
@@ -187,7 +166,7 @@ actor ExportService {
     }
 
     private func verify(_ url: URL, expected: FileFingerprint) throws {
-        guard let actual = try? FileFingerprint.read(at: url), actual == expected else { throw Failure.externallyModified(url) }
+        guard expected.matchesFile(at: url) else { throw Failure.externallyModified(url) }
     }
 
     private nonisolated static func validateDimensions(width: Int, height: Int) throws {
@@ -196,6 +175,6 @@ actor ExportService {
 
     private func receipt(_ snapshot: CaptureSnapshot, url: URL, data: Data) -> ExportReceipt {
         ExportReceipt(captureID: snapshot.captureID, revision: snapshot.revision, destinationURL: url,
-                      fingerprint: FileFingerprint(sha256: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()))
+                      fingerprint: FileFingerprint(hashing: data))
     }
 }

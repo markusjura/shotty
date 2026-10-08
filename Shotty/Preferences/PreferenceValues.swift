@@ -145,6 +145,46 @@ struct ScrollingPreferences: Codable, Equatable, Sendable {
     var limits: ScrollStitcher.Limits { ScrollStitcher.Limits(maximumExtent: maximumAxisPixels) }
 }
 
+// MARK: - Recording
+
+enum RecordingOutput: String, Codable, CaseIterable, Sendable {
+    case showThumbnail, copyClip, saveClip, openEditor
+}
+
+/// The file a clip becomes when it is copied, saved, or dragged.
+enum ClipFormat: String, Codable, CaseIterable, Sendable {
+    case mp4, gif
+
+    var fileExtension: String { rawValue }
+    var title: String { self == .mp4 ? "MP4" : "GIF" }
+}
+
+enum VideoCodecPreference: String, Codable, CaseIterable, Sendable { case h264, hevc }
+enum ScreenTarget: String, Codable, CaseIterable, Sendable { case pointerDisplay, mainDisplay }
+
+enum FrameRatePreference: Int, Codable, CaseIterable, Sendable {
+    case fps30 = 30, fps60 = 60
+}
+
+struct RecordingPreferences: Codable, Equatable, Sendable {
+    var outputs: Set<RecordingOutput> = [.showThumbnail]
+    var destination = SaveDestination.downloads
+    /// The format new clips copy and save as. The video editor can change it per clip.
+    var format = ClipFormat.mp4
+    var codec = VideoCodecPreference.h264
+    var frameRate = FrameRatePreference.fps30
+    var scale = OutputScalePreference.native
+    var screenTarget = ScreenTarget.pointerDisplay
+    /// Set from the Record bar. The choice of the last recording carries over to the next one.
+    var recordsSystemAudio = false
+    var recordsMicrophone = false
+    /// The input picked last, nil until one is picked, which means the system default. It is kept
+    /// while disconnected, so the input is used again once it returns.
+    var microphoneID: String?
+
+    var isValid: Bool { !outputs.isEmpty }
+}
+
 // MARK: - Thumbnails
 
 enum ThumbnailPlacement: String, Codable, CaseIterable, Sendable {
@@ -186,10 +226,11 @@ struct ThumbnailPreferences: Codable, Equatable, Sendable {
     var autoCloseDelaySeconds = 10
     var dismissesAfterSave = true
     var dismissesAfterDrag = true
-    /// Dismisses a thumbnail once its copied image is pasted into another app.
+    /// Dismisses a thumbnail once its copied image or clip is pasted into another app.
     var dismissesAfterPaste = false
     /// Hides the stack from the start of a capture until its pixels are taken, so thumbnails
-    /// never appear in screenshots. Off by default: the stack stays visible.
+    /// never appear in screenshots. Off by default: the stack stays visible. Recordings always
+    /// leave Shotty's windows out.
     var hidesDuringCapture = false
 
     var isValid: Bool { Self.autoCloseDelayRange.contains(autoCloseDelaySeconds) }
@@ -356,12 +397,24 @@ struct EditorToolDefaults: Codable, Equatable, Sendable {
     }
 }
 
+enum GIFFrameRate: Int, Codable, CaseIterable, Sendable {
+    case fps10 = 10, fps15 = 15, fps24 = 24
+}
+
+/// Copy and save closing apply to both editors; tools belong to the image editor and playback
+/// and GIF frame rate to the video editor.
 struct EditorPreferences: Codable, Equatable, Sendable {
     var closesAfterCopy = false
     var closesAfterSave = false
     var tools = EditorToolDefaults()
     /// The last drawing tool, selected when an editor opens.
     var tool = EditorTool.rectangle
+    /// Starts playback as soon as the video editor opens. Off by default, like QuickTime, so
+    /// trimming and cropping start from a still frame.
+    var playsOnOpen = false
+    /// Restarts playback from the trim start at the trim end, instead of stopping there.
+    var loopsPlayback = false
+    var gifFrameRate = GIFFrameRate.fps15
 
     var isValid: Bool { tools.isValid && tool.isDrawing }
 }

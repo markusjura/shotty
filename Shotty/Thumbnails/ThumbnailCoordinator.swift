@@ -10,13 +10,15 @@ final class ThumbnailCoordinator {
     struct Card: Identifiable {
         let id: UUID
         var image: NSImage
+        /// A clip's output length, such as `0:12`, shown on its card; nil for a screenshot.
+        var duration: String?
         var status: String?
         /// The copy or save that succeeded last. Its pill shows a checkmark: a copy's for a moment,
         /// a save's until the card goes away.
         var success: Action?
     }
     enum Feedback {
-        case copied, saved, saving, waitingToSave, message(String)
+        case copied, saved, saving, rendering, waitingToSave, message(String)
     }
     enum Action {
         case open, copy, save, saveAs, dismiss
@@ -25,7 +27,7 @@ final class ThumbnailCoordinator {
         /// to cards as well. Open and Dismiss use the card's fixed Return/Space and Delete keys.
         var command: CommandID? {
             switch self {
-            case .copy: .copyImage
+            case .copy: .copy
             case .save: .save
             case .saveAs: .saveAs
             case .open, .dismiss: nil
@@ -46,8 +48,9 @@ final class ThumbnailCoordinator {
     var perform: ((UUID, Action) -> Void)?
     /// Supplies current command bindings; nil falls back to the registry defaults.
     var commands: CommandRegistry?
-    /// Exports a card's capture to a file as its drag starts; nil cancels the drag.
-    var dragFile: ((UUID) -> URL?)?
+    /// What a card's drag hands over as it starts: a file, or for a clip still rendering a file
+    /// promise. Nil cancels the drag.
+    var dragItem: ((UUID) -> NSPasteboardWriting?)?
     /// Reports an accepted drop; `keepCard` is true when Option was held at the drop.
     var dropped: ((UUID, _ keepCard: Bool) -> Void)?
     /// Runs a card's expired auto-close action. For `.saveThenDismiss`, dismiss only after the
@@ -121,13 +124,20 @@ final class ThumbnailCoordinator {
     }
 
     /// Adds a card at the top of the stack without taking keyboard focus.
-    func add(_ id: UUID, image: CGImage) {
+    func add(_ id: UUID, image: CGImage, duration: String? = nil) {
         cards.removeAll { $0.id == id }
-        cards.insert(Card(id: id, image: NSImage(cgImage: image, size: .zero)), at: 0)
+        cards.insert(Card(id: id, image: NSImage(cgImage: image, size: .zero), duration: duration), at: 0)
         let settings = preferences.thumbnails
         if settings.autoClose != .never { countdown.start(id, seconds: TimeInterval(settings.autoCloseDelaySeconds)) }
         runCountdown()
         refresh()
+    }
+
+    /// Replaces a clip card's frame and length in place, after an edit, without moving it in the stack.
+    func replace(_ id: UUID, image: CGImage, duration: String) {
+        guard let index = cards.firstIndex(where: { $0.id == id }) else { return }
+        cards[index].image = NSImage(cgImage: image, size: .zero)
+        cards[index].duration = duration
     }
 
     func update(_ id: UUID, feedback: Feedback) {
@@ -138,6 +148,7 @@ final class ThumbnailCoordinator {
             showCopyReset(for: id)
         case .saved: cards[index].success = .save; cards[index].status = nil
         case .saving: cards[index].status = "Saving…"
+        case .rendering: cards[index].status = "Preparing…"
         case .waitingToSave: cards[index].status = "Waiting to save…"
         case .message(let message): cards[index].status = message
         }

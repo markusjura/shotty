@@ -153,11 +153,11 @@ final class ExportServiceTests: XCTestCase {
         let existing = Data("previous export".utf8)
         let changed = Data("external change".utf8)
         try existing.write(to: destination)
-        let expected = try FileFingerprint.read(at: destination)
+        let expected = try FileFingerprint(hashingFileAt: destination)
         do {
             try AtomicFile.write(Data("new export".utf8), to: destination, replacing: true, beforePublish: {
                 try changed.write(to: destination)
-                guard try FileFingerprint.read(at: destination) == expected else {
+                guard expected.matchesFile(at: destination) else {
                     throw ExportService.Failure.externallyModified(destination)
                 }
             })

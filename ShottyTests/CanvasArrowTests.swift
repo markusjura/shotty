@@ -45,7 +45,7 @@ final class CanvasArrowTests: XCTestCase {
             XCTAssertEqual(canvas.document.state, state)
             _ = try await canvas.document.flush()
             let records = await store.records()
-            let reopened = EditorDocument(record: try XCTUnwrap(records.first), store: store)
+            let reopened = EditorDocument(record: try XCTUnwrap(records.first?.image), store: store)
             XCTAssertEqual(reopened.state, state)
 
             // The stored control point remains an ordinary editable bend handle.

@@ -37,7 +37,7 @@ final class EditorDocumentTests: XCTestCase {
         XCTAssertFalse(editor.isPersisting)
         XCTAssertEqual(try Data(contentsOf: record.sourceURL), sourceBytes)
         let kept = await store.records()
-        let reopened = EditorDocument(record: try XCTUnwrap(kept.first), store: store)
+        let reopened = EditorDocument(record: try XCTUnwrap(kept.first?.image), store: store)
         XCTAssertEqual(reopened.state, state)
         XCTAssertEqual(reopened.revision, 3)
     }
@@ -143,7 +143,7 @@ final class EditorDocumentTests: XCTestCase {
         _ = try await document.flush()
 
         let kept = await store.records()
-        let restored = EditorDocument(record: try XCTUnwrap(kept.first), store: store)
+        let restored = EditorDocument(record: try XCTUnwrap(kept.first?.image), store: store)
         let reopenedCanvas = EditorCanvas(document: restored, source: source, preferences: preferences, commands: commands)
         reopenedCanvas.nextCounter = 42
         reopenedCanvas.renumber()

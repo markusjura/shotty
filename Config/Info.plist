@@ -3,7 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>NSScreenCaptureUsageDescription</key>
-    <string>Shotty captures selected screen content locally for screenshots and text recognition.</string>
+    <string>Shotty captures selected screen content locally for screenshots, screen recordings, and text recognition.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Shotty records your microphone into clips when you turn on microphone recording.</string>
     <!-- Sparkle updates. Scripts/publish.sh uploads appcast.xml to each release, so "latest" always
          names the newest version. The private key for SUPublicEDKey is in the login keychain. -->
     <key>SUFeedURL</key>
