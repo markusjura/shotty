@@ -285,6 +285,9 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
             let path = CGMutablePath(); path.addRect(sourceBounds); path.addRect(crop)
             context.setFillColor(NSColor.black.withAlphaComponent(0.45).cgColor)
             context.addPath(path); context.fillPath(using: .evenOdd)
+            // A 1 pt white line just outside the box marks the edge where dimming barely shows, such as over dark content.
+            context.setStrokeColor(NSColor.white.withAlphaComponent(0.9).cgColor); context.setLineWidth(1 / zoom)
+            context.stroke(crop.insetBy(dx: -0.5 / zoom, dy: -0.5 / zoom))
             for (_, point) in EditorGeometry.boxHandles(for: crop) { drawHandle(point, context: context) }
         }
         let state = visibleState
