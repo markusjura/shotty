@@ -16,7 +16,7 @@ struct GeneralSettingsPane: View {
                     Text("Dark").tag(AppearancePreference.dark)
                 }
                 .pickerStyle(.radioGroup)
-                Toggle("Translucent sidebar", isOn: $preferences.general.usesTranslucentSidebar)
+                Toggle("Translucent windows", isOn: $preferences.general.usesTranslucentWindows)
             }
             Section("App") {
                 Toggle("Show in menu bar", isOn: $preferences.general.showsMenuBarIcon)

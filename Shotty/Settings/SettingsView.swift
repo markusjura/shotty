@@ -43,7 +43,7 @@ struct SettingsView: View {
     var body: some View {
         // A native split view gives Finder's full-height sidebar under the traffic lights and a
         // toolbar that blends into the pane instead of a separate titlebar band. The sidebar is
-        // translucent unless General turns it off.
+        // translucent unless General turns translucent windows off.
         NavigationSplitView {
             // Ignore deselection so a pane is always shown. Rows draw the selection fill themselves.
             List(SettingsPane.allCases, selection: Binding<SettingsPane?> { pane } set: { if let new = $0 { open(new) } }) { item in
@@ -96,7 +96,7 @@ struct SettingsView: View {
 
     /// The sidebar's fill: a translucent material or the opaque gray.
     @ViewBuilder private var sidebarFill: some View {
-        if preferences.general.usesTranslucentSidebar { SidebarMaterial() } else { SettingsColor.opaqueSidebar }
+        if preferences.general.usesTranslucentWindows { SidebarMaterial() } else { SettingsColor.opaqueSidebar }
     }
 
     private func open(_ next: SettingsPane) {

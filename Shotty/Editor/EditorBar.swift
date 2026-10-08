@@ -35,9 +35,23 @@ enum EditorBar {
     })
 }
 
-/// A translucent system material that dims with the window. The sidebar material reads as
-/// 67 active and 37 inactive (8-bit gray) in Dark Mode.
-struct EditorBarBackground: NSViewRepresentable {
+/// The bars' background: a translucent system material that dims with the window, or, when
+/// General turns translucent windows off, opaque grays that match the material over a mid-gray
+/// backdrop (light #DFDFDF, dark #3D3D3D; inactive #EBEBEB and #2F2F2F).
+struct EditorBarBackground: View {
+    let isTranslucent: Bool
+    @Environment(\.appearsActive) private var appearsActive
+
+    var body: some View {
+        if isTranslucent {
+            BarMaterial()
+        } else {
+            Color(nsColor: appearsActive ? .settings(light: 0xDFDFDF, dark: 0x3D3D3D) : .settings(light: 0xEBEBEB, dark: 0x2F2F2F))
+        }
+    }
+}
+
+private struct BarMaterial: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.material = .sidebar

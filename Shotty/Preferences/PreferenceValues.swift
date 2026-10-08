@@ -10,8 +10,9 @@ enum AppearancePreference: String, Codable, CaseIterable, Sendable {
 
 struct GeneralPreferences: Codable, Equatable, Sendable {
     var appearance = AppearancePreference.system
-    /// Off gives the Settings sidebar an opaque fill instead of the desktop showing through.
-    var usesTranslucentSidebar = true
+    /// Off gives the Settings sidebar and the editor bars opaque fills instead of letting what's
+    /// behind the window show through.
+    var usesTranslucentWindows = true
     var showsMenuBarIcon = true
     var showsDockIcon = false
     var playsSounds = false

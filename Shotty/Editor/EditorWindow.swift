@@ -351,7 +351,7 @@ private struct EditorWindowView: View {
             .labelStyle(.iconOnly)
             .padding(.leading, EditorBar.leadingInset).padding(.trailing, EditorBar.edgeInset)
             .frame(height: EditorBar.height)
-            .background(EditorBarBackground())
+            .background(EditorBarBackground(isTranslucent: translucentBars))
             Divider()
             CanvasContainer(canvas: model.canvas)
             Divider()
@@ -372,11 +372,13 @@ private struct EditorWindowView: View {
             }
             .padding(.horizontal, EditorBar.edgeInset)
             .frame(height: EditorBar.height)
-            .background(EditorBarBackground())
+            .background(EditorBarBackground(isTranslucent: translucentBars))
         }
         // The hosting view sets the window's minimum size from this, so the top bar never clips Done.
         .frame(minWidth: EditorBar.minimumWindowWidth, minHeight: 400)
     }
+
+    private var translucentBars: Bool { model.coordinator.preferences.general.usesTranslucentWindows }
 
     @ViewBuilder private var cropBar: some View {
         // Canvas state is AppKit-owned; its callback invalidates these controls.
