@@ -221,13 +221,10 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let outline = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: cornerRadius, yRadius: cornerRadius)
         NSGraphicsContext.saveGraphicsState()
-        outline.addClip()
+        NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius).addClip()
         NSColor.windowBackgroundColor.setFill()
         bounds.fill()
-        // The capture ends where the outline begins, so the translucent outline never shows its pixels.
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: cornerRadius - 1, yRadius: cornerRadius - 1).addClip()
         if let image, image.size.width > 0, image.size.height > 0 {
             let rect = ThumbnailLayout.imageRect(imageSize: image.size, bounds: bounds)
             if controlsVisible, let backdrop {
@@ -250,9 +247,23 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
             (status as NSString).draw(with: rect, options: [.truncatesLastVisibleLine], attributes: attributes)
         }
         NSGraphicsContext.restoreGraphicsState()
-        Chrome.cardOutline.setStroke()
-        outline.lineWidth = Chrome.hairlineWidth
-        outline.stroke()
+        // The edge sits on top of the capture, like a macOS window frame. It is stroked unclipped: the clip's
+        // antialiasing would thin a one-pixel line wherever it curves, so the corners would look lighter.
+        let pixel = 1 / (window?.backingScaleFactor ?? 2)
+        let edgeWidth = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast ? Chrome.hairlineWidth : pixel
+        strokeCardRing(inset: 0, width: edgeWidth, color: Chrome.cardEdge)
+        strokeCardRing(inset: edgeWidth, width: 1, color: Chrome.cardRim)
+    }
+
+    /// Strokes a band `width` wide whose outer side is `inset` from the card edge. The band's path is
+    /// concentric with the card's corners, so lines of different widths keep matching curves.
+    private func strokeCardRing(inset: CGFloat, width: CGFloat, color: NSColor) {
+        let center = inset + width / 2
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: center, dy: center),
+                                xRadius: cornerRadius - center, yRadius: cornerRadius - center)
+        path.lineWidth = width
+        color.setStroke()
+        path.stroke()
     }
 
     override func mouseDown(with event: NSEvent) {

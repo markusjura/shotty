@@ -36,15 +36,18 @@ enum Chrome {
             ? NSColor(white: 0.5, alpha: 1) : NSColor(white: 0.6, alpha: 0.55)
     }
     static var hairlineWidth: CGFloat { NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast ? 2 : 1 }
-    /// Faint outline around thumbnail cards: a soft light edge in
-    /// Dark Mode, a soft dark edge in Light Mode. Falls back to `hairline` with Increase Contrast.
-    static var cardOutline: NSColor {
+    /// Thumbnail card edge, drawn over the capture like a macOS window frame. The one-pixel outer line
+    /// separates the card from light backdrops; it is darker in Dark Mode, as on windows. Falls back
+    /// to `hairline` with Increase Contrast.
+    static var cardEdge: NSColor {
         guard !NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast else { return hairline }
         return NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                ? NSColor(white: 1, alpha: 0.16) : NSColor(white: 0, alpha: 0.1)
+            NSColor(white: 0, alpha: appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? 0.7 : 0.2)
         }
     }
+    /// The 1 pt rim inside `cardEdge`. It lifts dark captures off dark backdrops and vanishes on light
+    /// ones, so both appearances use it.
+    static let cardRim = NSColor(white: 1, alpha: 0.1)
 
     // MARK: Window level
 
