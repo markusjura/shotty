@@ -54,6 +54,9 @@ struct ThumbnailSettingsPane: View {
                 }
                 Toggle("Dismiss after saving", isOn: $preferences.thumbnails.dismissesAfterSave)
                 Toggle("Dismiss after dragging out", isOn: $preferences.thumbnails.dismissesAfterDrag)
+                Toggle("Dismiss after pasting", isOn: $preferences.thumbnails.dismissesAfterPaste)
+                    .settingsRowNote(preferences.thumbnails.dismissesAfterPaste && !AXIsProcessTrusted()
+                                     ? "Needs Accessibility access to notice ⌘V in other apps." : nil)
             }
         }
         .onAppear(perform: refreshScreens)
