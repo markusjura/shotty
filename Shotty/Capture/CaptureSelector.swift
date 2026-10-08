@@ -1,32 +1,7 @@
 import AppKit
 import Observation
-import ScreenCaptureKit
 import SwiftUI
 import os
-
-/// Screen-parameter notifications also cover changes that do not invalidate capture geometry.
-struct SelectionScreenLayout: Equatable {
-    struct Display: Equatable {
-        var id: CGDirectDisplayID
-        var frame: CGRect
-        var scale: CGFloat
-        var pixelSize: CGSize
-        var rotation: Double
-    }
-
-    let displays: [Display]
-
-    init(displays: [Display]) { self.displays = displays.sorted { $0.id < $1.id } }
-
-    @MainActor static var current: SelectionScreenLayout {
-        SelectionScreenLayout(displays: NSScreen.screens.compactMap { screen in
-            guard let id = screen.displayID else { return nil }
-            return Display(id: id, frame: screen.frame, scale: screen.backingScaleFactor,
-                           pixelSize: CGSize(width: CGDisplayPixelsWide(id), height: CGDisplayPixelsHigh(id)),
-                           rotation: CGDisplayRotation(id))
-        })
-    }
-}
 
 struct SelectionConfiguration {
     var freeze = true
@@ -76,12 +51,6 @@ final class CaptureSelector {
     private let renderer = SelectionRenderer()
     private let logger = Logger(subsystem: "local.markus.Shotty", category: "CaptureSelection")
 
-    struct WindowTarget {
-        let id: CGWindowID
-        let title: String
-        let frame: CGRect
-    }
-
     func begin(kind: CaptureKind, configuration: SelectionConfiguration,
                completion: @escaping (Result<CaptureSelection, Error>) -> Void) {
         cancel()
@@ -119,20 +88,8 @@ final class CaptureSelector {
         // The surface appears at once over the live screen, so the crosshair is instant. Frozen pixels
         // replace the live view underneath it a moment later; own windows are excluded from them.
         for display in displays {
-            let panel = SelectionPanel(contentRect: display.frame, styleMask: [.borderless, .nonactivatingPanel],
-                                       backing: .buffered, defer: false)
-            panel.isReleasedWhenClosed = false
-            panel.isOpaque = false
-            panel.backgroundColor = .clear
-            // Transparent areas would otherwise pass clicks through to the app underneath.
-            panel.ignoresMouseEvents = false
-            panel.level = Chrome.floatingLevel
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            // Display-sized surfaces must appear and vanish at once. AppKit's default window animation
-            // would briefly zoom and blur the frozen screen over the live one on every display.
-            panel.animationBehavior = .none
             let view = SelectionView(selector: self, display: display)
-            panel.contentView = view
+            let panel = SelectionPanel.covering(display.frame, content: view)
             panels.append(panel)
             panel.orderFrontRegardless()
             // Inclusive of the top edge, where the pointer rests after using the menu bar.
@@ -143,7 +100,7 @@ final class CaptureSelector {
         operation = Task { [self] in
             do {
                 // Only area and window selection target windows; the other modes skip listing and freezing them.
-                var targets = try await selectsWindows ? Self.windowTargets(on: screens) : []
+                var targets = try await selectsWindows ? WindowTarget.onScreen(screens, includesShotty: true) : []
                 if configuration.freeze && kind != .scrolling {
                     let set = try await FrozenCaptureSet.acquire(includingWindows: selectsWindows,
                                                                  excludingWindowIDs: overlayWindowIDs)
@@ -175,27 +132,6 @@ final class CaptureSelector {
             } catch is CancellationError { }
             catch { if requestID == request { finish(.failure(error)) } }
         }
-    }
-
-    /// On-screen normal windows, frontmost first, in AppKit coordinates. Shotty's own normal windows,
-    /// such as Settings, are targets too; overlays are not layer 0.
-    private static func windowTargets(on screens: [NSScreen]) async throws -> [WindowTarget] {
-        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
-        try Task.checkCancellation()
-        let order = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? [])
-            .compactMap { $0[kCGWindowNumber as String] as? CGWindowID }
-        return content.windows.compactMap { window in
-            guard window.isOnScreen, window.windowLayer == 0,
-                  let app = window.owningApplication,
-                  let display = content.displays.first(where: { $0.frame.intersects(window.frame) }),
-                  let screen = screens.first(where: { $0.displayID == display.displayID }) else { return nil }
-            let geometry = DisplayGeometry(appKitFrame: screen.frame, captureFrame: display.frame)
-            let topLeft = geometry.appKitPoint(fromCapture: window.frame.origin)
-            return WindowTarget(id: window.windowID,
-                title: [app.applicationName, window.title].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", "),
-                frame: CGRect(x: topLeft.x, y: topLeft.y - window.frame.height,
-                              width: window.frame.width, height: window.frame.height))
-        }.sorted { (order.firstIndex(of: $0.id) ?? .max) < (order.firstIndex(of: $1.id) ?? .max) }
     }
 
     /// Area and window selection switch into each other with Space; the other modes never pick a window.
@@ -544,11 +480,6 @@ final class CaptureSelector {
     var showsReadout: Bool { errorMessage != nil || selection == nil || drag != nil }
 }
 
-final class SelectionPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
-}
-
 private struct SelectionAdjustment: View {
     @Bindable var selector: CaptureSelector
     var body: some View {
@@ -564,18 +495,6 @@ private struct SelectionAdjustment: View {
         }
         .padding(12)
         .help("Drag the edges or use the arrow keys to adjust. Option-arrow keys resize.")
-    }
-}
-
-extension NSScreen {
-    var displayID: CGDirectDisplayID? {
-        (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
-    }
-
-    /// Stable across reconnection and rearrangement; matches `ThumbnailDisplayPolicy.display(uuid:)`.
-    var displayUUID: String? {
-        guard let displayID, let uuid = CGDisplayCreateUUIDFromDisplayID(displayID)?.takeRetainedValue() else { return nil }
-        return CFUUIDCreateString(nil, uuid) as String?
     }
 }
 
@@ -670,60 +589,12 @@ private final class SelectionView: NSView {
             } else {
                 Chrome.drawSelection(rect)
             }
-            if selector.drawsHandles { drawHandles(around: rect) }
+            if selector.drawsHandles { SelectionDrawing.drawHandles(around: rect) }
         }
         let point = CGPoint(x: selector.pointer.x - display.frame.minX, y: selector.pointer.y - display.frame.minY)
         guard selector.showsReadout, bounds.contains(point) else { return }
-        let dimensions = selector.pixelDimensions
-        let message = selector.errorMessage ?? (selector.selection == nil
-            ? "X \(Int(point.x))  Y \(Int(bounds.height - point.y))"
-            : "\(Int(dimensions.width)) × \(Int(dimensions.height)) px")
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
-                                                         .foregroundColor: NSColor.white]
-        let size = (message as NSString).size(withAttributes: attributes)
-        let label = CGRect(x: min(bounds.maxX - size.width - 20, max(8, point.x + 16)),
-                           y: max(8, point.y - 36), width: size.width + 12, height: size.height + 8)
-        Chrome.readoutFill.setFill()
-        NSBezierPath(roundedRect: label, xRadius: 5, yRadius: 5).fill()
-        (message as NSString).draw(at: CGPoint(x: label.minX + 6, y: label.minY + 4), withAttributes: attributes)
-    }
-
-    /// White corner brackets and edge bars drawn just outside the region, clear of its pixels.
-    private func drawHandles(around rect: CGRect) {
-        let width: CGFloat = 4
-        let edge = rect.insetBy(dx: -width / 2, dy: -width / 2)
-        let arm = min(18, edge.width / 2, edge.height / 2)
-        let path = NSBezierPath()
-        for (x, dx) in [(edge.minX, arm), (edge.maxX, -arm)] {
-            for (y, dy) in [(edge.minY, arm), (edge.maxY, -arm)] {
-                path.move(to: CGPoint(x: x + dx, y: y))
-                path.line(to: CGPoint(x: x, y: y))
-                path.line(to: CGPoint(x: x, y: y + dy))
-            }
-        }
-        let bar: CGFloat = 9
-        if edge.width > 4 * arm {
-            for y in [edge.minY, edge.maxY] {
-                path.move(to: CGPoint(x: edge.midX - bar, y: y))
-                path.line(to: CGPoint(x: edge.midX + bar, y: y))
-            }
-        }
-        if edge.height > 4 * arm {
-            for x in [edge.minX, edge.maxX] {
-                path.move(to: CGPoint(x: x, y: edge.midY - bar))
-                path.line(to: CGPoint(x: x, y: edge.midY + bar))
-            }
-        }
-        path.lineWidth = width
-        path.lineJoinStyle = .miter
-        NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowColor = .black.withAlphaComponent(0.45)
-        shadow.shadowBlurRadius = 2
-        shadow.set()
-        NSColor.white.setStroke()
-        path.stroke()
-        NSGraphicsContext.restoreGraphicsState()
+        SelectionDrawing.drawReadout(at: point, in: bounds, error: selector.errorMessage,
+                                     size: selector.selection == nil ? nil : selector.pixelDimensions)
     }
 
     private func point(_ event: NSEvent) -> CGPoint { window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation }
@@ -749,38 +620,4 @@ private final class SelectionView: NSView {
     override func flagsChanged(with event: NSEvent) { selector.modifiersChanged(event.modifierFlags) }
     override func keyDown(with event: NSEvent) { selector.keyDown(event) }
     override func keyUp(with event: NSEvent) { selector.keyUp(event) }
-}
-
-/// A clickable overlay control that never takes keyboard focus, so Return and Escape keep
-/// reaching the panel that handles them. Clicking Start leaves selection keys on the overlay.
-final class NonKeyPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
-}
-
-extension NSCursor {
-    /// Area-capture crosshair: a one-point black plus inside a white
-    /// outline with a faint dark rim, so it reads on light and dark content alike.
-    @MainActor static let captureCrosshair: NSCursor = {
-        let size: CGFloat = 23
-        let mid = size / 2
-        let image = NSImage(size: CGSize(width: size, height: size), flipped: false) { _ in
-            let plus = NSBezierPath()
-            plus.move(to: CGPoint(x: 3, y: mid)); plus.line(to: CGPoint(x: size - 3, y: mid))
-            plus.move(to: CGPoint(x: mid, y: 3)); plus.line(to: CGPoint(x: mid, y: size - 3))
-            plus.lineCapStyle = .round
-            plus.lineWidth = 4
-            NSColor.black.withAlphaComponent(0.3).setStroke()
-            plus.stroke()
-            plus.lineWidth = 3
-            NSColor.white.setStroke()
-            plus.stroke()
-            plus.lineCapStyle = .butt
-            plus.lineWidth = 1
-            NSColor.black.setStroke()
-            plus.stroke()
-            return true
-        }
-        return NSCursor(image: image, hotSpot: CGPoint(x: mid, y: mid))
-    }()
 }
