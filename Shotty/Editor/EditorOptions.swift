@@ -300,7 +300,7 @@ private final class ClickToEditField: NSTextField {
 }
 
 /// A 26 pt capsule that shows the current value with a chevron and opens `menu` below itself.
-private struct OptionButton<Icon: View>: View {
+struct OptionButton<Icon: View>: View {
     let title: String
     let icon: Icon
     let menu: () -> NSMenu
@@ -332,7 +332,7 @@ private struct OptionButton<Icon: View>: View {
             .frame(height: EditorBar.buttonHeight)
             .contentShape(Capsule())
         }
-        .buttonStyle(OptionButtonStyle(isOpen: isOpen))
+        .buttonStyle(EditorCapsuleButtonStyle(isOpen: isOpen))
         .background(MenuAnchor(reference: anchor))
         .help(title)
         .accessibilityLabel(title)
@@ -353,21 +353,10 @@ private struct MenuAnchor: NSViewRepresentable {
     func updateNSView(_ view: NSView, context: Context) { reference.view = view }
 }
 
-/// A tinted capsule for toolbar options, darker while pressed or open.
-private struct OptionButtonStyle: ButtonStyle {
-    let isOpen: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(EditorBar.buttonFill, in: Capsule())
-            .overlay(Capsule().fill(Color.black.opacity(configuration.isPressed || isOpen ? 0.15 : 0)))
-    }
-}
-
 /// Builds the option menus. Rows with images show the selected value at full strength and the rest
 /// dimmed; plain rows use checkmarks.
 @MainActor
-private enum OptionMenu {
+enum OptionMenu {
     static func make(showsState: Bool) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
@@ -376,9 +365,14 @@ private enum OptionMenu {
     }
 
     /// `hidesTitle` keeps the title for accessibility while the row shows only its image.
+    /// `shortcut` shows the command's key equivalent in the row.
     static func item(_ title: String, image: NSImage? = nil, isOn: Bool = false, hidesTitle: Bool = false,
-                     action: @escaping () -> Void) -> NSMenuItem {
+                     shortcut: Shortcut? = nil, action: @escaping () -> Void) -> NSMenuItem {
         let item = ActionItem(title: hidesTitle ? "" : title, action: action)
+        if let shortcut, let key = shortcut.keyboardShortcut {
+            item.keyEquivalent = String(key.key.character)
+            item.keyEquivalentModifierMask = shortcut.modifiers.flags
+        }
         item.image = image
         // macOS 27 hides menu item images unless an item opts in.
         if #available(macOS 27, *), image != nil { item.preferredImageVisibility = .visible }

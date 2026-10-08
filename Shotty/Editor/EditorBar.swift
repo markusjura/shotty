@@ -21,10 +21,14 @@ enum EditorBar {
     /// Fits the top bar with its widest tool options (Text) through Done.
     static let minimumWindowWidth: CGFloat = 900
 
-    /// Button fill: white at 20% in Dark Mode, which reads as #656666 on the bar.
-    static let buttonFill = Color(nsColor: NSColor(name: nil) { appearance in
+    /// Button fill: white at 20% in Dark Mode, which reads as #656666 on the bar. AppKit views
+    /// such as the Drag Me handle draw with `buttonTint`.
+    static let buttonTint = NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.2) : NSColor(white: 0, alpha: 0.1)
-    })
+    }
+    static let buttonFill = Color(nsColor: buttonTint)
+    /// Black laid over a capsule while it is pressed or its menu is open.
+    static let pressedDarkening: CGFloat = 0.15
     /// Tool strip fill, half the button tint.
     static let groupFill = Color(nsColor: NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.1) : NSColor(white: 0, alpha: 0.05)
@@ -44,7 +48,26 @@ struct EditorBarBackground: NSViewRepresentable {
     func updateNSView(_ view: NSVisualEffectView, context: Context) { }
 }
 
-/// A 26 pt capsule: tinted by default, accent-filled when prominent or selected.
+extension View {
+    /// The bars' capsule: `fill` behind the view, darkened while pressed.
+    func editorBarCapsule(_ fill: Color = EditorBar.buttonFill, isPressed: Bool = false) -> some View {
+        background(fill, in: Capsule())
+            .overlay(Capsule().fill(.black.opacity(isPressed ? EditorBar.pressedDarkening : 0)))
+    }
+}
+
+/// Puts a label that sizes itself on the bars' capsule. Tools and option buttons use it;
+/// `isOpen` keeps an option button darkened while its menu is showing.
+struct EditorCapsuleButtonStyle: ButtonStyle {
+    var fill = EditorBar.buttonFill
+    var isOpen = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.editorBarCapsule(fill, isPressed: configuration.isPressed || isOpen)
+    }
+}
+
+/// A 26 pt capsule: tinted by default, accent-filled when prominent.
 struct EditorBarButtonStyle: ButtonStyle {
     var isProminent = false
     var width: CGFloat?
@@ -55,8 +78,7 @@ struct EditorBarButtonStyle: ButtonStyle {
             .foregroundStyle(isProminent ? Color.white : .primary)
             .padding(.horizontal, width == nil ? 12 : 0)
             .frame(width: width, height: EditorBar.buttonHeight)
-            .background(isProminent ? Color.accentColor : EditorBar.buttonFill, in: Capsule())
-            .overlay(Capsule().fill(Color.black.opacity(configuration.isPressed ? 0.15 : 0)))
+            .editorBarCapsule(isProminent ? .accentColor : EditorBar.buttonFill, isPressed: configuration.isPressed)
             .contentShape(Capsule())
     }
 }
