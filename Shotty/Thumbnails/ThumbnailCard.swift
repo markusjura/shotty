@@ -49,7 +49,7 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
     private var tracking: NSTrackingArea?
     private var hovered = false
     private var controls: [NSButton] = []
-    /// The blurred, darkened capture drawn behind the hover controls.
+    /// The blurred capture drawn behind the hover controls, under `Chrome.cardScrim`.
     private var backdrop: CGImage?
     private let statusLabel = NSTextField(labelWithString: "")
     private var success: ThumbnailCoordinator.Action?
@@ -180,7 +180,7 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
 
     private static let ciContext = CIContext(options: [.cacheIntermediates: false])
 
-    /// Blurs and darkens the capture at card resolution for the hover background.
+    /// Blurs the capture at card resolution for the hover background.
     /// Built once per image on first reveal, so cards that are never hovered cost nothing.
     private func makeBackdrop() -> CGImage? {
         guard let image, let source = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
@@ -193,13 +193,9 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         // it adds would smear transparency into the blur.
         let extent = CGRect(x: 0, y: 0, width: (CGFloat(source.width) * scale).rounded(.down),
                             height: (CGFloat(source.height) * scale).rounded(.down))
-        // About 7 pt of blur hides detail but keeps light and dark areas; Core Image works in linear
-        // light, where 0.1 lowers white to roughly 35% on screen, faint enough for the controls to stand out.
+        // About 7 pt of blur hides detail but keeps the capture's colors and light and dark areas.
         let blurred = scaled.cropped(to: extent).clampedToExtent().applyingGaussianBlur(sigma: 7 * backing).cropped(to: extent)
-        let darkened = blurred.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: 0.1, y: 0, z: 0, w: 0), "inputGVector": CIVector(x: 0, y: 0.1, z: 0, w: 0),
-            "inputBVector": CIVector(x: 0, y: 0, z: 0.1, w: 0)])
-        return Self.ciContext.createCGImage(darkened, from: extent)
+        return Self.ciContext.createCGImage(blurred, from: extent)
     }
 
     /// The pill of the copy or save that succeeded last shows a checkmark while the coordinator keeps
@@ -234,7 +230,16 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: cornerRadius - 1, yRadius: cornerRadius - 1).addClip()
         if let image, image.size.width > 0, image.size.height > 0 {
             let rect = ThumbnailLayout.imageRect(imageSize: image.size, bounds: bounds)
-            if controlsVisible, let backdrop { NSGraphicsContext.current?.cgContext.draw(backdrop, in: rect) } else { image.draw(in: rect) }
+            if controlsVisible, let backdrop {
+                NSGraphicsContext.current?.cgContext.draw(backdrop, in: rect)
+                Chrome.cardScrim.setFill()
+                rect.fill(using: .sourceOver)
+            } else { image.draw(in: rect) }
+        }
+        // White status text alone is too faint on the scrimmed backdrop of a bright capture.
+        if status != nil, controlsVisible {
+            Chrome.readoutFill.setFill()
+            NSBezierPath(roundedRect: statusLabel.frame.insetBy(dx: -4, dy: -2), xRadius: 6, yRadius: 6).fill()
         }
         if let status, !controlsVisible {
             let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .medium),

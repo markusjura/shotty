@@ -23,6 +23,10 @@ enum Chrome {
     /// 179). The screen around it keeps its own colors.
     static let selectionBorder = NSColor.white
     static let selectionTint = NSColor(white: 0.70, alpha: 0.22)
+    /// Wash over a hovered card's blurred capture, as CleanShot X does: white turns mid gray, so the
+    /// light controls stand out on any capture while its colors still show through. The same in both
+    /// appearances, since it sits on captured pixels.
+    static let cardScrim = NSColor.black.withAlphaComponent(0.5)
     /// Small dark readouts such as selection dimensions.
     static let readoutFill = NSColor.black.withAlphaComponent(0.78)
 
