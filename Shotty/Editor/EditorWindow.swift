@@ -368,7 +368,7 @@ private struct EditorWindowView: View {
                 }
                 .buttonStyle(.editorBarIcon)
                 .labelStyle(.iconOnly)
-                EditorDragHandle(model: model).frame(width: 115, height: 31)
+                EditorDragHandle(model: model).frame(width: 115, height: EditorBar.buttonHeight)
             }
             .padding(.horizontal, EditorBar.edgeInset)
             .frame(height: EditorBar.height)
@@ -382,22 +382,40 @@ private struct EditorWindowView: View {
         // Canvas state is AppKit-owned; its callback invalidates these controls.
         let _ = model.selectionVersion
         let cropSize = model.canvas.cropDraft?.size ?? .zero
-        HStack(spacing: 6) {
-            Text("Crop").fontWeight(.medium)
-            TextField("Width", value: Binding(get: { Double(cropSize.width) }, set: { model.canvas.setCropSize(width: $0) }), format: .number).frame(width: 70)
-            Text("×")
-            TextField("Height", value: Binding(get: { Double(cropSize.height) }, set: { model.canvas.setCropSize(height: $0) }), format: .number).frame(width: 70)
-            Picker("Aspect", selection: Binding(get: { model.canvas.cropAspect }, set: { model.canvas.setCropAspect($0) })) {
-                Text("Freeform").tag(CGFloat?.none)
-                Text("Square").tag(CGFloat?.some(1))
-                Text("16:9").tag(CGFloat?.some(16 / 9))
-                Text("4:3").tag(CGFloat?.some(4 / 3))
-            }.pickerStyle(.menu).labelsHidden().fixedSize()
+        let aspects: [(title: String, ratio: CGFloat?)] = [("Freeform", nil), ("Square", 1), ("16:9", 16 / 9), ("4:3", 4 / 3)]
+        HStack(spacing: EditorBar.buttonSpacing) {
+            Text("Crop")
+            cropField("Width", cropSize.width) { model.canvas.setCropSize(width: $0) }
+            Text("×").foregroundStyle(.secondary)
+            cropField("Height", cropSize.height) { model.canvas.setCropSize(height: $0) }
+            OptionButton("Aspect ratio") {
+                Text(aspects.first { $0.ratio == model.canvas.cropAspect }?.title ?? "Freeform")
+            } menu: {
+                let menu = OptionMenu.make(showsState: true)
+                for aspect in aspects {
+                    menu.addItem(OptionMenu.item(aspect.title, isOn: aspect.ratio == model.canvas.cropAspect) {
+                        model.canvas.setCropAspect(aspect.ratio)
+                    })
+                }
+                return menu
+            }
+            .padding(.leading, EditorBar.groupSpacing - EditorBar.buttonSpacing)
             Spacer()
             Button("Cancel") { model.canvas.cancelCrop(); model.tool = .select }.buttonStyle(.editorBar)
             Button("Apply") { model.canvas.applyCrop(); model.tool = .select }
                 .keyboardShortcut(.defaultAction).buttonStyle(.editorBarProminent)
         }
+        .font(EditorBar.font)
+    }
+
+    /// A crop dimension in pixels, typed into a tinted capsule.
+    private func cropField(_ title: String, _ value: CGFloat, set: @escaping (CGFloat) -> Void) -> some View {
+        TextField(title, value: Binding(get: { Double(value) }, set: { set(CGFloat($0)) }), format: .number.grouping(.never))
+            .textFieldStyle(.plain)
+            .multilineTextAlignment(.center)
+            .monospacedDigit()
+            .frame(width: 64, height: EditorBar.buttonHeight)
+            .editorBarCapsule()
     }
 
     private func help(_ command: CommandID) -> String {
@@ -410,29 +428,24 @@ private struct EditorWindowView: View {
 private struct ZoomMenu: View {
     let model: EditorWindowModel
     var body: some View {
-        Menu {
-            item("Zoom In", .zoomIn)
-            item("Zoom Out", .zoomOut)
-            Divider()
-            item("Fit Canvas", .zoomToFit)
-            Divider()
-            Button("50%") { model.setZoom(0.5) }
-            item("100%", .actualSize)
-            Button("200%") { model.setZoom(2) }
-        } label: {
-            Text(model.zoomLabel).font(EditorBar.font).monospacedDigit()
+        OptionButton("Zoom") {
+            Text(model.zoomLabel).monospacedDigit()
+        } menu: {
+            let menu = OptionMenu.make(showsState: false)
+            menu.addItem(item("Zoom In", .zoomIn))
+            menu.addItem(item("Zoom Out", .zoomOut))
+            menu.addItem(.separator())
+            menu.addItem(item("Fit Canvas", .zoomToFit))
+            menu.addItem(.separator())
+            menu.addItem(OptionMenu.item("50%") { model.setZoom(0.5) })
+            menu.addItem(item("100%", .actualSize))
+            menu.addItem(OptionMenu.item("200%") { model.setZoom(2) })
+            return menu
         }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .padding(.horizontal, 12)
-        .frame(width: 70, height: EditorBar.buttonHeight)
-        .background(EditorBar.buttonFill, in: Capsule())
-        .help("Zoom")
     }
 
-    private func item(_ title: String, _ command: CommandID) -> some View {
-        Button(title) { model.execute(command) }
-            .keyboardShortcut(model.commands.shortcut(for: command)?.keyboardShortcut)
+    private func item(_ title: String, _ command: CommandID) -> NSMenuItem {
+        OptionMenu.item(title, shortcut: model.commands.shortcut(for: command)) { model.execute(command) }
     }
 }
 
@@ -462,7 +475,7 @@ private struct ToolStrip: View {
 }
 
 /// One tool. The active tool is an accent capsule and a hovered one a neutral capsule; Crop
-/// stands alone as a tinted capsule.
+/// stands alone as a tinted capsule. Pressing darkens the capsule like the other bar buttons.
 private struct ToolButton: View {
     let model: EditorWindowModel
     let tool: EditorTool
@@ -478,9 +491,8 @@ private struct ToolButton: View {
                        height: isStandalone ? EditorBar.buttonHeight : EditorBar.toolHeight)
                 .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(EditorCapsuleButtonStyle(fill: active ? .accentColor : isStandalone || isHovered ? EditorBar.buttonFill : .clear))
         .foregroundStyle(active ? Color.white : .primary)
-        .background(active ? Color.accentColor : isStandalone || isHovered ? EditorBar.buttonFill : .clear, in: Capsule())
         .help([CommandID.tool(tool).title, model.commands.shortcut(for: .tool(tool))?.displayString].compactMap { $0 }.joined(separator: " "))
         .accessibilityLabel(CommandID.tool(tool).title)
         .accessibilityAddTraits(active ? .isSelected : [])
