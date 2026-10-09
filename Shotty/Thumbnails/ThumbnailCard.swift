@@ -22,6 +22,7 @@ private struct ThumbnailImage: NSViewRepresentable {
     func updateNSView(_ view: ThumbnailImageView, context: Context) {
         view.image = card.image
         view.captureID = card.id
+        view.duration = card.duration
         view.coordinator = coordinator
         view.status = card.status
         view.setSuccess(card.success)
@@ -41,6 +42,14 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         }
     }
     var captureID: UUID?
+    /// A clip's length for the badge in the corner; nil for a screenshot.
+    var duration: String? {
+        didSet {
+            guard duration != oldValue else { return }
+            if (duration == nil) != (oldValue == nil) { describe() }
+            needsDisplay = true
+        }
+    }
     weak var coordinator: ThumbnailCoordinator?
     private let logger = Logger(subsystem: "local.markus.Shotty", category: "ThumbnailDrag")
     private var press: CGPoint?
@@ -91,9 +100,8 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         focusRingType = .none
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Capture thumbnail")
         toolTip = "Click to edit. Drag to Finder or another app. Hold Option when dropping to keep the thumbnail."
-        for (title, symbol, action) in [("Dismiss capture", "xmark", ThumbnailCoordinator.Action.dismiss),
+        for (title, symbol, action) in [("Dismiss", "xmark", ThumbnailCoordinator.Action.dismiss),
                                          ("Open editor", "pencil", .open), ("Copy", "", .copy), ("Save", "", .save)] {
             let button = ThumbnailActionButton(title: symbol.isEmpty ? title : "", target: self, action: #selector(activateControl(_:)))
             button.tag = controls.count
@@ -114,9 +122,18 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         statusLabel.lineBreakMode = .byTruncatingTail
         addSubview(statusLabel)
         controls.forEach { $0.isHidden = true }
+        describe()
         updateControls()
     }
     required init?(coder: NSCoder) { nil }
+
+    /// Names the card and its Dismiss button after what it holds, a capture or a clip.
+    private func describe() {
+        let noun = duration == nil ? "capture" : "clip"
+        setAccessibilityLabel(duration == nil ? "Capture thumbnail" : "Clip thumbnail")
+        controls[0].setAccessibilityLabel("Dismiss \(noun)")
+        controls[0].toolTip = "Dismiss \(noun)"
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
@@ -245,6 +262,8 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
             Chrome.readoutFill.setFill()
             NSBezierPath(roundedRect: rect.insetBy(dx: -4, dy: -2), xRadius: 6, yRadius: 6).fill()
             (status as NSString).draw(with: rect, options: [.truncatesLastVisibleLine], attributes: attributes)
+        } else if !controlsVisible, let duration {
+            drawDuration(duration)
         }
         NSGraphicsContext.restoreGraphicsState()
         // The edge sits on top of the capture, like a macOS window frame. It is stroked unclipped: the clip's
@@ -253,6 +272,22 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         let edgeWidth = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast ? Chrome.hairlineWidth : pixel
         strokeCardRing(inset: 0, width: edgeWidth, color: Chrome.cardEdge)
         strokeCardRing(inset: edgeWidth, width: 1, color: Chrome.cardRim)
+    }
+
+    /// A clip's length in a small dark badge nested in the bottom right corner, like a video player's.
+    private func drawDuration(_ duration: String) {
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
+        let text = duration as NSString
+        // The corner buttons' inset, with a radius concentric to the card's corner so the badge sits evenly in it.
+        let inset: CGFloat = 6, padding: CGFloat = 6, radius = cornerRadius - inset
+        let width = text.size(withAttributes: attributes).width.rounded(.up) + 2 * padding
+        let badge = CGRect(x: bounds.maxX - inset - width, y: inset, width: width, height: 16)
+        Chrome.readoutFill.setFill()
+        NSBezierPath(roundedRect: badge, xRadius: radius, yRadius: radius).fill()
+        // Center the digits' cap height, not the line box, whose descender space digits never use.
+        let baseline = (badge.midY - font.capHeight / 2).rounded()
+        text.draw(at: CGPoint(x: badge.minX + padding, y: baseline + font.descender), withAttributes: attributes)
     }
 
     /// Strokes a band `width` wide whose outer side is `inset` from the card edge. The band's path is
@@ -280,13 +315,13 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
     fileprivate func drag(from press: CGPoint, with event: NSEvent) -> Bool {
         guard !dragging else { return true }
         guard hypot(event.locationInWindow.x - press.x, event.locationInWindow.y - press.y) > 5,
-              let captureID, let url = coordinator?.dragFile?(captureID) else { return false }
+              let captureID, let writer = coordinator?.dragItem?(captureID) else { return false }
         logger.info("Starting thumbnail file drag")
         dragging = true
         coordinator?.setInteraction(.drag, true)
-        let item = NSDraggingItem(pasteboardWriter: url as NSURL)
+        let item = NSDraggingItem(pasteboardWriter: writer)
         // Snapshot the visible crop so the drag starts under the pointer without jumping
-        // to the full source aspect ratio. The file still holds the full image.
+        // to the full source aspect ratio. The file still holds the full image or clip.
         let preview = NSImage(size: bounds.size, flipped: false) { [image, bounds] _ in
             NSBezierPath(roundedRect: bounds, xRadius: Chrome.cardRadius, yRadius: Chrome.cardRadius).addClip()
             if let image { image.draw(in: ThumbnailLayout.imageRect(imageSize: image.size, bounds: bounds)) }
@@ -349,7 +384,7 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu()
         menu.delegate = self
-        let items: [(String, ThumbnailCoordinator.Action)] = [("Open Editor", .open), ("Copy Image", .copy),
+        let items: [(String, ThumbnailCoordinator.Action)] = [("Open Editor", .open), (duration == nil ? "Copy Image" : "Copy Clip", .copy),
             ("Save to Folder", .save), ("Save As…", .saveAs), ("Dismiss", .dismiss)]
         for (tag, (title, action)) in items.enumerated() {
             let item = NSMenuItem(title: title, action: #selector(menuAction(_:)), keyEquivalent: "")

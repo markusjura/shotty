@@ -22,7 +22,11 @@ func point(_ index: Int) -> CGPoint { CGPoint(x: number(index), y: number(index 
 /// Posts one mouse event. Exiting right after posting sometimes drops the event, so a `move` would
 /// leave the pointer where it was; the short wait lets it through.
 func mouse(_ type: CGEventType, _ point: CGPoint) {
-    CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+    // Explicit empty flags: posted key presses can leave modifiers in the source state, and an
+    // inherited Option would turn a drag into a centered selection.
+    let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: .left)
+    event?.flags = []
+    event?.post(tap: .cghidEventTap)
     usleep(8_000)
 }
 func attribute<T>(_ element: AXUIElement, _ name: String) -> T? {
@@ -70,6 +74,26 @@ case "drag", "drag-path":
     }
     usleep(200_000)
     mouse(.leftMouseUp, points[points.count - 1])
+case "press":
+    // Posts one key press with modifiers, such as `press 22 command,shift`, at the HID level, where
+    // global hotkeys see it. Use it where System Events lacks Accessibility access.
+    guard args.count > 1, let code = UInt16(args[1]) else { fail("usage: press <keycode> [command,shift,option,control]") }
+    var flags: CGEventFlags = []
+    for name in args.count > 2 ? args[2].split(separator: ",") : [] {
+        switch name {
+        case "command": flags.insert(.maskCommand)
+        case "shift": flags.insert(.maskShift)
+        case "option": flags.insert(.maskAlternate)
+        case "control": flags.insert(.maskControl)
+        default: fail("unknown modifier \(name)")
+        }
+    }
+    for down in [true, false] {
+        let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down)
+        event?.flags = flags
+        event?.post(tap: .cghidEventTap)
+        usleep(8_000)
+    }
 case "menu":
     // `Shotty` names the app menu of either build, which Shotty Dev titles "Shotty Dev".
     guard args.count > 1 else { fail("usage: menu <menu> [item]") }
@@ -133,27 +157,34 @@ case "cursor":
     let size = NSCursor.currentSystem?.image.size ?? .zero
     print(size.width == 23 ? "crosshair" : "other \(Int(size.width))x\(Int(size.height))")
 case "clip":
-    // `clip mark` before an action, then `clip wait out.png` saves the next clipboard image.
+    // `clip mark` before an action, then `clip wait` reports the next copy: a copied image is saved
+    // to out.png and its pixel size printed; a copied clip prints its file's path and byte size.
     let board = NSPasteboard.general
     if args.count > 1, args[1] == "mark" {
         try! String(board.changeCount).write(to: clipMark, atomically: true, encoding: .utf8)
-    } else if args.count > 2, args[1] == "wait" {
+    } else if args.count > 1, args[1] == "wait" {
         let mark = (try? String(contentsOf: clipMark, encoding: .utf8)).flatMap(Int.init) ?? board.changeCount
-        let deadline = Date().addingTimeInterval(5)
+        // Clips may render first.
+        let deadline = Date().addingTimeInterval(30)
         while board.changeCount == mark, Date() < deadline { usleep(50_000) }
-        guard board.changeCount != mark, let data = board.data(forType: .png),
-              let image = NSBitmapImageRep(data: data) else { fail("no new clipboard image") }
-        try! data.write(to: URL(fileURLWithPath: args[2]))
-        print(image.pixelsWide, image.pixelsHigh)
-    } else { fail("usage: clip mark | clip wait <out.png>") }
+        guard board.changeCount != mark else { fail("nothing new on the clipboard") }
+        if let data = board.data(forType: .png), let image = NSBitmapImageRep(data: data) {
+            guard args.count > 2 else { fail("usage: clip wait <out.png> for a copied image") }
+            try! data.write(to: URL(fileURLWithPath: args[2]))
+            print(image.pixelsWide, image.pixelsHigh)
+        } else if let url = (board.readObjects(forClasses: [NSURL.self]) as? [URL])?.first(where: \.isFileURL) {
+            print(url.path, (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        } else { fail("no new clipboard image or file") }
+    } else { fail("usage: clip mark | clip wait [out.png]") }
 default:
     fail("""
     usage: shotty-ui <command>
       move x y | click x y | drag x1 y1 x2 y2 [steps]
       drag-path x1 y1 x2 y2 [x3 y3 ...]
       menu <menu> [item] | button <title> | windows [bundleID] | resize <title> w h | close <bundleID> <title>
-      focus | front | text <bundleID> | cursor | clip mark | clip wait <out.png>
-      keys <text> | key <code> [command,shift,option,control]
+      focus | front | text <bundleID> | cursor | clip mark | clip wait [out.png]
+      keys <text> | key <code> [command,shift,option,control] | press <code> [command,shift,option,control]
       record <display> <seconds> <out.mov> | motion <mov> x y w h | frames <mov> <first> <last> x y w h <out.png>
+      probe <clip>
     """)
 }

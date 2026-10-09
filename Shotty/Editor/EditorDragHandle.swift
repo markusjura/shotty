@@ -1,22 +1,38 @@
 import AppKit
 import SwiftUI
 
+/// The Drag Me handle of both editors.
 struct EditorDragHandle: NSViewRepresentable {
-    let model: EditorWindowModel
+    /// "image" or "clip", for the tooltip and VoiceOver.
+    let noun: String
+    /// Shown under the pointer when `item` has no preview.
+    let placeholderSymbol: String
+    /// What a drag hands over, with a small picture of it; nil cancels the drag.
+    let item: @MainActor () -> (writer: NSPasteboardWriting, preview: NSImage?)?
+    /// Runs once a drop completes. The editor closes then.
+    let dropped: @MainActor () -> Void
+
     func makeNSView(context: Context) -> ExportDragView { ExportDragView() }
-    func updateNSView(_ view: ExportDragView, context: Context) { view.model = model }
+    func updateNSView(_ view: ExportDragView, context: Context) {
+        view.item = item
+        view.dropped = dropped
+        view.placeholderSymbol = placeholderSymbol
+        view.toolTip = "Drag the \(noun) to Finder or another app"
+        view.setAccessibilityLabel("Drag \(noun) to export")
+    }
 }
 
-/// The Drag Me handle. Dragging hides the editor so the image can go to Finder, a chat, or
-/// any window behind it. A completed drop closes the editor; a cancelled drag brings it back.
+/// Dragging hides the editor so its image or clip can go to Finder, a chat, or any window behind
+/// it. A completed drop closes the editor; a cancelled drag brings it back.
 final class ExportDragView: NSView, NSDraggingSource {
-    weak var model: EditorWindowModel?
+    var item: (@MainActor () -> (writer: NSPasteboardWriting, preview: NSImage?)?)?
+    var dropped: (@MainActor () -> Void)?
+    var placeholderSymbol = "photo"
     private var started = false
     private var isPressed = false { didSet { needsDisplay = true } }
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        toolTip = "Drag the image to Finder or another app"
-        setAccessibilityElement(true); setAccessibilityRole(.image); setAccessibilityLabel("Drag image to export")
+        setAccessibilityElement(true); setAccessibilityRole(.image)
     }
     required init?(coder: NSCoder) { nil }
 
@@ -42,18 +58,15 @@ final class ExportDragView: NSView, NSDraggingSource {
     override func mouseDown(with event: NSEvent) { started = false; isPressed = true }
     override func mouseUp(with event: NSEvent) { isPressed = false }
     override func mouseDragged(with event: NSEvent) {
-        guard !started, let model else { return }
-        model.canvas.finishText()
-        guard let url = model.coordinator.dragFile(model.document.snapshot) else { return }
-        let item = NSDraggingItem(pasteboardWriter: url as NSURL)
-        // A small picture of the image under the pointer, as the editor itself disappears.
-        let preview = model.canvas.dragPreview(maxDimension: 120)
+        guard !started, let (writer, preview) = item?() else { return }
+        let draggingItem = NSDraggingItem(pasteboardWriter: writer)
+        // A small picture of the capture under the pointer, as the editor itself disappears.
         let size = preview?.size ?? CGSize(width: 32, height: 32)
         let point = convert(event.locationInWindow, from: nil)
-        item.setDraggingFrame(CGRect(x: point.x - size.width / 2, y: point.y - size.height / 2, width: size.width, height: size.height),
-                              contents: preview ?? NSImage(systemSymbolName: "photo", accessibilityDescription: nil))
+        draggingItem.setDraggingFrame(CGRect(x: point.x - size.width / 2, y: point.y - size.height / 2, width: size.width, height: size.height),
+                                      contents: preview ?? NSImage(systemSymbolName: placeholderSymbol, accessibilityDescription: nil))
         started = true
-        beginDraggingSession(with: [item], event: event, source: self)
+        beginDraggingSession(with: [draggingItem], event: event, source: self)
         // Ordered out rather than made transparent, so drops reach the window underneath. The
         // session outlives the hidden window.
         window?.orderOut(nil)
@@ -61,6 +74,6 @@ final class ExportDragView: NSView, NSDraggingSource {
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { .copy }
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
         started = false; isPressed = false
-        if operation.contains(.copy), let model { model.close?() } else { window?.makeKeyAndOrderFront(nil) }
+        if operation.contains(.copy), let dropped { dropped() } else { window?.makeKeyAndOrderFront(nil) }
     }
 }

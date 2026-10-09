@@ -37,8 +37,3 @@ struct CaptureSnapshot: Equatable, Sendable {
     let createdAt: Date
     var documentState = AnnotationDocument()
 }
-
-struct ExportedFile: Codable, Equatable, Sendable {
-    let url: URL
-    let fingerprint: FileFingerprint
-}

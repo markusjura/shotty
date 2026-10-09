@@ -932,7 +932,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
             state.annotations = state.annotations.map { selected.contains($0.id) ? $0.translated(by: offset) : $0 }
             commit(state, actionName: "Move Objects"); return
         }
-        if let shortcut = Shortcut(event: event), let id = commands.command(matching: shortcut, in: [.editor, .editorTool]) {
+        if let shortcut = Shortcut(event: event), let id = commands.command(matching: shortcut, in: [.editor, .editorKey]) {
             if let tool = id.tool {
                 if tool.isDrawing { selected = [] }
                 self.tool = tool; selectionChanged?()

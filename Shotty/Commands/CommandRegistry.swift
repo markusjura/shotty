@@ -3,18 +3,21 @@ import Carbon.HIToolbox
 import Observation
 
 /// Where a command's shortcut is active. Only `.global` commands register system-wide.
+/// `.editorKey` commands may use plain keys, which the focused editor routes itself.
 enum CommandScope: Sendable {
-    case global, editorTool, editor
+    case global, editorKey, editor
 }
 
 enum CommandGroup: CaseIterable, Sendable {
-    case capture, thumbnails, editor
+    case capture, record, thumbnails, editor, videoEditor
 
     var title: String {
         switch self {
-        case .capture: "Capture"
+        case .capture: "Screenshots"
+        case .record: "Recording"
         case .thumbnails: "Thumbnails"
         case .editor: "Editor"
+        case .videoEditor: "Video Editor"
         }
     }
 
@@ -26,11 +29,17 @@ enum CommandGroup: CaseIterable, Sendable {
 
 /// Stable IDs; custom bindings persist by raw value. Standard Undo, Redo, Select All, Cut,
 /// Copy, Paste, and Delete stay system Edit-menu actions and are not remappable here.
+/// The `.editor` group also holds what both editors share, such as Crop, Copy, and Save, so one
+/// binding works in the image editor and the video editor alike.
 enum CommandID: String, CaseIterable, Codable, Sendable {
     case captureArea, captureWindow, captureFullscreen, captureScrolling, captureText
+    case recordArea, recordWindow, recordScreen, stopRecording
     case showThumbnails, hideThumbnails, openLatest, saveAll, dismissAll
     case toolSelect, toolRectangle, toolFilledRectangle, toolEllipse, toolLine, toolArrow, toolText, toolRedact, toolSpotlight, toolCounter, toolCrop
-    case copyImage, save, saveAs, done, duplicate, zoomIn, zoomOut, zoomToFit, actualSize
+    /// Copied only images before clips existed; the raw value keeps custom bindings.
+    case copy = "copyImage"
+    case save, saveAs, done, duplicate, zoomIn, zoomOut, zoomToFit, actualSize
+    case trimStart, trimEnd, toggleAudio, loopPlayback
 
     var title: String {
         switch self {
@@ -39,6 +48,10 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         case .captureFullscreen: "Capture Fullscreen"
         case .captureScrolling: "Capture Scrolling"
         case .captureText: "Capture Text"
+        case .recordArea: "Record Area"
+        case .recordWindow: "Record Window"
+        case .recordScreen: "Record Screen"
+        case .stopRecording: "Stop Recording"
         case .showThumbnails: "Show Thumbnails"
         case .hideThumbnails: "Hide Thumbnails"
         case .openLatest: "Open Latest Capture"
@@ -55,7 +68,8 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         case .toolSpotlight: "Spotlight"
         case .toolCounter: "Counter"
         case .toolCrop: "Crop"
-        case .copyImage: "Copy Image"
+        // Menus and tooltips name what the editor copies: Copy Image or Copy Clip.
+        case .copy: "Copy"
         case .save: "Save"
         case .saveAs: "Save As…"
         case .done: "Done"
@@ -64,23 +78,31 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         case .zoomOut: "Zoom Out"
         case .zoomToFit: "Fit Canvas"
         case .actualSize: "Actual Size"
+        case .trimStart: "Trim Start to Playhead"
+        case .trimEnd: "Trim End to Playhead"
+        case .toggleAudio: "Remove Audio"
+        case .loopPlayback: "Loop Playback"
         }
     }
 
     var group: CommandGroup {
         switch self {
         case .captureArea, .captureWindow, .captureFullscreen, .captureScrolling, .captureText: .capture
+        case .recordArea, .recordWindow, .recordScreen, .stopRecording: .record
         case .showThumbnails, .hideThumbnails, .openLatest, .saveAll, .dismissAll: .thumbnails
         case .toolSelect, .toolRectangle, .toolFilledRectangle, .toolEllipse, .toolLine, .toolArrow, .toolText, .toolRedact,
              .toolSpotlight, .toolCounter, .toolCrop,
-             .copyImage, .save, .saveAs, .done, .duplicate, .zoomIn, .zoomOut, .zoomToFit, .actualSize: .editor
+             .copy, .save, .saveAs, .done, .duplicate, .zoomIn, .zoomOut, .zoomToFit, .actualSize: .editor
+        case .trimStart, .trimEnd, .toggleAudio, .loopPlayback: .videoEditor
         }
     }
 
+    /// Drawing tools and the video editor's trim and audio keys take plain letters, as other editors do.
     var scope: CommandScope {
         switch group {
-        case .capture, .thumbnails: .global
-        case .editor: tool == nil ? .editor : .editorTool
+        case .capture, .record, .thumbnails: .global
+        case .editor, .videoEditor:
+            tool != nil || self == .trimStart || self == .trimEnd || self == .toggleAudio ? .editorKey : .editor
         }
     }
 
@@ -91,6 +113,15 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         case .captureFullscreen: .fullscreen
         case .captureScrolling: .scrolling
         case .captureText: .text
+        default: nil
+        }
+    }
+
+    var recordingKind: RecordingKind? {
+        switch self {
+        case .recordArea: .area
+        case .recordWindow: .window
+        case .recordScreen: .screen
         default: nil
         }
     }
@@ -116,11 +147,14 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         allCases.first { $0.tool == tool }!
     }
 
-    /// Fresh-install bindings. Capture commands start unassigned, so Shotty never claims keys that
-    /// macOS or another screenshot app owns; thumbnail commands have no shortcuts at all.
+    /// Fresh-install bindings. Screenshot and record commands start unassigned, so Shotty never claims
+    /// keys that macOS or another capture app owns; thumbnail commands have no shortcuts at all. The
+    /// video editor keys follow other video editors: I and O set the trim points, and ⌘L loops, as in
+    /// Final Cut Pro. None of them collide with a drawing tool, so both editors keep every key.
     var defaultShortcut: Shortcut? {
         switch self {
         case .captureArea, .captureWindow, .captureFullscreen, .captureScrolling, .captureText: return nil
+        case .recordArea, .recordWindow, .recordScreen, .stopRecording: return nil
         case .showThumbnails, .hideThumbnails, .openLatest, .saveAll, .dismissAll: return nil
         case .toolSelect: return Shortcut(kVK_ANSI_V)
         case .toolArrow: return Shortcut(kVK_ANSI_A)
@@ -133,7 +167,7 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         case .toolSpotlight: return Shortcut(kVK_ANSI_H)
         case .toolCounter: return Shortcut(kVK_ANSI_C)
         case .toolCrop: return Shortcut(kVK_ANSI_K)
-        case .copyImage: return Shortcut(kVK_ANSI_C, [.shift, .command])
+        case .copy: return Shortcut(kVK_ANSI_C, [.shift, .command])
         case .save: return Shortcut(kVK_ANSI_S, .command)
         case .saveAs: return Shortcut(kVK_ANSI_S, [.shift, .command])
         case .done: return Shortcut(kVK_Return, .command)
@@ -142,6 +176,10 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         case .zoomOut: return Shortcut(kVK_ANSI_Minus, .command)
         case .zoomToFit: return Shortcut(kVK_ANSI_1, .command)
         case .actualSize: return Shortcut(kVK_ANSI_0, .command)
+        case .trimStart: return Shortcut(kVK_ANSI_I)
+        case .trimEnd: return Shortcut(kVK_ANSI_O)
+        case .toggleAudio: return Shortcut(kVK_ANSI_M)
+        case .loopPlayback: return Shortcut(kVK_ANSI_L, .command)
         }
     }
 }
@@ -162,7 +200,7 @@ enum ShortcutProblem: Error, Equatable, Sendable {
         case .conflict(let other): "Already used by \(other.title)."
         case .needsCommandOrControl: "Add ⌘ or ⌃. Shortcuts with only ⌥ or ⇧ are not allowed here."
         case .reserved: "macOS or standard app commands use this shortcut."
-        case .reservedForEditing: "The editor uses this key for selection, text, or navigation."
+        case .reservedForEditing: "The editor uses this key for selection, text, playback, or navigation."
         }
     }
 }
@@ -180,12 +218,12 @@ final class CommandRegistry {
     private(set) var registrationFailures: Set<CommandID> = []
     /// While set, global hotkeys are suspended so the recorder receives every combination.
     var recordingCommand: CommandID?
-    /// The app supplies current capture/session availability; local editors can supply their context at routing time.
+    /// The app supplies current capture, recording, and session availability, including which editor is focused.
     var availability: ((CommandID) -> Bool)?
     private(set) var keyboardLayoutVersion = 0
     private var contextVersion = 0
 
-    /// `systemShortcuts` returns the macOS screenshot shortcuts that are currently turned on.
+    /// `systemShortcuts` returns the macOS screenshot and recording shortcuts that are currently turned on.
     init(defaults: UserDefaults = .standard, systemShortcuts: @escaping () -> Set<Shortcut> = { MacScreenshotShortcuts.current }) {
         self.defaults = defaults
         self.systemShortcuts = systemShortcuts
@@ -242,7 +280,7 @@ final class CommandRegistry {
     /// and that shortcut is still turned on in Keyboard Settings.
     func advisory(for id: CommandID) -> String? {
         guard id.scope == .global, let shortcut = bindings[id], systemShortcuts().contains(shortcut) else { return nil }
-        return "macOS uses this for its own screenshots. Turn it off in Keyboard Settings to use it here."
+        return "macOS uses this for its own screenshots and recordings. Turn it off in Keyboard Settings to use it here."
     }
 
     func isAvailable(_ id: CommandID) -> Bool {
@@ -257,7 +295,7 @@ final class CommandRegistry {
     func command(matching shortcut: Shortcut, in scopes: Set<CommandScope>, isTextEditing: Bool = false) -> CommandID? {
         bindings.first {
             scopes.contains($0.key.scope) && $0.value == shortcut && isAvailable($0.key)
-                && (!isTextEditing || $0.key.scope != .editorTool)
+                && (!isTextEditing || $0.key.scope != .editorKey)
                 && Self.ruleProblem(shortcut, scope: $0.key.scope) == nil
         }?.key
     }
@@ -302,7 +340,7 @@ final class CommandRegistry {
         switch scope {
         case .global, .editor:
             return shortcut.hasCommandOrControl ? nil : .needsCommandOrControl
-        case .editorTool:
+        case .editorKey:
             return !shortcut.hasCommandOrControl && editingKeys.contains(Int(shortcut.keyCode)) ? .reservedForEditing : nil
         }
     }
@@ -350,7 +388,7 @@ final class CommandRegistry {
     }
 }
 
-/// macOS's screenshot shortcuts (⇧⌘3, ⌃⇧⌘3, ⇧⌘4, ⌃⇧⌘4, and ⇧⌘5 by default) as set in Keyboard Settings.
+/// macOS's screenshot and recording shortcuts (⇧⌘3, ⌃⇧⌘3, ⇧⌘4, ⌃⇧⌘4, and ⇧⌘5 by default) as set in Keyboard Settings.
 enum MacScreenshotShortcuts {
     /// Symbolic hot key IDs with their factory bindings. An ID missing from the preferences has
     /// never been changed, so it is on with its factory binding.

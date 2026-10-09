@@ -12,6 +12,9 @@ keys)
 key)
   modifiers=${3:+ using {${${3//,/ down, }} down}}
   osascript -e "tell application \"System Events\" to key code $2$modifiers" ;;
+probe)
+  # Duration, streams, codecs, and frame size of a clip, such as one `clip wait` reported.
+  ffprobe -v error -show_entries format=duration,size:stream=codec_type,codec_name,width,height,avg_frame_rate -of compact "$2" ;;
 record)
   # 60 fps video of one display. Start it in the background, then act: `shotty-ui record 1 6 out.mov &`.
   screencapture -x -V $3 -D$2 $4 ;;

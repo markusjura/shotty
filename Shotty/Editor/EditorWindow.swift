@@ -2,8 +2,9 @@ import AppKit
 import Observation
 import SwiftUI
 
+/// The image editor of one screenshot.
 @MainActor
-final class EditorWindowController: NSWindowController, NSWindowDelegate {
+final class EditorWindowController: NSWindowController, NSWindowDelegate, CaptureEditor {
     let model: EditorWindowModel
     private var closing = false
     var didClose: (() -> Void)?
@@ -84,6 +85,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         model.canvas.finishText()
     }
     func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? { model.document.undoManager }
+
+    func handles(_ command: CommandID) -> Bool { command.group == .editor }
+    func execute(_ command: CommandID) { model.execute(command) }
 }
 
 @MainActor @Observable
@@ -254,7 +258,7 @@ final class EditorWindowModel {
     func execute(_ command: CommandID) {
         if let tool = command.tool { pick(tool); return }
         switch command {
-        case .copyImage: copy()
+        case .copy: copy()
         case .save: save(asNew: NSEvent.modifierFlags.contains(.option))
         case .saveAs: save(asNew: true)
         case .done:
@@ -282,7 +286,8 @@ final class EditorWindowModel {
                 var png = options; png.format = .png
                 let data = try await coordinator.exporter.encodedData(snapshot, options: png)
                 if coordinator.clipboard.write(data, type: .png, ticket: ticket, onPaste: coordinator.pasteHandler(for: document.record.id)) {
-                    try await coordinator.store.markCopied(snapshot); await coordinator.refreshRecords()
+                    try await coordinator.store.markCopied(snapshot.captureID, revision: snapshot.revision)
+                    await coordinator.refreshRecords()
                     if shouldClose { close?() }
                 }
             } catch { coordinator.showError(error, title: "Couldn't copy image") }
@@ -298,7 +303,7 @@ final class EditorWindowModel {
                 let snapshot = try await document.flush()
                 let settings = coordinator.preferences.snapshot()
                 let associated = await coordinator.store.records().first { $0.id == snapshot.captureID }?.outputFile
-                if asNew { guard await coordinator.saveAs(snapshot.captureID, snapshot: snapshot) else { return } }
+                if asNew { guard await coordinator.saveAs(snapshot) else { return } }
                 else if let associated {
                     var options = settings.exportOptions
                     options.format = ["jpg", "jpeg"].contains(associated.url.pathExtension.lowercased()) ? .jpeg : .png
@@ -310,7 +315,7 @@ final class EditorWindowModel {
                         alert.informativeText = "Replace that file with this revision, or save another copy."
                         alert.addButton(withTitle: "Save As…"); alert.addButton(withTitle: "Replace"); alert.addButton(withTitle: "Cancel")
                         switch alert.runModal() {
-                        case .alertFirstButtonReturn: guard await coordinator.saveAs(snapshot.captureID, snapshot: snapshot) else { return }
+                        case .alertFirstButtonReturn: guard await coordinator.saveAs(snapshot) else { return }
                         case .alertSecondButtonReturn:
                             let fingerprint = try await coordinator.exporter.fingerprint(at: associated.url)
                             let receipt = try await coordinator.exporter.save(snapshot, to: associated.url, options: options, replacing: fingerprint)
@@ -361,14 +366,21 @@ private struct EditorWindowView: View {
                     ZoomMenu(model: model)
                     Spacer()
                     Button("Copy Image", systemImage: "doc.on.doc") { model.copy() }
-                        .help(help(.copyImage))
+                        .help(help(.copy, title: "Copy Image"))
                     Button("Save", systemImage: "square.and.arrow.down") { model.save(asNew: NSEvent.modifierFlags.contains(.option)) }
                         .help("\(help(.save)). Option-click to save as.")
                         .disabled(model.busy)
                 }
                 .buttonStyle(.editorBarIcon)
                 .labelStyle(.iconOnly)
-                EditorDragHandle(model: model).frame(width: 115, height: EditorBar.buttonHeight)
+                EditorDragHandle(noun: "image", placeholderSymbol: "photo") {
+                    model.canvas.finishText()
+                    guard let url = model.coordinator.dragFile(model.document.snapshot) else { return nil }
+                    return (url as NSURL, model.canvas.dragPreview(maxDimension: 120))
+                } dropped: {
+                    model.close?()
+                }
+                .frame(width: 115, height: EditorBar.buttonHeight)
             }
             .padding(.horizontal, EditorBar.edgeInset)
             .frame(height: EditorBar.height)
@@ -383,45 +395,16 @@ private struct EditorWindowView: View {
     @ViewBuilder private var cropBar: some View {
         // Canvas state is AppKit-owned; its callback invalidates these controls.
         let _ = model.selectionVersion
-        let cropSize = model.canvas.cropDraft?.size ?? .zero
-        let aspects: [(title: String, ratio: CGFloat?)] = [("Freeform", nil), ("Square", 1), ("16:9", 16 / 9), ("4:3", 4 / 3)]
-        HStack(spacing: EditorBar.buttonSpacing) {
-            Text("Crop")
-            cropField("Width", cropSize.width) { model.canvas.setCropSize(width: $0) }
-            Text("×").foregroundStyle(.secondary)
-            cropField("Height", cropSize.height) { model.canvas.setCropSize(height: $0) }
-            OptionButton("Aspect ratio") {
-                Text(aspects.first { $0.ratio == model.canvas.cropAspect }?.title ?? "Freeform")
-            } menu: {
-                let menu = OptionMenu.make(showsState: true)
-                for aspect in aspects {
-                    menu.addItem(OptionMenu.item(aspect.title, isOn: aspect.ratio == model.canvas.cropAspect) {
-                        model.canvas.setCropAspect(aspect.ratio)
-                    })
-                }
-                return menu
-            }
-            .padding(.leading, EditorBar.groupSpacing - EditorBar.buttonSpacing)
-            Spacer()
-            Button("Cancel") { model.canvas.cancelCrop(); model.tool = .select }.buttonStyle(.editorBar)
-            Button("Apply") { model.canvas.applyCrop(); model.tool = .select }
-                .keyboardShortcut(.defaultAction).buttonStyle(.editorBarProminent)
-        }
-        .font(EditorBar.font)
+        CropBar(size: model.canvas.cropDraft?.size ?? .zero, aspect: model.canvas.cropAspect,
+                aspects: [("Freeform", nil), ("Square", 1), ("16:9", 16 / 9), ("4:3", 4 / 3)],
+                resize: { model.canvas.setCropSize(width: $0, height: $1) },
+                setAspect: { model.canvas.setCropAspect($0) },
+                cancel: { model.canvas.cancelCrop(); model.tool = .select },
+                apply: { model.canvas.applyCrop(); model.tool = .select })
     }
 
-    /// A crop dimension in pixels, typed into a tinted capsule.
-    private func cropField(_ title: String, _ value: CGFloat, set: @escaping (CGFloat) -> Void) -> some View {
-        TextField(title, value: Binding(get: { Double(value) }, set: { set(CGFloat($0)) }), format: .number.grouping(.never))
-            .textFieldStyle(.plain)
-            .multilineTextAlignment(.center)
-            .monospacedDigit()
-            .frame(width: 64, height: EditorBar.buttonHeight)
-            .editorBarCapsule()
-    }
-
-    private func help(_ command: CommandID) -> String {
-        [command.title, model.commands.shortcut(for: command)?.displayString].compactMap { $0 }.joined(separator: " ")
+    private func help(_ command: CommandID, title: String? = nil) -> String {
+        [title ?? command.title, model.commands.shortcut(for: command)?.displayString].compactMap { $0 }.joined(separator: " ")
     }
 }
 

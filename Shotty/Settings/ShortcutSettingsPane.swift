@@ -9,7 +9,7 @@ struct ShortcutSettingsPane: View {
             ForEach(CommandGroup.allCases.filter(\.hasShortcuts), id: \.self) { group in
                 Section(group.title) {
                     ForEach(group.commands, id: \.self, content: row)
-                    // Capture commands have no defaults, so only groups with defaults can restore them.
+                    // Screenshot and record commands have no defaults, so only groups with defaults can restore them.
                     if group.commands.contains(where: { $0.defaultShortcut != nil }) {
                         Button("Restore \(group.title) Defaults") { report(commands.restoreDefaults(in: group), for: group.commands) }
                     }

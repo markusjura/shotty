@@ -43,4 +43,17 @@ final class ClipboardWriterTests: XCTestCase {
         writer.handleKeyDown(try key("v", .command))
         XCTAssertEqual(pastes, 1, "Pasting something copied later leaves the thumbnail")
     }
+
+    func testClipsAreCopiedAsFiles() throws {
+        let clip = try makeTemporaryFolder(self).appendingPathComponent("clip-2026-10-03-12.00.00.mp4")
+        try Data().write(to: clip)
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let writer = ClipboardWriter(pasteboard: board)
+        let first = writer.begin()
+        board.clearContents(); board.setString("unrelated", forType: .string)
+        XCTAssertFalse(writer.write(file: clip, ticket: first), "A slow render never replaces something copied meanwhile")
+        XCTAssertTrue(writer.write(file: clip, ticket: writer.begin()))
+        XCTAssertEqual(board.readObjects(forClasses: [NSURL.self]) as? [URL], [clip])
+    }
 }

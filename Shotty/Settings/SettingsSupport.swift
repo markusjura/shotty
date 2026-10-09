@@ -20,6 +20,7 @@ extension GeneralPreferences {
 enum SystemSettingsLink {
     static let screenRecording = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
     static let accessibility = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+    static let microphone = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!
     static let privacy = URL(string: "x-apple.systempreferences:com.apple.preference.security")!
 
     /// Falls back to Privacy & Security if a deep link stops resolving.

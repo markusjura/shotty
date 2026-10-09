@@ -106,6 +106,21 @@ final class SelectionGeometryTests: XCTestCase {
         }
     }
 
+    /// A recording covers one display: the one under the region's center, else the one it
+    /// overlaps most.
+    func testRecordingRegionsAreClippedToOneDisplay() {
+        let displays: [(id: CGDirectDisplayID, frame: CGRect)] = [
+            (1, CGRect(x: 0, y: 0, width: 1512, height: 982)),
+            (2, CGRect(x: 1512, y: 0, width: 2560, height: 1440)),
+        ]
+        let spanning = SelectionGeometry.recordingRegion(CGRect(x: 1400, y: 100, width: 400.5, height: 300), displays: displays)
+        XCTAssertEqual(spanning?.display, 2)
+        XCTAssertEqual(spanning?.rect, CGRect(x: 1512, y: 100, width: 289, height: 300))
+        let centerInGap = SelectionGeometry.recordingRegion(CGRect(x: 1100, y: 950, width: 800, height: 200), displays: displays)
+        XCTAssertEqual(centerInGap?.display, 2, "With its center off every display, the larger overlap wins")
+        XCTAssertNil(SelectionGeometry.recordingRegion(CGRect(x: -500, y: 0, width: 100, height: 100), displays: displays))
+    }
+
     func testSelectionOutsideDisplaysCannotCreateAnImage() async throws {
         do {
             _ = try await SelectionRenderer().compose(region: CGRect(x: 30, y: 30, width: 10, height: 10), displays: [])

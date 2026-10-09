@@ -1,14 +1,15 @@
 import SwiftUI
 
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, capture, thumbnails, editor, shortcuts, permissions
+    case general, capture, recording, thumbnails, editor, shortcuts, permissions
 
     var id: Self { self }
 
     var title: String {
         switch self {
         case .general: "General"
-        case .capture: "Capture"
+        case .capture: "Screenshots"
+        case .recording: "Recording"
         case .thumbnails: "Thumbnails"
         case .editor: "Editor"
         case .shortcuts: "Shortcuts"
@@ -20,6 +21,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general: "gearshape"
         case .capture: "camera.viewfinder"
+        case .recording: "record.circle"
         case .thumbnails: "rectangle.stack"
         case .editor: "pencil.and.outline"
         case .shortcuts: "command"
@@ -62,6 +64,7 @@ struct SettingsView: View {
                 switch pane {
                 case .general: GeneralSettingsPane(preferences: preferences, updater: updater)
                 case .capture: CaptureSettingsPane(preferences: preferences)
+                case .recording: RecordingSettingsPane(preferences: preferences)
                 case .thumbnails: ThumbnailSettingsPane(preferences: preferences)
                 case .editor: EditorSettingsPane(preferences: preferences)
                 case .shortcuts: ShortcutSettingsPane(commands: commands)

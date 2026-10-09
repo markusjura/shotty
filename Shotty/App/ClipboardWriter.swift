@@ -24,9 +24,20 @@ final class ClipboardWriter {
     /// Seeing keystrokes in other apps needs Accessibility access.
     @discardableResult
     func write(_ data: Data, type: NSPasteboard.PasteboardType, ticket: Ticket, onPaste: (@MainActor () -> Void)? = nil) -> Bool {
+        write(ticket: ticket, onPaste: onPaste) { $0.setData(data, forType: type) }
+    }
+
+    /// Puts `file` on the clipboard as a file, which Finder, Mail, Messages, and chat apps paste as an
+    /// attachment. Clips are copied this way; `onPaste` works as for images.
+    @discardableResult
+    func write(file: URL, ticket: Ticket, onPaste: (@MainActor () -> Void)? = nil) -> Bool {
+        write(ticket: ticket, onPaste: onPaste) { $0.writeObjects([file as NSURL]) }
+    }
+
+    private func write(ticket: Ticket, onPaste: (@MainActor () -> Void)?, contents: (NSPasteboard) -> Bool) -> Bool {
         guard ticket.generation == generation, expectedChangeCount == pasteboard.changeCount else { return false }
         pasteboard.clearContents()
-        let success = pasteboard.setData(data, forType: type)
+        let success = contents(pasteboard)
         expectedChangeCount = pasteboard.changeCount
         pasteWatch = success ? onPaste.map { (pasteboard.changeCount, $0) } : nil
         updateKeyMonitor()

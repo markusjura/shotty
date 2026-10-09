@@ -1,26 +1,29 @@
 import SwiftUI
 
-/// Light capsule for controls floating over captured content, such as Start Capture,
-/// Auto Scroll, Cancel, Done, and "N more". It stays legible over light and dark pixels.
+/// Light capsule for controls floating over captured content, such as Start Capture, Auto Scroll,
+/// Record, Stop, Cancel, Done, and "N more". It stays legible over light and dark pixels.
+/// Icon-only buttons are circles.
 struct OverlayCapsuleButtonStyle: ButtonStyle {
     var isProminent = false
+    var isIconOnly = false
 
     func makeBody(configuration: Configuration) -> some View {
-        OverlayCapsule(configuration: configuration, isProminent: isProminent)
+        OverlayCapsule(configuration: configuration, isProminent: isProminent, isIconOnly: isIconOnly)
     }
 
     private struct OverlayCapsule: View {
         let configuration: ButtonStyleConfiguration
         let isProminent: Bool
+        let isIconOnly: Bool
         @Environment(\.isEnabled) private var isEnabled
 
         var body: some View {
             configuration.label
                 .font(Font(Chrome.controlFont))
-                .labelStyle(.titleAndIcon)
+                .labelStyle(isIconOnly ? AnyLabelStyle(.iconOnly) : AnyLabelStyle(.titleAndIcon))
                 .foregroundStyle(Color(nsColor: isEnabled ? Chrome.controlLabel : Chrome.controlLabelDisabled))
-                .padding(.horizontal, 12)
-                .frame(height: Chrome.pillHeight)
+                .padding(.horizontal, isIconOnly ? 0 : 12)
+                .frame(width: isIconOnly ? Chrome.pillHeight : nil, height: Chrome.pillHeight)
                 .overlayCapsuleBackground(isPressed: configuration.isPressed, isProminent: isProminent)
                 .contentShape(Capsule())
         }
@@ -30,6 +33,9 @@ struct OverlayCapsuleButtonStyle: ButtonStyle {
 extension ButtonStyle where Self == OverlayCapsuleButtonStyle {
     static var overlayCapsule: Self { .init() }
     static var overlayCapsuleProminent: Self { .init(isProminent: true) }
+    static var overlayIcon: Self { .init(isIconOnly: true) }
+    /// A switched-on icon, such as system audio when it records.
+    static var overlayIconProminent: Self { .init(isProminent: true, isIconOnly: true) }
 }
 
 extension View {
@@ -40,4 +46,13 @@ extension View {
             .overlay(Capsule().strokeBorder(Color(nsColor: Chrome.hairline), lineWidth: Chrome.hairlineWidth / 2))
             .shadow(color: .black.opacity(0.25), radius: 4, y: 1)
     }
+}
+
+/// Picks a label style at runtime.
+private struct AnyLabelStyle: LabelStyle {
+    private let body: (Configuration) -> AnyView
+
+    init(_ style: some LabelStyle) { body = { AnyView(style.makeBody(configuration: $0)) } }
+
+    func makeBody(configuration: Configuration) -> some View { body(configuration) }
 }

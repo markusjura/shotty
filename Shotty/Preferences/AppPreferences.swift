@@ -1,13 +1,21 @@
 import Foundation
 import Observation
 
-/// Output preferences frozen when a capture is invoked. Later Settings changes never affect it.
+/// Output preferences frozen when a capture or recording is invoked. Later Settings changes never
+/// affect it. Screenshots read the capture sections, recordings the recording section.
 struct CaptureOutputSnapshot: Equatable, Sendable {
     let capture: CapturePreferences
     let text: TextCapturePreferences
     let scrolling: ScrollingPreferences
+    let recording: RecordingPreferences
+    let gifFrameRate: GIFFrameRate
 
     var saveDirectory: URL { capture.destination.url }
+    var clipDirectory: URL { recording.destination.url }
+
+    var renderOptions: RenderOptions {
+        RenderOptions(codec: recording.codec, gifFrameRate: gifFrameRate.rawValue)
+    }
 
     var exportOptions: ExportOptions {
         ExportOptions(format: capture.format == .png ? .png : .jpeg,
@@ -25,7 +33,7 @@ struct CaptureOutputSnapshot: Equatable, Sendable {
 @MainActor @Observable
 final class AppPreferences {
     private enum Key: String {
-        case general, capture, text, scrolling, thumbnails, editor
+        case general, capture, text, scrolling, recording, thumbnails, editor
         var storageKey: String { "preferences.v1.\(rawValue)" }
     }
 
@@ -34,6 +42,7 @@ final class AppPreferences {
     private var storedCapture: CapturePreferences
     private var storedText: TextCapturePreferences
     private var storedScrolling: ScrollingPreferences
+    private var storedRecording: RecordingPreferences
     private var storedThumbnails: ThumbnailPreferences
     private var storedEditor: EditorPreferences
 
@@ -43,6 +52,7 @@ final class AppPreferences {
         storedCapture = Self.load(.capture, from: defaults, default: CapturePreferences(), isValid: \.isValid)
         storedText = Self.load(.text, from: defaults, default: TextCapturePreferences(), isValid: \.isValid)
         storedScrolling = Self.load(.scrolling, from: defaults, default: ScrollingPreferences(), isValid: \.isValid)
+        storedRecording = Self.load(.recording, from: defaults, default: RecordingPreferences(), isValid: \.isValid)
         storedThumbnails = Self.load(.thumbnails, from: defaults, default: ThumbnailPreferences(), isValid: \.isValid)
         storedEditor = Self.load(.editor, from: defaults, default: EditorPreferences(), isValid: \.isValid)
     }
@@ -67,6 +77,11 @@ final class AppPreferences {
         set { guard newValue.isValid, newValue != storedScrolling else { return }; storedScrolling = newValue; save(newValue, .scrolling) }
     }
 
+    var recording: RecordingPreferences {
+        get { storedRecording }
+        set { guard newValue.isValid, newValue != storedRecording else { return }; storedRecording = newValue; save(newValue, .recording) }
+    }
+
     var thumbnails: ThumbnailPreferences {
         get { storedThumbnails }
         set { guard newValue.isValid, newValue != storedThumbnails else { return }; storedThumbnails = newValue; save(newValue, .thumbnails) }
@@ -77,9 +92,10 @@ final class AppPreferences {
         set { guard newValue.isValid, newValue != storedEditor else { return }; storedEditor = newValue; save(newValue, .editor) }
     }
 
-    /// Freeze output choices at invocation. Pass the result through the whole capture pipeline.
+    /// Freeze output choices at invocation. Pass the result through the whole capture or recording pipeline.
     func snapshot() -> CaptureOutputSnapshot {
-        CaptureOutputSnapshot(capture: storedCapture, text: storedText, scrolling: storedScrolling)
+        CaptureOutputSnapshot(capture: storedCapture, text: storedText, scrolling: storedScrolling,
+                              recording: storedRecording, gifFrameRate: storedEditor.gifFrameRate)
     }
 
     private func save<Value: Encodable>(_ value: Value, _ key: Key) {

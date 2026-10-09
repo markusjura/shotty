@@ -339,8 +339,9 @@ struct OptionButton<Icon: View>: View {
     }
 }
 
-/// Exposes the button's view so the menu can open relative to it.
-private struct MenuAnchor: NSViewRepresentable {
+/// Exposes a button's view so the menu it pops up can open relative to it. Option buttons and the
+/// Record bar's microphone button use it.
+struct MenuAnchor: NSViewRepresentable {
     @MainActor final class Reference { weak var view: NSView? }
     private final class FlippedView: NSView { override var isFlipped: Bool { true } }
 

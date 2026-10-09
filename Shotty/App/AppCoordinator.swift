@@ -1,18 +1,25 @@
 import AppKit
 import Observation
 import SwiftUI
+import UniformTypeIdentifiers
 import os
 
+/// Owns the session: screenshots and recordings in progress, retained captures of both kinds,
+/// their thumbnails, and every output. Editors and the app delegate reach captures only through here.
 @MainActor @Observable
 final class AppCoordinator {
     let preferences: AppPreferences
     let store = CaptureSessionStore()
     let exporter = ExportService()
+    let clipExporter = ClipExporter()
     let clipboard = ClipboardWriter()
     let selector = CaptureSelector()
+    let recording = RecordingController()
+    @ObservationIgnored lazy var recordingSelector = RecordingSelector(preferences: preferences)
     @ObservationIgnored lazy var thumbnails = ThumbnailCoordinator(preferences: preferences)
-    private(set) var records: [CaptureRecord] = []
+    private(set) var records: [SessionRecord] = []
     private(set) var ready = false
+    /// True while a screenshot or recording target is being selected, and while a screenshot is taken.
     private(set) var isCapturing = false
     private var pendingAcceptances = 0
     /// Set for good once Quit starts. New captures and thumbnail actions are refused, and the
@@ -34,24 +41,34 @@ final class AppCoordinator {
     private let stillCapture = StillCaptureService()
     /// Drags need their file as they start, so they render on the main actor with their own renderer.
     @ObservationIgnored private lazy var dragRenderer = DocumentRenderer()
+    /// Rendered clips ready for a drag, by capture. A drag must hand over its file the moment it starts.
+    private var prepared: [UUID: (revision: Int, options: RenderOptions, url: URL)] = [:]
+    private var preparing: [UUID: Task<Void, Never>] = [:]
 
     /// True while relaunching would interrupt the user or lose work: before launch finishes, while
-    /// selecting, capturing, or recognizing text, while recognized text is on screen, and while any
-    /// capture is retained. Quit discards the whole session, so a capture with a visible or hidden
-    /// thumbnail, in an editor, or being exported counts.
+    /// selecting, capturing, recording, or recognizing text, while recognized text is on screen, and
+    /// while any capture is retained. Quit discards the whole session, so a capture with a visible or
+    /// hidden thumbnail, in an editor, or being exported counts.
     var hasWork: Bool {
-        !ready || isCapturing || pendingAcceptances > 0 || !records.isEmpty || !holds.isEmpty
+        !ready || isCapturing || recording.isActive || pendingAcceptances > 0 || !records.isEmpty || !holds.isEmpty
             || auxiliaryCaptureActive?() == true || textResultsOpen?() == true
     }
+
+    /// True while a selection, screenshot, recording, Capture Text, or scrolling capture is under way.
+    /// Only one runs at a time.
+    var isBusy: Bool { isCapturing || recording.isActive || auxiliaryCaptureActive?() == true }
 
     /// Tests pass preferences backed by their own defaults suite.
     init(preferences: AppPreferences = AppPreferences()) { self.preferences = preferences }
 
     func launch() async {
         thumbnails.perform = { [weak self] id, action in self?.perform(id, action: action) }
-        thumbnails.dragFile = { [weak self] id in
-            guard let self, let record = records.first(where: { $0.id == id }) else { return nil }
-            return dragFile(record.snapshot)
+        thumbnails.dragItem = { [weak self] id in
+            switch self?.records.first(where: { $0.id == id }) {
+            case .image(let record): self?.dragFile(record.snapshot).map { $0 as NSURL }
+            case .clip(let record): self?.dragItem(record.snapshot)
+            case nil: nil
+            }
         }
         thumbnails.dropped = { [weak self] id, keepCard in
             guard let self, preferences.thumbnails.dismissesAfterDrag, !keepCard else { return }
@@ -69,6 +86,10 @@ final class AppCoordinator {
         thumbnails.pausesAutoClose = { [weak self] id in
             self?.hasEditor?(id) == true || self?.outputFailures.contains(id) == true
         }
+        recording.finished = { [weak self] movie, kind, settings, ticket in
+            await self?.accept(movie, kind: kind, settings: settings, ticket: ticket)
+        }
+        recording.failed = { [weak self] error in self?.showError(error, title: "Couldn't record") }
         // Captures live only as long as the app. Whatever a crash or kill left behind goes silently.
         do {
             try CaptureScratchSpace.cleanPreviousLaunch()
@@ -80,7 +101,7 @@ final class AppCoordinator {
     }
 
     func capture(_ kind: CaptureKind) {
-        guard ready, !isClosing, !isCapturing, auxiliaryCaptureActive?() != true else { NSSound.beep(); return }
+        guard ready, !isClosing, !isBusy else { NSSound.beep(); return }
         guard CGPreflightScreenCaptureAccess() else { requestCapturePermission(); return }
         let settings = preferences.snapshot()
         let ticket = clipboard.begin()
@@ -143,7 +164,7 @@ final class AppCoordinator {
             if settings.capture.outputs.contains(.showThumbnail) { await showThumbnail(record.id, source: image) }
             if settings.capture.outputs.contains(.openEditor) { openEditor?(record.id) }
             if settings.capture.outputs.contains(.copyImage) {
-                await copy(record.id, options: settings.exportOptions, ticket: ticket, automatic: true)
+                await copy(record.id, settings: settings, ticket: ticket, automatic: true)
             }
             if settings.capture.outputs.contains(.saveImage) {
                 await save(record.id, settings: settings, dismissAfter: false, automatic: true)
@@ -151,6 +172,58 @@ final class AppCoordinator {
             if preferences.general.playsSounds { NSSound(named: "Tink")?.play() }
             return true
         } catch { showError(error, title: "Couldn't retain capture"); return false }
+    }
+
+    /// Starts a recording of `kind`, or stops the one in progress, so one shortcut both starts and stops.
+    func record(_ kind: RecordingKind) {
+        if recording.isActive { recording.stop(); return }
+        guard ready, !isClosing, !isBusy else { NSSound.beep(); return }
+        guard CGPreflightScreenCaptureAccess() else { requestCapturePermission(); return }
+        let ticket = clipboard.begin()
+        isCapturing = true
+        recordingSelector.begin(kind: kind) { [weak self] result in
+            guard let self else { return }
+            isCapturing = false
+            switch result {
+            case .success(let target):
+                guard !isClosing else { return }
+                // Space switches between area and window while selecting, so the target decides the kind.
+                let kind: RecordingKind = switch target {
+                case .region: .area
+                case .window: .window
+                case .display: .screen
+                }
+                // Settings changed from the Record bar apply to this recording.
+                recording.start(target, kind: kind, settings: preferences.snapshot(), ticket: ticket)
+            case .failure(let error):
+                if !(error is CancellationError) { showError(error, title: "Couldn't start recording") }
+            }
+        }
+    }
+
+    func stopRecording() { recording.stop() }
+
+    /// Takes a finished recording into the session and runs the outputs chosen when it started.
+    /// The movie's folder is removed afterwards, whether or not the session could keep it.
+    @discardableResult
+    func accept(_ movie: URL, kind: RecordingKind, settings: CaptureOutputSnapshot, ticket: ClipboardWriter.Ticket) async -> Bool {
+        pendingAcceptances += 1
+        defer {
+            pendingAcceptances -= 1
+            try? FileManager.default.removeItem(at: movie.deletingLastPathComponent())
+        }
+        do {
+            let record = try await store.create(movie: movie, kind: kind, format: settings.recording.format)
+            await refreshRecords()
+            let outputs = settings.recording.outputs
+            if outputs.contains(.showThumbnail) { await showThumbnail(record.id) }
+            if outputs.contains(.openEditor) { openEditor?(record.id) }
+            if outputs.contains(.copyClip) { await copy(record.id, settings: settings, ticket: ticket, automatic: true) }
+            if outputs.contains(.saveClip) { await save(record.id, settings: settings, dismissAfter: false, automatic: true) }
+            if preferences.general.playsSounds { NSSound(named: "Glass")?.play() }
+            prepare(record.id, after: .zero)
+            return true
+        } catch { showError(error, title: "Couldn't keep the recording"); return false }
     }
 
     func refreshRecords() async { records = await store.records() }
@@ -190,16 +263,19 @@ final class AppCoordinator {
 
     /// Captures among `ids` whose current revision was neither saved nor copied. Unknown IDs count
     /// as unexported, so a stale record list never hides work.
-    nonisolated static func unexportedCount(of ids: [UUID], in records: [CaptureRecord]) -> Int {
+    nonisolated static func unexportedCount(of ids: [UUID], in records: [SessionRecord]) -> Int {
         let byID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return ids.filter { id in byID[id].map { !$0.isSaved && !$0.isCopied } ?? true }.count
     }
 
-    /// Pass `source` while the unedited capture is still in memory; otherwise the store reads it back.
+    /// Pass `source` while a new screenshot is still in memory; otherwise the store reads it back.
+    /// A clip's card also shows its length.
     private func showThumbnail(_ id: UUID, source: CGImage? = nil) async {
         do {
             let image = if let source { try await store.thumbnail(of: source) } else { try await store.thumbnail(for: id) }
-            thumbnails.add(id, image: image)
+            var duration: String?
+            if case .clip(let record) = try await store.record(id) { duration = ClipTime.duration(record.snapshot.outputDuration) }
+            thumbnails.add(id, image: image, duration: duration)
         } catch { showError(error, title: "Couldn't show capture") }
     }
 
@@ -208,8 +284,8 @@ final class AppCoordinator {
         switch action {
         case .open: openEditor?(id)
         case .copy:
-            let ticket = clipboard.begin(), options = preferences.snapshot().exportOptions
-            Task { await copy(id, options: options, ticket: ticket) }
+            let ticket = clipboard.begin(), settings = preferences.snapshot()
+            Task { await copy(id, settings: settings, ticket: ticket) }
         case .save:
             let settings = preferences.snapshot()
             Task { await save(id, settings: settings, dismissAfter: preferences.thumbnails.dismissesAfterSave) }
@@ -218,16 +294,33 @@ final class AppCoordinator {
         }
     }
 
+    /// Puts the capture on the clipboard: a screenshot as PNG data, a clip as its rendered file.
     /// `automatic` outputs report failures on the card only, without an alert or activation. An
     /// automatic copy shows no checkmark, so a new card reads Copy until the user copies it.
-    func copy(_ id: UUID, options: ExportOptions, ticket: ClipboardWriter.Ticket, automatic: Bool = false) async {
+    func copy(_ id: UUID, settings: CaptureOutputSnapshot, ticket: ClipboardWriter.Ticket, automatic: Bool = false) async {
         retain(id); defer { release(id) }
         do {
-            let snapshot = try await store.snapshot(for: id)
-            var png = options; png.format = .png
-            let data = try await exporter.encodedData(snapshot, options: png)
-            if clipboard.write(data, type: .png, ticket: ticket, onPaste: pasteHandler(for: id)) {
-                try await store.markCopied(snapshot)
+            let revision: Int, written: Bool
+            switch try await store.record(id) {
+            case .image(let record):
+                var png = settings.exportOptions; png.format = .png
+                let data = try await exporter.encodedData(record.snapshot, options: png)
+                revision = record.revision
+                written = clipboard.write(data, type: .png, ticket: ticket, onPaste: pasteHandler(for: id))
+            case .clip(let record):
+                // Most copies find their render ready; one that has to wait says so on the card.
+                let progress = automatic ? nil : Task {
+                    try? await Task.sleep(for: .milliseconds(300))
+                    if !Task.isCancelled { thumbnails.update(id, feedback: .rendering) }
+                }
+                defer { progress?.cancel() }
+                let file = try await clipExporter.rendered(record.snapshot, options: settings.renderOptions)
+                progress?.cancel()
+                revision = record.revision
+                written = clipboard.write(file: file, ticket: ticket, onPaste: pasteHandler(for: id))
+            }
+            if written {
+                try await store.markCopied(id, revision: revision)
                 if !automatic { thumbnails.update(id, feedback: .copied) }
                 await refreshRecords()
             } else {
@@ -238,12 +331,15 @@ final class AppCoordinator {
         } catch { outputFailed(id, error: error, action: "copy", automatic: automatic) }
     }
 
+    /// Saves into the capture's folder under the first free name; screenshots and clips each have their own.
     func save(_ id: UUID, settings: CaptureOutputSnapshot, dismissAfter: Bool, automatic: Bool = false) async {
         retain(id); defer { release(id) }
         thumbnails.update(id, feedback: .saving)
         do {
-            let snapshot = try await store.snapshot(for: id)
-            let receipt = try await exporter.export(snapshot, to: settings.saveDirectory, options: settings.exportOptions)
+            let receipt = switch try await store.record(id) {
+            case .image(let record): try await exporter.export(record.snapshot, to: settings.saveDirectory, options: settings.exportOptions)
+            case .clip(let record): try await clipExporter.export(record.snapshot, to: settings.clipDirectory, options: settings.renderOptions)
+            }
             try await store.markSaved(receipt)
             outputFailures.remove(id)
             await refreshRecords()
@@ -264,27 +360,62 @@ final class AppCoordinator {
         }
     }
 
+    /// Saves the capture's current revision where the user picks, as a thumbnail's Save As does.
     @discardableResult
-    func saveAs(_ id: UUID, snapshot requested: CaptureSnapshot? = nil) async -> Bool {
-        retain(id); thumbnails.lock(true)
-        defer { release(id); thumbnails.lock(false) }
+    func saveAs(_ id: UUID) async -> Bool {
+        retain(id); defer { release(id) }
         do {
-            let snapshot: CaptureSnapshot
-            if let requested { snapshot = requested } else { snapshot = try await store.snapshot(for: id) }
-            let settings = preferences.snapshot()
-            let panel = NSSavePanel()
-            panel.allowedContentTypes = [.png, .jpeg]
-            panel.canCreateDirectories = true
-            panel.directoryURL = settings.saveDirectory
-            panel.nameFieldStringValue = ExportService.filename(stem: ExportService.filenameStem(date: snapshot.createdAt),
-                                                                scale: snapshot.sourceScale, options: settings.exportOptions)
-            NSApp.activate()
-            guard await panel.begin() == .OK, let destination = panel.url else { return false }
+            switch try await store.record(id) {
+            case .image(let record): return await saveAs(record.snapshot)
+            case .clip(let record): return await saveAs(record.snapshot)
+            }
+        } catch { outputFailed(id, error: error, action: "save"); return false }
+    }
+
+    /// Saves `snapshot`, such as the image editor's current revision, as PNG or JPEG.
+    @discardableResult
+    func saveAs(_ snapshot: CaptureSnapshot) async -> Bool {
+        let settings = preferences.snapshot()
+        let name = ExportService.filename(stem: ExportService.filenameStem(date: snapshot.createdAt), scale: snapshot.sourceScale,
+                                          options: settings.exportOptions)
+        return await saveAs(snapshot.captureID, types: [.png, .jpeg], in: settings.saveDirectory, name: name) { [exporter] destination in
             var options = settings.exportOptions
             options.format = ["jpg", "jpeg"].contains(destination.pathExtension.lowercased()) ? .jpeg : .png
-            thumbnails.update(id, feedback: .saving)
+            // The panel already confirmed replacing an existing file.
             let expected = try? await exporter.fingerprint(at: destination)
-            let receipt = try await exporter.save(snapshot, to: destination, options: options, replacing: expected)
+            return try await exporter.save(snapshot, to: destination, options: options, replacing: expected)
+        }
+    }
+
+    /// Saves `snapshot`, such as the video editor's current revision, in its clip format.
+    @discardableResult
+    func saveAs(_ snapshot: ClipSnapshot) async -> Bool {
+        let settings = preferences.snapshot()
+        let format = snapshot.edit.format
+        let name = ClipExporter.filename(stem: ClipExporter.filenameStem(date: snapshot.createdAt), format: format)
+        return await saveAs(snapshot.captureID, types: [format == .gif ? .gif : .mpeg4Movie], in: settings.clipDirectory,
+                            name: name) { [clipExporter] destination in
+            // The panel already confirmed replacing an existing file.
+            let expected = try? await clipExporter.fingerprint(at: destination)
+            return try await clipExporter.save(snapshot, to: destination, options: settings.renderOptions, replacing: expected)
+        }
+    }
+
+    /// Asks where to save capture `id`, then hands the destination to `write`.
+    private func saveAs(_ id: UUID, types: [UTType], in directory: URL, name: String,
+                        write: (URL) async throws -> ExportReceipt) async -> Bool {
+        retain(id); thumbnails.lock(true)
+        defer { release(id); thumbnails.lock(false) }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = types
+        panel.canCreateDirectories = true
+        panel.directoryURL = directory
+        panel.nameFieldStringValue = name
+        NSApp.activate()
+        guard await panel.begin() == .OK, let destination = panel.url else { return false }
+        thumbnails.update(id, feedback: .saving)
+        do {
+            let receipt = try await write(destination)
             try await store.markSaved(receipt)
             outputFailures.remove(id)
             await refreshRecords()
@@ -321,6 +452,16 @@ final class AppCoordinator {
         if let count = holds[id], count > 1 { holds[id] = count - 1 } else { holds.removeValue(forKey: id) }
         removeIfUnreferenced(id)
     }
+    /// Refreshes what depends on a clip's edits once the video editor stores them as its next revision.
+    func editsChanged(_ id: UUID) async {
+        await refreshRecords()
+        if thumbnails.cards.contains(where: { $0.id == id }),
+           let image = try? await store.thumbnail(for: id), let snapshot = try? await store.clipSnapshot(for: id) {
+            thumbnails.replace(id, image: image, duration: ClipTime.duration(snapshot.outputDuration))
+        }
+        // Edits often come in runs, such as several trims; render once they settle.
+        prepare(id, after: .seconds(1))
+    }
     func keepEditedCapture(_ id: UUID) async {
         dismissed.remove(id)
         await refreshRecords()
@@ -335,11 +476,18 @@ final class AppCoordinator {
         // During Quit, discarding the session removes every capture at once.
         guard !isClosing, dismissed.contains(id), holds[id] == nil, hasEditor?(id) != true else { return }
         dismissed.remove(id)
+        prepared[id] = nil
+        preparing.removeValue(forKey: id)?.cancel()
         Task {
-            do { try await store.remove(id); await refreshRecords() }
-            catch { showError(error, title: "Couldn't dismiss capture") }
+            do {
+                try await store.remove(id)
+                await clipExporter.forget(id)
+                await refreshRecords()
+            } catch { showError(error, title: "Couldn't dismiss capture") }
         }
     }
+
+    // MARK: Drags
 
     /// Exports the capture to a file for a drag. A plain file URL works in Finder and in Chromium and
     /// Electron apps such as Slack or ChatGPT, which ignore file promises. Receivers may read the file
@@ -347,12 +495,11 @@ final class AppCoordinator {
     /// space, which the next launch clears.
     func dragFile(_ snapshot: CaptureSnapshot) -> URL? {
         let options = preferences.snapshot().exportOptions
-        let directory = CaptureScratchSpace.directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let url = directory.appendingPathComponent(ExportService.filename(
-            stem: ExportService.filenameStem(date: snapshot.createdAt), scale: snapshot.sourceScale, options: options))
+        let name = ExportService.filename(stem: ExportService.filenameStem(date: snapshot.createdAt), scale: snapshot.sourceScale,
+                                          options: options)
         do {
             let data = try ExportService.encodedData(snapshot, options: options, renderer: dragRenderer)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+            let url = try CaptureScratchSpace.makeFolder().appendingPathComponent(name)
             try data.write(to: url)
             return url
         } catch {
@@ -361,13 +508,68 @@ final class AppCoordinator {
         }
     }
 
-    /// Quit asks nothing. Captures in progress are cancelled, a running save
+    /// What a drag of the clip `snapshot` carries. A plain file URL works in Finder and in Chromium and
+    /// Electron apps such as Slack or ChatGPT, which ignore file promises, so a rendered file is
+    /// preferred. An unedited MP4 is cloned on the spot. Only an edit still rendering, or one rendered
+    /// with other settings, falls back to a file promise, which Finder, Mail, and Messages fulfil once
+    /// the render finishes. The render keeps going, so the next drag hands over a file.
+    func dragItem(_ snapshot: ClipSnapshot) -> NSPasteboardWriting? {
+        let options = preferences.snapshot().renderOptions
+        if let file = prepared[snapshot.captureID], file.revision == snapshot.revision, file.options == options,
+           FileManager.default.fileExists(atPath: file.url.path) {
+            return file.url as NSURL
+        }
+        let name = ClipExporter.filename(stem: ClipExporter.filenameStem(date: snapshot.createdAt), format: snapshot.edit.format)
+        do {
+            let folder = try CaptureScratchSpace.makeFolder()
+            if snapshot.edit.isPassthrough(sourceSize: snapshot.pixelSize, sourceDuration: snapshot.duration) {
+                let url = folder.appendingPathComponent(name)
+                try FileManager.default.copyItem(at: snapshot.sourceURL, to: url)
+                return url as NSURL
+            }
+            // The drop can dismiss the clip, deleting its recording, before the receiver asks for the
+            // file. The promise renders from a clone instead, which APFS makes instantly.
+            var clone = snapshot
+            clone.sourceURL = folder.appendingPathComponent(snapshot.sourceURL.lastPathComponent)
+            try FileManager.default.copyItem(at: snapshot.sourceURL, to: clone.sourceURL)
+            let promise = ClipFilePromise(snapshot: clone, options: options, exporter: clipExporter, filename: name)
+            let provider = NSFilePromiseProvider(fileType: (snapshot.edit.format == .gif ? UTType.gif : .mpeg4Movie).identifier,
+                                                 delegate: promise)
+            provider.userInfo = promise
+            prepare(snapshot.captureID, after: .zero)
+            return provider
+        } catch {
+            outputFailed(snapshot.captureID, error: error, action: "export")
+            return nil
+        }
+    }
+
+    /// Renders the clip's current revision in the background after `delay`, so a drag can hand
+    /// over a finished file. A newer call for the same clip replaces a pending one and waits for a
+    /// render already under way, so a run of edits never renders a long clip several times at once.
+    private func prepare(_ id: UUID, after delay: Duration) {
+        let previous = preparing[id]
+        previous?.cancel()
+        let options = preferences.snapshot().renderOptions
+        preparing[id] = Task {
+            await previous?.value
+            do { try await Task.sleep(for: delay) } catch { return }
+            guard let snapshot = try? await store.clipSnapshot(for: id),
+                  let url = try? await clipExporter.rendered(snapshot, options: options),
+                  records.first(where: { $0.id == id })?.revision == snapshot.revision else { return }
+            prepared[id] = (snapshot.revision, options, url)
+        }
+    }
+
+    /// Quit asks nothing. Captures and recordings in progress are discarded, a running save
     /// finishes writing, and the session is discarded, so thumbnails simply disappear.
     /// Saved files are never touched.
     func prepareToQuit() async -> Bool {
         guard ready else { return true }
         isClosing = true
         selector.cancel()
+        recordingSelector.cancel()
+        await recording.shutdown()
         await stopAuxiliaryCapture?()
         await captureTask?.value
         // Exports read session sources; wait for them, but never hang Quit on a stuck one.
@@ -384,7 +586,7 @@ final class AppCoordinator {
 
     private func requestCapturePermission() {
         let alert = NSAlert(); alert.messageText = "Allow Shotty to capture your screen"
-        alert.informativeText = "Screen Recording access lets Shotty capture images and recognize text locally on this Mac."
+        alert.informativeText = "Screen Recording access lets Shotty capture images, record clips, and recognize text locally on this Mac."
         alert.addButton(withTitle: "Open Screen Recording Settings"); alert.addButton(withTitle: "Cancel")
         NSApp.activate()
         if alert.runModal() == .alertFirstButtonReturn {

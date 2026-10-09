@@ -1,16 +1,15 @@
-import AppKit
 import SwiftUI
 import Vision
 
+/// Screenshot settings, including Capture Text and scrolling capture.
 struct CaptureSettingsPane: View {
     @Bindable var preferences: AppPreferences
-    @State private var destinationMessage: String?
     @State private var recognitionLanguages: [String] = []
 
     var body: some View {
         Form {
             outputSection
-            destinationSection
+            SaveLocationSection(destination: $preferences.capture.destination)
             imageSection
             selectionSection
             textSection
@@ -30,26 +29,6 @@ struct CaptureSettingsPane: View {
             if preferences.capture.outputs.count == 1 {
                 Text("At least one option must be enabled.")
                     .settingsNote()
-            }
-            Toggle("Dismiss thumbnail after pasting", isOn: $preferences.thumbnails.dismissesAfterPaste)
-                .settingsRowNote(preferences.thumbnails.dismissesAfterPaste && !AXIsProcessTrusted()
-                                 ? "Needs Accessibility access to notice ⌘V in other apps." : nil)
-        }
-    }
-
-    private var destinationSection: some View {
-        Section("Save location") {
-            LabeledContent("Folder") {
-                HStack(spacing: 8) {
-                    Text(FileManager.default.displayName(atPath: preferences.capture.destination.url.path))
-                        .settingsValue()
-                        .help(preferences.capture.destination.url.path)
-                    Button("Choose…", action: chooseFolder)
-                }
-            }
-            .settingsRowWarning(destinationMessage ?? SaveDestinationCheck.status(of: preferences.capture.destination.url).message)
-            if preferences.capture.destination != .downloads {
-                Button("Use Downloads") { apply(SaveDestination.downloads) }
             }
         }
     }
@@ -174,29 +153,6 @@ struct CaptureSettingsPane: View {
             preferences[keyPath: keyPath].contains(element)
         } set: { isOn in
             if isOn { preferences[keyPath: keyPath].insert(element) } else { preferences[keyPath: keyPath].remove(element) }
-        }
-    }
-
-    /// The previous folder stays selected unless the new one proves writable.
-    private func chooseFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.directoryURL = preferences.capture.destination.url
-        panel.prompt = "Choose"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        let downloads = SaveDestination.downloads.url.standardizedFileURL
-        apply(url.standardizedFileURL == downloads ? .downloads : .folder(url))
-    }
-
-    private func apply(_ destination: SaveDestination) {
-        if let message = SaveDestinationCheck.verifyWritable(destination.url).message {
-            destinationMessage = message
-        } else {
-            destinationMessage = nil
-            preferences.capture.destination = destination
         }
     }
 

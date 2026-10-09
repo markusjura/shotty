@@ -15,7 +15,7 @@ final class ThumbnailShortcutTests: XCTestCase {
 
         XCTAssertEqual(thumbnails.cardAction(for: copy), .copy)
         XCTAssertEqual(thumbnails.cardAction(for: Shortcut(kVK_ANSI_S, [.shift, .command])), .saveAs)
-        XCTAssertNil(registry.assign(remapped, to: .copyImage))
+        XCTAssertNil(registry.assign(remapped, to: .copy))
         XCTAssertNil(thumbnails.cardAction(for: copy), "The old key no longer copies")
         XCTAssertEqual(thumbnails.cardAction(for: remapped), .copy)
         XCTAssertEqual(thumbnails.shortcut(for: .copy), remapped, "Context menus show the current binding")

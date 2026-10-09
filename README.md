@@ -1,6 +1,6 @@
 # Shotty
 
-A native macOS screenshot utility tailored to Markus's workflow.
+A native macOS screenshot and screen recording utility tailored to Markus's workflow. Capture an area, a window, the screen, a scrolling page, or text, or record an area, a window, or a screen as a clip. Every capture lands as a thumbnail in the bottom left corner. Drag it into any app, or click it to annotate a screenshot or to trim, crop, and export a clip as MP4 or GIF.
 
 ## Install
 
@@ -11,7 +11,7 @@ Shotty needs macOS 26 or later.
 3. Open Shotty from Applications. macOS says it can't verify Shotty, because Shotty isn't notarized by Apple. Click Done.
 4. Open System Settings > Privacy & Security, click Open Anyway next to the message about Shotty, and confirm with your password.
 
-Shotty runs from the menu bar. On your first capture, it asks you to allow Screen Recording in System Settings. Auto Scroll asks for Accessibility the first time you start it.
+Shotty runs from the menu bar. On your first capture, it asks you to allow Screen Recording in System Settings. Auto Scroll asks for Accessibility the first time you start it, and a recording with the microphone on asks for Microphone access.
 
 ## Build and test
 
@@ -24,7 +24,7 @@ Scripts/xcode.sh release build
 Scripts/test.sh
 ```
 
-`Scripts/xcode.sh release build` builds the signed Release app at `.build/Build/Products/Release/Shotty.app`. The target uses Hardened Runtime, no App Sandbox, and no entitlements. This is private Apple Development signing, not a notarized Developer ID release, so a copied build may not launch as trusted on another Mac.
+`Scripts/xcode.sh release build` builds the signed Release app at `.build/Build/Products/Release/Shotty.app`. The target uses Hardened Runtime and no App Sandbox. Its only entitlement, audio input in `Config/Shotty.entitlements`, lets Hardened Runtime record the microphone. This is private Apple Development signing, not a notarized Developer ID release, so a copied build may not launch as trusted on another Mac.
 
 ## Develop
 
@@ -64,8 +64,9 @@ Install on any fleet Mac as above. Fleet sync from `markusjura/mac-settings` the
 
 Grant permissions to the installed `/Applications/Shotty.app`. Shotty Dev has its own bundle ID, so it needs its own grants once; they then survive rebuilds. Grants are per Mac; signing does not carry them to another machine.
 
-- **Screen Recording** is required for every capture mode, including OCR. Shotty asks on the first capture and links to System Settings > Privacy & Security > Screen & System Audio Recording. macOS may require relaunching Shotty after granting it.
-- **Accessibility** is needed only for Auto Scroll and for "Dismiss thumbnail after pasting", which watches for ⌘V in other apps. Auto Scroll asks for it when you start it; manual scrolling capture works without it.
-- Input Monitoring, Full Disk Access, camera, and microphone are not needed.
+- **Screen Recording** is required for every capture and recording mode, including OCR and system audio. Shotty asks on the first capture and links to System Settings > Privacy & Security > Screen & System Audio Recording. macOS may require relaunching Shotty after granting it.
+- **Microphone** is needed only for recording your microphone into clips. Shotty asks the first time you record with the microphone on, which you pick in the Record bar.
+- **Accessibility** is needed only for Auto Scroll and for Thumbnails > "Dismiss after pasting", which watches for ⌘V in other apps. Auto Scroll asks for it when you start it; manual scrolling capture works without it.
+- Input Monitoring, Full Disk Access, and camera are not needed.
 
 Keeping the bundle ID and signing identity stable keeps these grants across updates. Grants have survived signed Release replacements with an unchanged designated requirement, including fleet installs.

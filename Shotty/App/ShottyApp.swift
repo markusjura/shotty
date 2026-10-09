@@ -21,53 +21,79 @@ struct ShottyApp: App {
             SwiftUI.CommandGroup(replacing: .appSettings) { SettingsButton() }
             SwiftUI.CommandGroup(after: .appInfo) {
                 ForEach(CommandGroup.capture.commands, id: \.self) { commandButton($0) }
+                Divider()
+                ForEach(CommandGroup.record.commands, id: \.self) { commandButton($0) }
             }
             SwiftUI.CommandGroup(after: .pasteboard) {
-                ForEach(CommandGroup.editor.commands.filter { $0.tool == nil && !Self.zoomCommands.contains($0) }, id: \.self) {
+                ForEach(CommandGroup.editor.commands.filter { $0.scope == .editor && !Self.zoomCommands.contains($0) }, id: \.self) {
                     commandButton($0)
                 }
             }
-            // Tool keys stay routed by the focused editor canvas; plain-letter menu equivalents
+            // Plain-key commands stay routed by the focused editor; plain-letter menu equivalents
             // would fire while typing, so these items carry no shortcut.
             CommandMenu("Tools") {
                 ForEach(CommandGroup.editor.commands.filter { $0.tool != nil }, id: \.self) { commandButton($0, shortcut: false) }
+            }
+            CommandMenu("Clip") {
+                ForEach(CommandGroup.videoEditor.commands.filter { $0.scope == .editorKey }, id: \.self) {
+                    commandButton($0, shortcut: false)
+                }
             }
             SwiftUI.CommandGroup(after: .toolbar) {
                 ForEach(CommandGroup.thumbnails.commands, id: \.self) { commandButton($0) }
                 Divider()
                 ForEach(Self.zoomCommands, id: \.self) { commandButton($0) }
+                Divider()
+                // A checkmarked item, like QuickTime's View > Loop, that flips the video editor preference.
+                Toggle(CommandID.loopPlayback.title, isOn: Binding(
+                    get: { delegate.coordinator.preferences.editor.loopsPlayback },
+                    set: { _ in delegate.execute(.loopPlayback) }))
+                    .keyboardShortcut(delegate.commands.shortcut(for: .loopPlayback)?.keyboardShortcut)
+                    .disabled(!delegate.commands.isAvailable(.loopPlayback))
             }
         }
         MenuBarExtra(isInserted: Binding(
             get: { delegate.coordinator.preferences.general.showsMenuBarIcon },
             set: { delegate.coordinator.preferences.general.showsMenuBarIcon = $0 })) {
-            ForEach(CommandGroup.capture.commands, id: \.self) { commandButton($0) }
-            Divider()
-            ForEach(CommandGroup.thumbnails.commands, id: \.self) { commandButton($0) }
-            Divider()
-            UpdateMenuItem(updater: delegate.updater)
-            SettingsButton()
-            Button("Quit Shotty") { NSApp.terminate(nil) }.keyboardShortcut("q")
+            MenuBarContent(delegate: delegate)
         } label: {
-            // A blue dot marks an update that needs the user.
-            Image(nsImage: delegate.updater.needsAttention ? Self.menuBarIconWithDot : Self.menuBarIcon)
+            MenuBarLabel(recording: delegate.coordinator.recording, showsUpdateDot: delegate.updater.needsAttention)
         }
     }
 
-    /// The menu bar `viewfinder`, larger and heavier than the default status item symbol so it matches
-    /// system items such as Time Machine and Display in size and stroke weight.
-    private static let menuBarIcon: NSImage = {
-        let symbol = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "Shotty")!
-        let image = symbol.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .medium))!
-        image.isTemplate = true
-        return image
-    }()
+    /// Editor zoom lives in the View menu with the thumbnail commands, not with the other editor commands.
+    private static let zoomCommands: [CommandID] = [.zoomIn, .zoomOut, .zoomToFit, .actualSize]
+
+    /// A menu item for a command, with its current shortcut and availability.
+    private func commandButton(_ command: CommandID, shortcut: Bool = true) -> some View {
+        Button(delegate.menuTitle(for: command)) { delegate.execute(command) }
+            .keyboardShortcut(shortcut ? delegate.commands.shortcut(for: command)?.keyboardShortcut : nil)
+            .disabled(!delegate.commands.isAvailable(command))
+    }
+}
+
+/// The menu bar item: a `viewfinder`, or a stop square while recording. A blue dot marks an update
+/// that needs the user. macOS shows its own screen recording item, a stop square in a circle,
+/// beside it. The label must stay static between state changes: a `TimelineView` here re-renders
+/// the status item in an endless loop.
+private struct MenuBarLabel: View {
+    let recording: RecordingController
+    let showsUpdateDot: Bool
+
+    var body: some View {
+        Image(nsImage: recording.isActive ? Self.recordingIcon : showsUpdateDot ? Self.iconWithDot : Self.icon)
+    }
+
+    /// Larger and heavier than the default status item symbol, so it matches system items such as
+    /// Time Machine and Display in size and stroke weight.
+    private static let icon = symbol("viewfinder", description: "Shotty")
+    private static let recordingIcon = symbol("stop.fill", description: "Shotty is recording")
 
     /// The icon with a blue dot in its top right corner. A template image can't carry color, so this
     /// one draws the glyph itself in the menu bar's label color, resolved each time it draws.
-    private static let menuBarIconWithDot: NSImage = {
-        let image = NSImage(size: menuBarIcon.size, flipped: false) { bounds in
-            menuBarIcon.draw(in: bounds)
+    private static let iconWithDot: NSImage = {
+        let image = NSImage(size: icon.size, flipped: false) { bounds in
+            icon.draw(in: bounds)
             NSColor.labelColor.set()
             bounds.fill(using: .sourceAtop)
             let dot = CGRect(x: bounds.maxX - 6, y: bounds.maxY - 6, width: 6, height: 6)
@@ -84,13 +110,40 @@ struct ShottyApp: App {
         return image
     }()
 
-    /// Editor zoom lives in the View menu with the thumbnail commands, not with the other editor commands.
-    private static let zoomCommands: [CommandID] = [.zoomIn, .zoomOut, .zoomToFit, .actualSize]
+    private static func symbol(_ name: String, description: String) -> NSImage {
+        let symbol = NSImage(systemSymbolName: name, accessibilityDescription: description)!
+        let image = symbol.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .medium))!
+        image.isTemplate = true
+        return image
+    }
+}
 
-    /// A menu item for a command, with its current shortcut and availability.
-    private func commandButton(_ command: CommandID, shortcut: Bool = true) -> some View {
+/// The menu bar menu: the screenshot commands, then the recording commands. While recording it
+/// offers Stop, Pause, and Discard instead.
+private struct MenuBarContent: View {
+    let delegate: ShottyApplicationDelegate
+
+    var body: some View {
+        let recording = delegate.coordinator.recording
+        if recording.isActive {
+            item(.stopRecording)
+            Button(recording.isPaused ? "Resume Recording" : "Pause Recording") { recording.togglePause() }
+                .disabled(recording.phase != .recording && recording.phase != .paused)
+            Button("Discard Recording") { recording.cancel() }
+        } else {
+            ForEach(CommandGroup.capture.commands, id: \.self) { item($0) }
+            Divider()
+            ForEach(CommandGroup.record.commands.filter { $0 != .stopRecording }, id: \.self) { item($0) }
+        }
+        Divider()
+        UpdateMenuItem(updater: delegate.updater)
+        SettingsButton()
+        Button("Quit Shotty") { NSApp.terminate(nil) }.keyboardShortcut("q")
+    }
+
+    private func item(_ command: CommandID) -> some View {
         Button(command.title) { delegate.execute(command) }
-            .keyboardShortcut(shortcut ? delegate.commands.shortcut(for: command)?.keyboardShortcut : nil)
+            .keyboardShortcut(delegate.commands.shortcut(for: command)?.keyboardShortcut)
             .disabled(!delegate.commands.isAvailable(command))
     }
 }
@@ -105,7 +158,7 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
     private var hotKeys: GlobalHotKeyCenter?
     private var terminating = false
     /// While any editor is open, Shotty is a regular app with its menu bar, Dock icon, and app switcher entry.
-    private var editors: [UUID: EditorWindowController] = [:] { didSet { updateActivationPolicy() } }
+    private var editors: [UUID: any CaptureEditor] = [:] { didSet { updateActivationPolicy() } }
     private var openingEditors = Set<UUID>()
     /// Open Settings makes Shotty a regular app, so the window gets a Dock icon, a Cmd-Tab entry,
     /// and the app menu, and window switchers list it like any other window.
@@ -136,11 +189,15 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
         coordinator.hasEditor = { [weak self] in self?.editors[$0] != nil || self?.openingEditors.contains($0) == true }
         commands.availability = { [weak self] command in
             guard let self, coordinator.ready else { return false }
+            let recording = coordinator.recording
             switch command.scope {
             case .global:
-                if command.captureKind != nil { return !coordinator.isCapturing && coordinator.auxiliaryCaptureActive?() != true }
+                if command == .stopRecording { return recording.isActive }
+                if command.captureKind != nil { return !coordinator.isBusy }
+                // A record command also stops the recording in progress.
+                if command.recordingKind != nil { return recording.isActive ? recording.phase != .finishing : !coordinator.isBusy }
                 return !coordinator.records.isEmpty
-            case .editor, .editorTool: return editors.values.contains { $0.window === NSApp.keyWindow }
+            case .editor, .editorKey: return keyEditor?.handles(command) == true
             }
         }
         observePreferences()
@@ -196,18 +253,29 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
     func execute(_ command: CommandID) {
         guard commands.isAvailable(command) else { return }
         if let kind = command.captureKind { coordinator.capture(kind); return }
+        if let kind = command.recordingKind { coordinator.record(kind); return }
         switch command {
+        case .stopRecording: coordinator.stopRecording()
         case .showThumbnails: coordinator.showAllThumbnails()
         case .hideThumbnails: coordinator.hideThumbnails()
         case .openLatest:
             if let record = coordinator.records.last { coordinator.openEditor?(record.id) }
         case .saveAll: coordinator.saveAll()
         case .dismissAll: coordinator.dismissAllThumbnails()
-        default:
-            editors.values.first { $0.window === NSApp.keyWindow }?.model.execute(command)
+        default: keyEditor?.execute(command)
         }
     }
 
+    private var keyEditor: (any CaptureEditor)? { editors.values.first { $0.window === NSApp.keyWindow } }
+
+    /// Menu titles follow the focused editor, so Copy names what it copies. Menus re-render on
+    /// `CommandRegistry.contextDidChange()`, which editors call as they gain and lose focus.
+    func menuTitle(for command: CommandID) -> String {
+        guard command == .copy else { return command.title }
+        return keyEditor is ClipEditorWindowController ? "Copy Clip" : "Copy Image"
+    }
+
+    /// Opens the image editor for a screenshot or the video editor for a clip.
     private func openEditor(_ id: UUID) {
         if let editor = editors[id] { bringForward(editor.window); return }
         guard !openingEditors.contains(id) else { return }
@@ -215,9 +283,15 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
         Task { [self] in
             defer { openingEditors.remove(id); coordinator.release(id) }
             do {
-                guard let record = await coordinator.store.records().first(where: { $0.id == id }) else { return }
-                let image = try await coordinator.store.image(for: id)
-                let editor = EditorWindowController(record: record, image: image, coordinator: coordinator, commands: commands)
+                let editor: any CaptureEditor
+                switch await coordinator.store.records().first(where: { $0.id == id }) {
+                case .image(let record):
+                    let image = try await coordinator.store.image(for: id)
+                    editor = EditorWindowController(record: record, image: image, coordinator: coordinator, commands: commands)
+                case .clip(let record):
+                    editor = ClipEditorWindowController(record: record, coordinator: coordinator, commands: commands)
+                case nil: return
+                }
                 editors[id] = editor
                 editor.didClose = { [weak self] in
                     self?.editors.removeValue(forKey: id); self?.coordinator.editorClosed(id)
@@ -227,10 +301,10 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Clicks on thumbnails don't activate Shotty, and an editor opened after a capture appears
-    /// while another app is active. macOS refuses a plain `activate()` then, so the editor would
-    /// show without keyboard focus and its shortcuts wouldn't reach it. Ordering the window front
-    /// regardless still shows it if activation fails anyway.
+    /// Clicks on thumbnails don't activate Shotty, and an editor opened after a capture or recording
+    /// appears while another app is active. macOS refuses a plain `activate()` then, so the editor
+    /// would show without keyboard focus and its shortcuts wouldn't reach it. Ordering the window
+    /// front regardless still shows it if activation fails anyway.
     private func bringForward(_ window: NSWindow?) {
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)

@@ -23,13 +23,14 @@ final class CommandRegistryTests: XCTestCase {
             XCTAssertEqual(registry.shortcut(for: id), id.defaultShortcut, id.rawValue)
             if let shortcut = id.defaultShortcut { XCTAssertNil(registry.problem(assigning: shortcut, to: id), id.rawValue) }
         }
-        XCTAssertTrue((CommandGroup.capture.commands + CommandGroup.thumbnails.commands).allSatisfy { $0.defaultShortcut == nil && $0.scope == .global })
+        XCTAssertTrue((CommandGroup.capture.commands + CommandGroup.record.commands + CommandGroup.thumbnails.commands)
+            .allSatisfy { $0.defaultShortcut == nil && $0.scope == .global })
     }
 
     func testRejectedAssignmentsExplainWhyAndChangeNothing() {
         let registry = CommandRegistry(defaults: defaults)
         let before = registry.bindings
-        XCTAssertEqual(registry.assign(Shortcut(kVK_ANSI_S, .command), to: .copyImage), .conflict(.save))
+        XCTAssertEqual(registry.assign(Shortcut(kVK_ANSI_S, .command), to: .copy), .conflict(.save))
         XCTAssertEqual(registry.assign(Shortcut(kVK_ANSI_4, [.option, .shift]), to: .captureArea), .needsCommandOrControl)
         XCTAssertEqual(registry.assign(Shortcut(kVK_ANSI_X), to: .duplicate), .needsCommandOrControl)
         XCTAssertEqual(registry.assign(Shortcut(kVK_ANSI_Q, .command), to: .openLatest), .reserved)
@@ -115,13 +116,31 @@ final class CommandRegistryTests: XCTestCase {
 
     func testLocalRoutingOnlyMatchesRequestedScopes() {
         let registry = CommandRegistry(defaults: defaults)
-        let local: Set<CommandScope> = [.editorTool, .editor]
+        let local: Set<CommandScope> = [.editorKey, .editor]
         XCTAssertEqual(registry.command(matching: Shortcut(kVK_ANSI_T), in: local), .toolText)
-        XCTAssertEqual(registry.command(matching: Shortcut(kVK_ANSI_C, [.shift, .command]), in: local), .copyImage)
+        XCTAssertEqual(registry.command(matching: Shortcut(kVK_ANSI_C, [.shift, .command]), in: local), .copy)
         let captureText = Shortcut(kVK_ANSI_T, [.control, .option, .command])
         XCTAssertNil(registry.assign(captureText, to: .captureText))
         XCTAssertNil(registry.command(matching: captureText, in: local))
         XCTAssertEqual(registry.command(matching: captureText, in: [.global]), .captureText)
+    }
+
+    /// Both editors route plain keys the same way, so the video editor's keys must never take a tool's.
+    /// Copy was named `copyImage` before clips existed; bindings stored under that name still apply.
+    func testVideoEditorKeysRouteLikeToolsAndStoredCopyBindingsSurviveTheRename() throws {
+        let custom = Shortcut(kVK_ANSI_C, [.control, .command])
+        let stored: [String: Shortcut?] = ["copyImage": custom]
+        defaults.set(try JSONEncoder().encode(stored), forKey: CommandRegistry.storageKey)
+        let registry = CommandRegistry(defaults: defaults)
+        XCTAssertEqual(registry.shortcut(for: .copy), custom)
+
+        let local: Set<CommandScope> = [.editorKey, .editor]
+        XCTAssertEqual(registry.command(matching: Shortcut(kVK_ANSI_I), in: local), .trimStart)
+        XCTAssertNil(registry.command(matching: Shortcut(kVK_ANSI_I), in: local, isTextEditing: true), "Typing a crop size types I")
+        XCTAssertEqual(registry.command(matching: Shortcut(kVK_ANSI_L, .command), in: local), .loopPlayback)
+        XCTAssertEqual(registry.assign(Shortcut(kVK_ANSI_M), to: .toolLine), .conflict(.toggleAudio))
+        XCTAssertEqual(registry.assign(Shortcut(kVK_ANSI_R, [.shift, .command]), to: .stopRecording), nil)
+        XCTAssertEqual(registry.command(matching: Shortcut(kVK_ANSI_R, [.shift, .command]), in: [.global]), .stopRecording)
     }
 
     func testRecordedEventsIgnoreModifierOnlyKeys() throws {
@@ -144,12 +163,12 @@ final class CommandRegistryTests: XCTestCase {
         let shortcut = CommandID.toolArrow.defaultShortcut!
         var arrowAvailable = false
         registry.availability = { $0 != .toolArrow || arrowAvailable }
-        XCTAssertNil(registry.command(matching: shortcut, in: [.editorTool]))
+        XCTAssertNil(registry.command(matching: shortcut, in: [.editorKey]))
         arrowAvailable = true
-        XCTAssertEqual(registry.command(matching: shortcut, in: [.editorTool]), .toolArrow)
-        XCTAssertNil(registry.command(matching: shortcut, in: [.editorTool], isTextEditing: true))
+        XCTAssertEqual(registry.command(matching: shortcut, in: [.editorKey]), .toolArrow)
+        XCTAssertNil(registry.command(matching: shortcut, in: [.editorKey], isTextEditing: true))
         registry.recordingCommand = .captureArea
-        XCTAssertNil(registry.command(matching: shortcut, in: [.editorTool]))
+        XCTAssertNil(registry.command(matching: shortcut, in: [.editorKey]))
         XCTAssertFalse(registry.isAvailable(.captureFullscreen))
         registry.recordingCommand = nil
         var hasCaptures = false
@@ -166,7 +185,7 @@ final class CommandRegistryTests: XCTestCase {
         XCTAssertEqual(registry.assign(invalid, to: .save), .unsupported)
         XCTAssertEqual(registry.assign(invalidFlags, to: .toolArrow), .unsupported)
         XCTAssertEqual(registry.assign(Shortcut(kVK_Delete, .command), to: .toolArrow), .reservedForEditing)
-        XCTAssertEqual(registry.assign(Shortcut(kVK_LeftArrow, .command), to: .copyImage), .reservedForEditing)
+        XCTAssertEqual(registry.assign(Shortcut(kVK_LeftArrow, .command), to: .copy), .reservedForEditing)
         XCTAssertNil(registry.problem(assigning: CommandID.done.defaultShortcut!, to: .done))
         let stored: [String: Shortcut?] = ["save": invalid, "toolArrow": invalidFlags]
         defaults.set(try JSONEncoder().encode(stored), forKey: CommandRegistry.storageKey)
