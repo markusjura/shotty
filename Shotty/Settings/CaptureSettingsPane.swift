@@ -75,7 +75,8 @@ struct CaptureSettingsPane: View {
 
     private var selectionSection: some View {
         Section("Selection") {
-            Toggle("Freeze screen while selecting", isOn: $preferences.capture.freezesScreen)
+            Toggle("Freeze screen", isOn: $preferences.capture.freezesScreen)
+                .settingsRowNote("Holds the screen still while you select, so you can capture hover effects, animations, and moving content.")
             Toggle("Include window shadow", isOn: $preferences.capture.includesWindowShadow)
                 .help("Hold Option while capturing a window to invert this once.")
         }
