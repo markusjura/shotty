@@ -24,7 +24,8 @@ This file documents guidance for agents working in this repository. Record only 
 - Posted clicks on an open pop-up menu's items sometimes miss and close the menu without choosing. Pick menu items with the arrow keys (`key 125`) and Return (`key 36`) instead.
 - Don't script Finder or TextEdit with osascript. It hangs behind an Automation prompt. Use `windows`, `close`, and `text` instead.
 - Use Computer Use for exploratory checks, judging how something looks, or apps the tool can't drive. For repeatable checks, the tool is faster and cheaper.
-- Don't mix Computer Use and posted input in one check. While Computer Use is attached, its shield takes the events `shotty-ui` posts, so the selection overlay seems to ignore keys and the pointer.
+- Don't mix Computer Use and posted input in one check. While Computer Use is attached, its shield takes the events `shotty-ui` posts, so the selection overlay seems to ignore keys and the pointer. Resetting the Computer Use session may not release it, so relaunch Shotty Dev before checks with posted input.
+- In Computer Use, get Shotty Dev by the full path of `~/Applications/Shotty Dev.app`, with `~` expanded. By name, `getApp` can launch another checkout's Shotty Dev beside the running one, and both react to the hotkeys.
 
 ### Clean up
 
