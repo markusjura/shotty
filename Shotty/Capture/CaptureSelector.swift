@@ -41,7 +41,8 @@ final class CaptureSelector {
     private var isAdjusting = false
     private var panels: [SelectionPanel] = []
     private var adjustmentPanel: NSPanel?
-    private var frozen: FrozenCaptureSet?
+    /// Window pixels for window selection. The frozen displays are in `displays`.
+    private var frozenWindows: FrozenCaptureSet?
     private var operation: Task<Void, Never>?
     private var hoverOperation: Task<Void, Never>?
     private var screenObservation: NSObjectProtocol?
@@ -86,7 +87,7 @@ final class CaptureSelector {
             screen.displayID.map { SelectionDisplay(id: $0, frame: screen.frame, scale: screen.backingScaleFactor, image: nil) }
         }
         // The surface appears at once over the live screen, so the crosshair is instant. Frozen pixels
-        // replace the live view underneath it a moment later; own windows are excluded from them.
+        // replace the live view underneath it a moment later; only the selection surfaces are left out of them.
         for display in displays {
             let view = SelectionView(selector: self, display: display)
             let panel = SelectionPanel.covering(display.frame, content: view)
@@ -99,13 +100,11 @@ final class CaptureSelector {
         updatePointer(pointer, modifiers: [])
         operation = Task { [self] in
             do {
-                // Only area and window selection target windows; the other modes skip listing and freezing them.
-                var targets = try await selectsWindows ? WindowTarget.onScreen(screens, includesShotty: true) : []
-                if configuration.freeze && kind != .scrolling {
-                    let set = try await FrozenCaptureSet.acquire(includingWindows: selectsWindows,
-                                                                 excludingWindowIDs: overlayWindowIDs)
-                    guard requestID == request, !Task.isCancelled else { try? await set.close(); return }
-                    frozen = set
+                let freezes = configuration.freeze && kind != .scrolling
+                if freezes {
+                    // The displays freeze first and on their own, so the frozen screen shows the moment the
+                    // capture started. Freezing every window as well can take a second or more.
+                    let set = try await FrozenCaptureSet.acquire(.displays, excludingWindowIDs: overlayWindowIDs)
                     var loaded: [SelectionDisplay] = []
                     for display in displays {
                         guard let snapshot = set.displays.first(where: { $0.displayID == display.id }) else {
@@ -115,11 +114,21 @@ final class CaptureSelector {
                                                        scale: CGFloat(snapshot.pointPixelScale),
                                                        image: try await set.image(for: snapshot.raster)))
                     }
+                    // Loaded images keep their pixels after the set removes its files.
+                    try? await set.close()
                     try Task.checkCancellation()
+                    guard requestID == request else { return }
                     displays = loaded
                     for case let view as SelectionView in panels.map(\.contentView) {
                         if let display = loaded.first(where: { $0.id == view.displayID }) { view.show(display) }
                     }
+                }
+                // Only area and window selection target windows; the other modes skip listing and freezing them.
+                var targets = try await selectsWindows ? WindowTarget.onScreen(screens, includesShotty: true) : []
+                if freezes && selectsWindows {
+                    let set = try await FrozenCaptureSet.acquire(.windows, excludingWindowIDs: overlayWindowIDs)
+                    guard requestID == request, !Task.isCancelled else { try? await set.close(); return }
+                    frozenWindows = set
                     // Only windows with frozen pixels are selectable; others would export live content.
                     targets = targets.filter { target in set.windows.contains { $0.windowID == target.id } }
                 }
@@ -211,7 +220,7 @@ final class CaptureSelector {
         selectedWindowPreview = nil
         errorMessage = nil
         hoverOperation?.cancel()
-        guard let frozen,
+        guard let frozen = frozenWindows,
               let snapshot = frozen.windows.first(where: { $0.windowID == target.id && !$0.includesShadow }) else { redraw(); return }
         let request = requestID
         hoverOperation = Task {
@@ -303,7 +312,7 @@ final class CaptureSelector {
         if kind == .window {
             guard let id = selectedWindowID, let target = windows.first(where: { $0.id == id }) else { return }
             let shadow = configuration.shadow != shadowInverted
-            if let frozen {
+            if let frozen = frozenWindows {
                 // A window without the chosen frozen variant must not fall back to live pixels.
                 guard let snapshot = frozen.windows.first(where: { $0.windowID == id && $0.includesShadow == shadow }) else {
                     finish(.failure(CaptureFailure.targetUnavailable))
@@ -382,8 +391,8 @@ final class CaptureSelector {
         panels.removeAll()
         if let screenObservation { NotificationCenter.default.removeObserver(screenObservation) }
         screenObservation = nil
-        let set = frozen
-        frozen = nil
+        let set = frozenWindows
+        frozenWindows = nil
         if let set { Task { try? await set.close() } }
         displays.removeAll()
         windows.removeAll()
