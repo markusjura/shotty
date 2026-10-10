@@ -158,6 +158,9 @@ private let settingsRowHeight: CGFloat = 36
 /// The space between a note and the separator or section edge around it. A one-line note row
 /// gets it from centering in the row height; wrapped and attached notes keep it explicitly.
 private let settingsNoteInset: CGFloat = 10
+/// The space between a row and its attached note. Less than the inset, so the pair reads as one
+/// row, but enough that the note doesn't crowd the row's text.
+private let settingsRowNoteGap: CGFloat = 6
 
 extension View {
     /// A description row for several rows of a section, such as an Option-click that changes both
@@ -204,8 +207,8 @@ private struct NotedRow<Row: View, Note: View>: View {
 }
 
 /// Without a note, lays the row out as if it stood alone. With one, keeps the row where it would be
-/// alone, centered in the row height, so the note never moves it. The note follows 4 pt below the
-/// row, with the note inset above the next separator.
+/// alone, centered in the row height, so the note never moves it. The note follows the row note gap
+/// below the row, with the note inset above the next separator.
 private struct NotedRowLayout: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         guard let (row, note) = frames(width: proposal.width, subviews: subviews) else {
@@ -231,7 +234,7 @@ private struct NotedRowLayout: Layout {
         let row = subviews[0].sizeThatFits(proposal), note = subviews[1].sizeThatFits(proposal)
         let rowTop = max(0, (settingsRowHeight - row.height) / 2)
         return (CGRect(origin: CGPoint(x: 0, y: rowTop), size: row),
-                CGRect(origin: CGPoint(x: 0, y: rowTop + row.height + 4), size: note))
+                CGRect(origin: CGPoint(x: 0, y: rowTop + row.height + settingsRowNoteGap), size: note))
     }
 }
 
