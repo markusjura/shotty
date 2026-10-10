@@ -175,7 +175,8 @@ final class RecordingController {
             panels.append(outline)
         }
         let visible = screen.visibleFrame.insetBy(dx: 12, dy: 12)
-        let size = CGSize(width: 300, height: 46)
+        let controls = NSHostingView(rootView: RecordingControls(controller: self))
+        let size = controls.fittingSize
         let origin: CGPoint
         if case .display = target {
             origin = CGPoint(x: visible.midX - size.width / 2, y: visible.minY)
@@ -184,12 +185,12 @@ final class RecordingController {
             origin = SelectionGeometry.firstClearOrigin(candidates, size: size, avoiding: [frame], within: visible)
                 ?? CGPoint(x: visible.midX - size.width / 2, y: visible.minY)
         }
-        panels.append(Self.overlayPanel(frame: CGRect(origin: origin, size: size),
-                                        content: NSHostingView(rootView: RecordingControls(controller: self))))
+        panels.append(Self.overlayPanel(frame: CGRect(origin: origin, size: size), content: controls))
         panels.forEach { $0.orderFrontRegardless() }
     }
 
-    /// A transparent, nonactivating floating panel that never becomes key.
+    /// A transparent, nonactivating floating panel that never becomes key. It is dark in both
+    /// appearances, as the island it shows.
     private static func overlayPanel(frame: CGRect, content: NSView) -> NSPanel {
         let panel = NonKeyPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false
@@ -201,6 +202,7 @@ final class RecordingController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         // The outline covers the display; AppKit's window animation would zoom it on show and hide.
         panel.animationBehavior = .none
+        panel.appearance = NSAppearance(named: .darkAqua)
         panel.contentView = content
         return panel
     }
@@ -229,40 +231,52 @@ private final class RegionOutlineView: NSView {
     }
 }
 
-/// The elapsed time, Pause, Discard, and Stop.
+/// The elapsed time, Pause, Discard, and Stop on one island.
 private struct RecordingControls: View {
     let controller: RecordingController
 
     var body: some View {
-        HStack(spacing: 8) {
-            TimelineView(.periodic(from: .now, by: 0.25)) { context in
-                HStack(spacing: 6) {
-                    // Red only while frames are being recorded.
-                    Circle().fill(controller.phase == .recording ? .red : Color(nsColor: Chrome.controlLabelDisabled))
-                        .frame(width: 8, height: 8)
-                    Text(ClipTime.format(controller.elapsed(at: context.date), tenths: false))
-                        .monospacedDigit()
-                }
-                .font(Font(Chrome.controlFont))
-                .foregroundStyle(Color(nsColor: Chrome.controlLabel))
-                .padding(.horizontal, 12)
-                .frame(height: Chrome.pillHeight)
-                .overlayCapsuleBackground()
-            }
+        Island {
+            RecordingClock(controller: controller)
+            IslandDivider()
             Button(controller.isPaused ? "Resume" : "Pause", systemImage: controller.isPaused ? "play.fill" : "pause.fill",
                    action: controller.togglePause)
-                .buttonStyle(.overlayIcon)
+                .buttonStyle(.islandIcon)
                 .help(controller.isPaused ? "Resume" : "Pause")
                 .disabled(controller.phase != .recording && controller.phase != .paused)
             Button("Discard Recording", systemImage: "trash", action: controller.cancel)
-                .buttonStyle(.overlayIcon)
+                .buttonStyle(.islandIcon)
                 .help("Discard Recording")
-            Button(action: controller.stop) {
-                Label { Text("Stop") } icon: { Image(systemName: "stop.fill").foregroundStyle(.red) }
-            }
-            .buttonStyle(.overlayCapsuleProminent)
+            IslandDivider()
+            Button("Stop", systemImage: "stop.fill", action: controller.stop)
+                .buttonStyle(.islandRecord)
         }
-        .buttonStyle(.overlayCapsule)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .fixedSize()
+    }
+}
+
+/// The elapsed time behind a dot that pulses red while frames are recorded. Both dim while paused.
+private struct RecordingClock: View {
+    let controller: RecordingController
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let isLive = controller.phase == .recording
+        TimelineView(.periodic(from: .now, by: 0.25)) { context in
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(isLive ? Color(nsColor: Chrome.record) : Color(nsColor: Chrome.islandLabel).opacity(0.4))
+                    .frame(width: 8, height: 8)
+                    // Without a trigger the animator loops; it only shows while recording.
+                    .phaseAnimator([1.0, 0.3]) { dot, phase in
+                        dot.opacity(isLive && !reduceMotion ? phase : 1)
+                    } animation: { _ in .easeInOut(duration: 0.6) }
+                Text(ClipTime.format(controller.elapsed(at: context.date), tenths: false))
+                    .monospacedDigit()
+                    .opacity(isLive ? 1 : 0.5)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: Chrome.islandControlHeight)
+        }
     }
 }

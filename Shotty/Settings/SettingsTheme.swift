@@ -14,9 +14,10 @@ enum SettingsColor {
     static let controlFill = dynamic(light: 0xE0E0E0, dark: 0x323333)
     static let primaryText = dynamic(light: 0x000000, dark: 0xFFFFFF)
     static let secondaryText = dynamic(light: 0x646464, dark: 0xA4A4A4)
-    /// Success and granted states, such as an allowed permission's checkmark: deep green on light and
-    /// mint on dark, after Raycast's passed checks. Both keep at least 3:1 against `section` for icons.
-    static let success = dynamic(light: 0x248A3D, dark: 0x90D7AD)
+    /// Success and granted states, such as an allowed permission's checkmark: shadcn's green-500 on
+    /// light and mint on dark, after Raycast's passed checks. The label beside the glyph carries the
+    /// text contrast.
+    static let success = dynamic(light: 0x22C55E, dark: 0x90D7AD)
     /// The line under the toolbar while it is hovered or the window is inactive: the system
     /// separator in light mode, and the window's inactive outer border over the canvas in dark mode.
     static let toolbarLine = Color(nsColor: NSColor(name: nil) { appearance in

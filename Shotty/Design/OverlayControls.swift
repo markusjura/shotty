@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Light capsule for controls floating over captured content, such as Start Capture, Auto Scroll,
-/// Record, Stop, Cancel, Done, and "N more". It stays legible over light and dark pixels.
-/// Icon-only buttons are circles.
+/// Done, and "N more". It stays legible over light and dark pixels. Icon-only buttons are circles.
+/// The recording bars use `Island` instead.
 struct OverlayCapsuleButtonStyle: ButtonStyle {
     var isProminent = false
     var isIconOnly = false
@@ -34,8 +34,6 @@ extension ButtonStyle where Self == OverlayCapsuleButtonStyle {
     static var overlayCapsule: Self { .init() }
     static var overlayCapsuleProminent: Self { .init(isProminent: true) }
     static var overlayIcon: Self { .init(isIconOnly: true) }
-    /// A switched-on icon, such as system audio when it records.
-    static var overlayIconProminent: Self { .init(isProminent: true, isIconOnly: true) }
 }
 
 extension View {
@@ -48,8 +46,8 @@ extension View {
     }
 }
 
-/// Picks a label style at runtime.
-private struct AnyLabelStyle: LabelStyle {
+/// Picks a label style at runtime. Overlay and island buttons use it.
+struct AnyLabelStyle: LabelStyle {
     private let body: (Configuration) -> AnyView
 
     init(_ style: some LabelStyle) { body = { AnyView(style.makeBody(configuration: $0)) } }
