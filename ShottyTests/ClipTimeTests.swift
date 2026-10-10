@@ -9,6 +9,16 @@ final class ClipTimeTests: XCTestCase {
         XCTAssertEqual(ClipTime.format(-1, tenths: true), "0:00.0")
         XCTAssertEqual(ClipTime.format(.nan, tenths: false), "0:00")
         XCTAssertEqual(ClipTime.duration(9.5), "0:10")
-        XCTAssertEqual(ClipTime.duration(0.3), "0:01", "A badge never claims a clip is empty")
+        XCTAssertEqual(ClipTime.duration(0.3), "0:01", "A title never claims a clip is empty")
+    }
+
+    func testThumbnailLengthsNameOnlyTheUnitsTheyNeed() {
+        XCTAssertEqual(ClipTime.compact(14.4), "14s")
+        XCTAssertEqual(ClipTime.compact(64.2), "1m 4s")
+        XCTAssertEqual(ClipTime.compact(120), "2m")
+        XCTAssertEqual(ClipTime.compact(3603), "1h 3s")
+        XCTAssertEqual(ClipTime.compact(3723), "1h 2m 3s")
+        XCTAssertEqual(ClipTime.compact(0.3), "1s", "A thumbnail never claims a clip is empty")
+        XCTAssertEqual(ClipTime.compact(.infinity), "1s")
     }
 }

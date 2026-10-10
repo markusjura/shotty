@@ -13,8 +13,16 @@ enum ClipTime {
         return text
     }
 
-    /// A clip's length for its thumbnail badge: the nearest second, and never `0:00`.
+    /// A clip's length for the editor's title: the nearest second, and never `0:00`.
     static func duration(_ seconds: TimeInterval) -> String {
         format(max(1, seconds.isFinite ? seconds.rounded() : 1), tenths: false)
+    }
+
+    /// A clip's length on its thumbnail, as CleanShot X writes it: `14s`, `1m 4s`, `2m`, or `1h 2m 3s`.
+    /// The nearest second, and never `0s`.
+    static func compact(_ seconds: TimeInterval) -> String {
+        let whole = max(1, Int(seconds.isFinite ? seconds.rounded() : 1))
+        return [(count: whole / 3600, unit: "h"), (whole / 60 % 60, "m"), (whole % 60, "s")]
+            .filter { $0.count > 0 }.map { "\($0.count)\($0.unit)" }.joined(separator: " ")
     }
 }

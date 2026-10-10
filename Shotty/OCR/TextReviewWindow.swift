@@ -2,27 +2,26 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Editable reviews, one window per recognition. Reopening a result raises its window with
-/// any edits intact; a newer result opens beside it instead of replacing unsaved edits.
+/// Editable reviews, one window per recognition. A newer result opens beside an open one
+/// instead of replacing its unsaved edits.
 @MainActor
 final class TextReviewWindow {
     private var windows: [Date: (window: NSWindow, observer: NSObjectProtocol)] = [:]
 
     var isOpen: Bool { !windows.isEmpty }
 
-    /// `createdAt` identifies the recognition.
-    func show(_ result: RecognizedTextResult, settings: CaptureOutputSnapshot, createdAt: Date, clipboard: ClipboardWriter) {
+    /// `createdAt` identifies the recognition. `note` says why the window opened when the text
+    /// couldn't be copied or saved.
+    func show(_ result: RecognizedTextResult, settings: CaptureOutputSnapshot, createdAt: Date, clipboard: ClipboardWriter,
+              note: String?) {
         NSApp.activate()
-        if let existing = windows[createdAt]?.window {
-            existing.makeKeyAndOrderFront(nil)
-            return
-        }
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 560, height: 420),
                               styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: true)
         window.title = "Recognized Text"
         window.isReleasedWhenClosed = false
         window.minSize = CGSize(width: 420, height: 280)
         let model = TextReviewModel(result: result, preservesLineBreaks: settings.text.preservesLineBreaks)
+        model.status = note
         window.contentView = NSHostingView(rootView: TextReviewView(model: model, settings: settings, createdAt: createdAt,
                                                                     clipboard: clipboard) { [weak window] in window?.close() })
         let observer = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window,
