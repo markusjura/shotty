@@ -9,10 +9,29 @@ final class ScrollStitcherTests: XCTestCase {
         assertSame(output, document(offset: 0, extent: 900 + 300))
     }
 
+    /// Steps smaller than the chrome, and reversals, come from both ends.
     func testStickyHeaderAndFooterAppearOnceAtTheEnds() throws {
-        let offsets = [0, 120, 260, 180, 380]
-        let output = try stitch(offsets.map { document(offset: $0, header: 24, footer: 40) })
-        assertSame(output, document(offset: 0, extent: 380 + 300, header: 24, footer: 40))
+        for offsets in [[0, 120, 260, 180, 380], [0, 5, 10, 130, 125, 245, 250], [100, 95, 215, 90, 85, 200]] {
+            let output = try stitch(offsets.map { document(offset: $0, header: 24, footer: 40) })
+            let (low, high) = (offsets.min()!, offsets.max()!)
+            assertSame(output, document(offset: low, extent: high - low + 300, header: 24, footer: 40))
+        }
+    }
+
+    /// A footer that grows after the first frame, like a chat composer, ends the output at its new height.
+    func testChromeThatGrowsEndsTheOutputAtItsNewSize() throws {
+        let frames = [document(offset: 0, header: 24, footer: 20)] + [5, 10, 15].map { document(offset: $0, header: 24, footer: 40) }
+        assertSame(try stitch(frames), document(offset: 0, extent: 15 + 300, header: 24, footer: 40))
+    }
+
+    /// A translucent fade at each edge, like a toolbar's scroll edge effect, tints whatever scrolls
+    /// under it. Only the ends of the output, where the outermost frames showed it, keep the tint.
+    func testFadesAtTheEdgesStayAtTheEndsOfTheOutput() throws {
+        let offsets = [200, 205, 160, 120, 150, 240, 300, 303, 360]
+        let output = try stitch(offsets.map { faded(document(offset: $0)) })
+        assertSame(output, faded(document(offset: 120, extent: 360 - 120 + 300)))
+        let sideways = try stitch(offsets.map { transposed(faded(document(offset: $0))) }, horizontal: true)
+        assertSame(sideways, transposed(faded(document(offset: 120, extent: 360 - 120 + 300))))
     }
 
     func testHorizontalScrollingIsInferredFromTheFirstMovement() throws {
@@ -124,6 +143,15 @@ final class ScrollStitcherTests: XCTestCase {
         }
         let chrome = { (seed: UInt32, count: Int) in (0..<count).map { row in (0..<width).map { UInt32($0 + row) &* seed | 0xFF } } }
         return Page(width: width, rows: chrome(0x1234_5601, header) + body + chrome(0x6543_2101, footer))
+    }
+
+    /// Dims the first and last 12 rows by half.
+    private func faded(_ page: Page) -> Page {
+        var page = page
+        for row in Array(0..<12) + Array((page.rows.count - 12)..<page.rows.count) {
+            page.rows[row] = page.rows[row].map { $0 >> 1 & 0x7F7F_7F00 | 0xFF }
+        }
+        return page
     }
 
     /// A blank 300-row viewport with content in the given rows. Equal seeds make equal rows, and
