@@ -9,6 +9,9 @@ struct RecordingSettingsPane: View {
             outputSection
             SaveLocationSection(destination: $preferences.recording.destination)
             videoSection
+            Section("Selection") {
+                SelectionReadoutPicker(selection: $preferences.recording.readout)
+            }
         }
     }
 

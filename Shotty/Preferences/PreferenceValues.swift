@@ -87,6 +87,15 @@ enum ColorHandlingPreference: String, Codable, CaseIterable, Sendable { case pre
 enum OutputScalePreference: String, Codable, CaseIterable, Sendable { case native, logical }
 enum FullscreenTarget: String, Codable, CaseIterable, Sendable { case pointerDisplay, mainDisplay, allDisplays }
 
+/// What the readout beside the pointer shows while drawing a region: the pointer's position before
+/// the region exists, its size while dragging, both, or neither. Errors always show.
+enum SelectionReadout: String, Codable, CaseIterable, Sendable {
+    case positionAndSize, position, size, off
+
+    var showsPosition: Bool { self == .positionAndSize || self == .position }
+    var showsSize: Bool { self == .positionAndSize || self == .size }
+}
+
 struct CapturePreferences: Codable, Equatable, Sendable {
     static let jpegQualityRange = 0.5...1.0
 
@@ -101,6 +110,7 @@ struct CapturePreferences: Codable, Equatable, Sendable {
     var fullscreenTarget = FullscreenTarget.pointerDisplay
     var freezesScreen = true
     var includesWindowShadow = true
+    var readout = SelectionReadout.positionAndSize
 
     var isValid: Bool {
         !outputs.isEmpty && Self.jpegQualityRange.contains(jpegQuality) && jpegBackground.isValid
@@ -175,6 +185,7 @@ struct RecordingPreferences: Codable, Equatable, Sendable {
     var frameRate = FrameRatePreference.fps30
     var scale = OutputScalePreference.native
     var screenTarget = ScreenTarget.pointerDisplay
+    var readout = SelectionReadout.positionAndSize
     /// Set from the Record bar. The choice of the last recording carries over to the next one.
     var recordsSystemAudio = false
     var recordsMicrophone = false

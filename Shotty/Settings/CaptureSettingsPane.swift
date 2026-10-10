@@ -79,6 +79,7 @@ struct CaptureSettingsPane: View {
                 .settingsRowNote("Holds the screen still while you select, so you can capture hover effects, animations, and moving content.")
             Toggle("Include window shadow", isOn: $preferences.capture.includesWindowShadow)
                 .help("Hold Option while capturing a window to invert this once.")
+            SelectionReadoutPicker(selection: $preferences.capture.readout)
         }
     }
 

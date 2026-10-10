@@ -6,6 +6,7 @@ import os
 struct SelectionConfiguration {
     var freeze = true
     var shadow = true
+    var readout = SelectionReadout.positionAndSize
     /// Capture Screen highlights this display until the pointer moves; nil starts at the one under the pointer.
     var preferredDisplayID: CGDirectDisplayID?
 }
@@ -506,9 +507,12 @@ final class CaptureSelector {
     }
 
     var drawsHandles: Bool { isAdjusting }
-    /// The pointer readout helps while drawing a region. It stays away once one exists and while
-    /// picking a window or display; errors are always shown.
-    var showsReadout: Bool { errorMessage != nil || drawsRegion && (selection == nil || drag != nil) }
+    /// The pointer readout helps while drawing a region, as far as Settings allow. It stays away once
+    /// one exists and while picking a window or display; errors are always shown.
+    var readout: SelectionDrawing.Readout? {
+        configuration.readout.content(error: errorMessage, isDrawing: drawsRegion, hasRegion: selection != nil,
+                                      isDragging: drag != nil, size: pixelDimensions)
+    }
 }
 
 private struct SelectionAdjustment: View {
@@ -627,9 +631,8 @@ private final class SelectionView: NSView {
             }
         }
         let point = CGPoint(x: selector.pointer.x - display.frame.minX, y: selector.pointer.y - display.frame.minY)
-        guard selector.showsReadout, bounds.contains(point) else { return }
-        SelectionDrawing.drawReadout(at: point, in: bounds, error: selector.errorMessage,
-                                     size: selector.selection == nil ? nil : selector.pixelDimensions)
+        guard let readout = selector.readout, bounds.contains(point) else { return }
+        SelectionDrawing.drawReadout(readout, at: point, in: bounds, scale: display.scale)
     }
 
     private func point(_ event: NSEvent) -> CGPoint { window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation }
