@@ -37,3 +37,18 @@ extension RGBAColor {
         Binding { get().cgColor } set: { if let color = RGBAColor($0) { set(color) } }
     }
 }
+
+/// The pointer readout setting, shared by the Screenshots and Recording panes.
+struct SelectionReadoutPicker: View {
+    @Binding var selection: SelectionReadout
+
+    var body: some View {
+        Picker("Coordinates", selection: $selection) {
+            Text("Position and size").tag(SelectionReadout.positionAndSize)
+            Text("Position only").tag(SelectionReadout.position)
+            Text("Size only").tag(SelectionReadout.size)
+            Text("Off").tag(SelectionReadout.off)
+        }
+        .buttonStyle(.borderless)
+    }
+}

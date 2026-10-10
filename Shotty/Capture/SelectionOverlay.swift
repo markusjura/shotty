@@ -131,6 +131,18 @@ struct WindowTarget {
     }
 }
 
+extension SelectionReadout {
+    /// The readout for a selection's state: any error; else, while drawing a region, the position
+    /// until the region exists and its size while it is dragged, as far as this setting allows.
+    func content(error: String?, isDrawing: Bool, hasRegion: Bool, isDragging: Bool,
+                 size: @autoclosure () -> CGSize) -> SelectionDrawing.Readout? {
+        if let error { return .error(error) }
+        guard isDrawing else { return nil }
+        if !hasRegion { return showsPosition ? .position : nil }
+        return isDragging && showsSize ? .size(size()) : nil
+    }
+}
+
 /// Drawing shared by the selection views, in view coordinates.
 @MainActor
 enum SelectionDrawing {
@@ -193,18 +205,82 @@ enum SelectionDrawing {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    /// The readout beside the pointer at `point`: an error, else the pointer position before a
-    /// region exists and its size in pixels once it does.
-    static func drawReadout(at point: CGPoint, in bounds: CGRect, error: String?, size: CGSize?) {
-        let message = error ?? size.map { "\(Int($0.width)) × \(Int($0.height)) px" }
-            ?? "X \(Int(point.x))  Y \(Int(bounds.height - point.y))"
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
-                                                         .foregroundColor: NSColor.white]
-        let textSize = (message as NSString).size(withAttributes: attributes)
-        let label = CGRect(x: min(bounds.maxX - textSize.width - 20, max(8, point.x + 16)),
-                           y: max(8, point.y - 36), width: textSize.width + 12, height: textSize.height + 8)
-        Chrome.readoutFill.setFill()
-        NSBezierPath(roundedRect: label, xRadius: 5, yRadius: 5).fill()
-        (message as NSString).draw(at: CGPoint(x: label.minX + 6, y: label.minY + 4), withAttributes: attributes)
+    /// What the readout beside the pointer says.
+    enum Readout: Equatable {
+        /// The pointer's position on its display, in pixels from the top left.
+        case position
+        /// A region's size in output pixels.
+        case size(CGSize)
+        case error(String)
+    }
+
+    /// Draws `readout` in a small island capsule 12 pt below and right of the pointer at `point`,
+    /// flipping to the other side near an edge of `bounds`. `scale` turns points into pixels.
+    static func drawReadout(_ readout: Readout, at point: CGPoint, in bounds: CGRect, scale: CGFloat) {
+        let text: NSAttributedString = switch readout {
+        case .position: labeledValues(("X", Int(point.x * scale)), ("Y", Int((bounds.height - point.y) * scale)))
+        case .size(let size): labeledValues(("W", Int(size.width)), ("H", Int(size.height)))
+        case .error(let message): warning(message)
+        }
+        let textSize = text.size()
+        let size = CGSize(width: ceil(textSize.width) + 2 * readoutPadding, height: Chrome.readoutHeight)
+        let offset: CGFloat = 12, margin: CGFloat = 4
+        var origin = CGPoint(x: point.x + offset, y: point.y - offset - size.height)
+        if origin.x + size.width > bounds.maxX - margin { origin.x = point.x - offset - size.width }
+        if origin.y < bounds.minY + margin { origin.y = point.y + offset }
+        origin.x = min(max(origin.x, bounds.minX + margin), bounds.maxX - margin - size.width)
+        let pill = CGRect(origin: origin, size: size)
+        let capsule = NSBezierPath(roundedRect: pill, xRadius: size.height / 2, yRadius: size.height / 2)
+
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowColor = .black.withAlphaComponent(0.4)
+        shadow.shadowOffset = CGSize(width: 0, height: -1)
+        shadow.shadowBlurRadius = 3
+        shadow.set()
+        Chrome.islandFill.setFill()
+        capsule.fill()
+        NSGraphicsContext.restoreGraphicsState()
+        let rim = NSBezierPath(roundedRect: pill.insetBy(dx: 0.25, dy: 0.25), xRadius: size.height / 2 - 0.25, yRadius: size.height / 2 - 0.25)
+        rim.lineWidth = 0.5
+        Chrome.islandRim.setStroke()
+        rim.stroke()
+        text.draw(at: CGPoint(x: pill.minX + readoutPadding, y: pill.minY + (size.height - textSize.height) / 2))
+    }
+
+    private static let readoutPadding: CGFloat = 6
+    private static let readoutValueFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+    private static let readoutKeyFont = NSFont.systemFont(ofSize: 10, weight: .semibold)
+
+    /// Dimmed letters before tabular values, such as "X 1628  Y 996", so the numbers lead.
+    private static func labeledValues(_ pairs: (key: String, value: Int)...) -> NSAttributedString {
+        let text = NSMutableAttributedString()
+        for (index, pair) in pairs.enumerated() {
+            text.append(NSAttributedString(string: pair.key, attributes: [
+                .font: readoutKeyFont, .foregroundColor: Chrome.islandLabel.withAlphaComponent(0.5), .kern: 3]))
+            text.append(NSAttributedString(string: "\(pair.value)", attributes: [
+                .font: readoutValueFont, .foregroundColor: Chrome.islandLabel]))
+            // Kerning the value's last digit opens the gap before the next letter.
+            if index < pairs.count - 1 { text.addAttribute(.kern, value: 7, range: NSRange(location: text.length - 1, length: 1)) }
+        }
+        return text
+    }
+
+    /// A yellow warning sign before `message`.
+    private static func warning(_ message: String) -> NSAttributedString {
+        let text = NSMutableAttributedString()
+        let configuration = NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
+            // The mark, then the triangle around it.
+            .applying(NSImage.SymbolConfiguration(paletteColors: [.black, .systemYellow]))
+        if let symbol = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration) {
+            let attachment = NSTextAttachment()
+            attachment.image = symbol
+            attachment.bounds = CGRect(x: 0, y: -1, width: symbol.size.width, height: symbol.size.height)
+            text.append(NSAttributedString(attachment: attachment))
+            text.append(NSAttributedString(string: " ", attributes: [.font: readoutValueFont, .kern: 1]))
+        }
+        text.append(NSAttributedString(string: message, attributes: [.font: readoutValueFont, .foregroundColor: Chrome.islandLabel]))
+        return text
     }
 }

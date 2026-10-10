@@ -2,6 +2,26 @@ import XCTest
 @testable import Shotty
 
 final class SelectionGeometryTests: XCTestCase {
+    @MainActor
+    func testReadoutFollowsSettingAndSelectionState() {
+        let size = CGSize(width: 800, height: 600)
+        func content(_ setting: SelectionReadout, error: String? = nil, isDrawing: Bool = true,
+                     hasRegion: Bool, isDragging: Bool = false) -> SelectionDrawing.Readout? {
+            setting.content(error: error, isDrawing: isDrawing, hasRegion: hasRegion, isDragging: isDragging, size: size)
+        }
+        XCTAssertEqual(content(.positionAndSize, hasRegion: false), .position)
+        XCTAssertEqual(content(.positionAndSize, hasRegion: true, isDragging: true), .size(size))
+        XCTAssertNil(content(.positionAndSize, hasRegion: true), "An adjusted region shows no readout")
+        XCTAssertNil(content(.positionAndSize, isDrawing: false, hasRegion: false), "Picking a window shows no readout")
+        XCTAssertEqual(content(.position, hasRegion: false), .position)
+        XCTAssertNil(content(.position, hasRegion: true, isDragging: true))
+        XCTAssertNil(content(.size, hasRegion: false))
+        XCTAssertEqual(content(.size, hasRegion: true, isDragging: true), .size(size))
+        XCTAssertNil(content(.off, hasRegion: false))
+        XCTAssertEqual(content(.off, error: "Keep the region on one display.", hasRegion: true),
+                       .error("Keep the region on one display."), "Errors show whatever the setting")
+    }
+
     func testScreenLayoutIgnoresEnumerationOrderButDetectsCaptureGeometryChanges() {
         let main = SelectionScreenLayout.Display(id: 1, frame: CGRect(x: 0, y: 0, width: 2_560, height: 1_440),
                                                  scale: 2, pixelSize: CGSize(width: 5_120, height: 2_880), rotation: 0)

@@ -132,6 +132,7 @@ final class AppCoordinator {
             }
         } else {
             let config = SelectionConfiguration(freeze: settings.capture.freezesScreen, shadow: settings.capture.includesWindowShadow,
+                                                readout: settings.capture.readout,
                                                 preferredDisplayID: target == .mainDisplay ? CGMainDisplayID() : nil)
             selector.begin(kind: kind, configuration: config) { [weak self] result in
                 guard let self else { return }

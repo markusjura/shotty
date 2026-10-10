@@ -59,7 +59,7 @@ final class RecordingSelector {
         let screens = NSScreen.screens
         displays = screens.compactMap { screen in screen.displayID.map { ($0, screen.frame, screen.backingScaleFactor) } }
         for display in displays {
-            let view = RecordingSelectionView(selector: self, displayFrame: display.frame)
+            let view = RecordingSelectionView(selector: self, displayFrame: display.frame, scale: display.scale)
             let panel = SelectionPanel.covering(display.frame, content: view)
             panels.append(panel)
             panel.orderFrontRegardless()
@@ -358,9 +358,13 @@ final class RecordingSelector {
     }
 
     var drawsHandles: Bool { kind == .area && isTargetPicked }
-    /// The pointer readout helps while drawing an area. It stays away once a region exists and while
-    /// picking a window, which the tint and record symbol already mark; errors are always shown.
-    var showsReadout: Bool { errorMessage != nil || kind == .area && (selection == nil || drag != nil) }
+    /// The pointer readout helps while drawing an area, as far as Settings allow. It stays away once a
+    /// region exists and while picking a window, which the tint and record symbol already mark; errors
+    /// are always shown.
+    var readout: SelectionDrawing.Readout? {
+        preferences.recording.readout.content(error: errorMessage, isDrawing: kind == .area, hasRegion: selection != nil,
+                                              isDragging: drag != nil, size: pixelDimensions)
+    }
 }
 
 /// Cancel, the audio toggles, and Record on one island below the adjustable area.
@@ -406,11 +410,13 @@ struct AudioToggles: View {
 private final class RecordingSelectionView: NSView {
     private unowned let selector: RecordingSelector
     private let displayFrame: CGRect
+    private let scale: CGFloat
     private var tracking: NSTrackingArea?
 
-    init(selector: RecordingSelector, displayFrame: CGRect) {
+    init(selector: RecordingSelector, displayFrame: CGRect, scale: CGFloat) {
         self.selector = selector
         self.displayFrame = displayFrame
+        self.scale = scale
         super.init(frame: CGRect(origin: .zero, size: displayFrame.size))
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
@@ -477,9 +483,8 @@ private final class RecordingSelectionView: NSView {
             if selector.drawsHandles { SelectionDrawing.drawHandles(around: rect) }
         }
         let point = CGPoint(x: selector.pointer.x - displayFrame.minX, y: selector.pointer.y - displayFrame.minY)
-        guard selector.showsReadout, bounds.contains(point) else { return }
-        SelectionDrawing.drawReadout(at: point, in: bounds, error: selector.errorMessage,
-                                     size: selector.selection == nil ? nil : selector.pixelDimensions)
+        guard let readout = selector.readout, bounds.contains(point) else { return }
+        SelectionDrawing.drawReadout(readout, at: point, in: bounds, scale: scale)
     }
 
     private func point(_ event: NSEvent) -> CGPoint { window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation }

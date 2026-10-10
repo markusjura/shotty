@@ -31,9 +31,9 @@ enum Chrome {
     /// thumbnails: white turns (120, 120, 124) and near black (34, 34, 37), so the stripe stays a mid
     /// dark gray that white text reads on over any capture.
     static let cardStripe = NSColor(srgbRed: 44 / 255, green: 44 / 255, blue: 50 / 255, alpha: 0.64)
-    /// Small dark readouts such as selection dimensions.
+    /// Dark backing for small status text on thumbnail cards.
     static let readoutFill = NSColor.black.withAlphaComponent(0.78)
-    /// The recording bars' dark capsule and the flat controls on it.
+    /// The recording bars' dark capsule and the flat controls on it; also the pointer readout's capsule.
     static let islandFill = NSColor(white: 0.24, alpha: 0.94)
     static let islandRim = NSColor(white: 1, alpha: 0.14)
     static let islandLabel = NSColor(white: 0.96, alpha: 1)
@@ -72,6 +72,8 @@ enum Chrome {
     static let pillHeight: CGFloat = 28
     static let islandHeight: CGFloat = 36
     static let islandControlHeight: CGFloat = 28
+    /// The pointer readout while selecting: an island capsule small enough to stay beside the cursor.
+    static let readoutHeight: CGFloat = 18
     /// Padding around an island for its shadow.
     static let islandShadowInset: CGFloat = 12
     static let cardPillSize = CGSize(width: 52, height: 27)
