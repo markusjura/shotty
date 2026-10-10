@@ -71,6 +71,21 @@ final class CropGeometryTests: XCTestCase {
         XCTAssertEqual(result, CGRect(x: 600, y: 500, width: 200, height: 100))
     }
 
+    func testShiftKeepsTheStartingProportionsAMoveAxisAndADrawnSquare() {
+        let crop = CGRect(x: 100, y: 100, width: 300, height: 100)
+        func drag(edges: SelectionEdges?, moving: Bool = false, from start: CGPoint = .zero, to point: CGPoint,
+                  aspect: CGFloat? = nil) -> CGRect {
+            CropGeometry.dragged(crop, edges: edges, moving: moving, from: start, to: point,
+                                 aspect: aspect, constrained: true, within: bounds, snap: 0)
+        }
+        XCTAssertEqual(drag(edges: [.right, .top], to: CGPoint(x: 90, y: 10)), CGRect(x: 100, y: 100, width: 390, height: 130))
+        XCTAssertEqual(drag(edges: .top, to: CGPoint(x: 0, y: 20)), CGRect(x: 70, y: 100, width: 360, height: 120))
+        XCTAssertEqual(drag(edges: [.right, .top], to: CGPoint(x: 100, y: 0), aspect: 1).size, CGSize(width: 400, height: 400))
+        XCTAssertEqual(drag(edges: nil, moving: true, to: CGPoint(x: 40, y: 15)), CGRect(x: 140, y: 100, width: 300, height: 100))
+        XCTAssertEqual(drag(edges: nil, from: CGPoint(x: 500, y: 300), to: CGPoint(x: 600, y: 340)),
+                       CGRect(x: 500, y: 300, width: 100, height: 100))
+    }
+
     func testFractionalPointerAndNumericInputProduceWholePixelCrops() {
         let crop = CGRect(x: 100, y: 100, width: 200, height: 100)
         let results = [

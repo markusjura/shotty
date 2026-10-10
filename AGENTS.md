@@ -16,7 +16,8 @@ This file documents guidance for agents working in this repository. Record only 
 
 - Prefer checks that print text over screenshots. `windows`, `cursor`, `focus`, `front`, `text`, `clip wait`, and `probe` answer most questions without an image. `clip wait out.png` saves a copied image; for a copied clip, `clip wait` prints its path, and `probe` prints its duration, streams, and frame size.
 - Coordinates are global points from the top left of the main display. Screenshots and videos are in pixels, twice the points on this Mac's displays.
-- Take screenshots with `screencapture -x -l <window id>` for one window or `screencapture -x -R x,y,w,h` for a region. Shrink large ones with `sips -Z 900` before viewing.
+- Take screenshots with `screencapture -x -R x,y,w,h`, using a window's frame from `windows`. `-l <window id>` can return a stale frame after posted input. Shrink large ones with `sips -Z 900` before viewing.
+- For modifier drags, use `drag ... shift`. Computer Use can't hold a modifier during a drag.
 - For animation, flicker, or anything that moves, record first and measure: `record 1 6 out.mov &`, act, then `motion out.mov x y w h`. Look only at the frames it flags, using `frames`.
 - Type with `keys` and `key`, which go through System Events. Posted key events may not reach other apps. Global hotkeys and the selection overlays do see `press`, which posts at the HID level.
 - Recordings exclude Shotty's own windows, so a screenshot or `record` is the only way to see the recording controls or outline.

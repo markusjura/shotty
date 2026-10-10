@@ -104,6 +104,11 @@ final class PlayerCanvasView: NSView {
         default: super.keyDown(with: event)
         }
     }
+
+    override func flagsChanged(with event: NSEvent) {
+        overlay.modifiersChanged(event.modifierFlags)
+        super.flagsChanged(with: event)
+    }
 }
 
 /// Dims everything outside the crop box and draws its handles, as the image editor's crop does.
@@ -111,6 +116,7 @@ final class PlayerCanvasView: NSView {
 private final class CropOverlayView: NSView {
     private unowned let model: ClipEditorModel
     private var gesture: (edges: SelectionEdges?, start: CGRect, moving: Bool, anchor: CGPoint)?
+    private var lastPointer: CGPoint?
     private var tracking: NSTrackingArea?
 
     init(model: ClipEditorModel) {
@@ -172,15 +178,24 @@ private final class CropOverlayView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let gesture, let canvas else { return }
-        let point = source(convert(event.locationInWindow, from: nil))
-        let snap = 6 * canvas.visible.width / max(1, canvas.display.width)
-        model.cropDraft = CropGeometry.dragged(gesture.start, edges: gesture.edges, moving: gesture.moving, from: gesture.anchor,
-                                               to: point, aspect: model.cropAspect, within: sourceBounds, snap: snap)
-        needsDisplay = true
+        lastPointer = convert(event.locationInWindow, from: nil)
+        drag(modifiers: event.modifierFlags)
     }
 
-    override func mouseUp(with event: NSEvent) { gesture = nil }
+    override func mouseUp(with event: NSEvent) { gesture = nil; lastPointer = nil }
+
+    /// Shift changes the constraint mid-gesture without further pointer movement. The canvas
+    /// keeps keyboard focus, so it forwards modifier changes here.
+    func modifiersChanged(_ modifiers: NSEvent.ModifierFlags) { drag(modifiers: modifiers) }
+
+    private func drag(modifiers: NSEvent.ModifierFlags) {
+        guard let gesture, let lastPointer, let canvas else { return }
+        let snap = 6 * canvas.visible.width / max(1, canvas.display.width)
+        model.cropDraft = CropGeometry.dragged(gesture.start, edges: gesture.edges, moving: gesture.moving, from: gesture.anchor,
+                                               to: source(lastPointer), aspect: model.cropAspect,
+                                               constrained: modifiers.contains(.shift), within: sourceBounds, snap: snap)
+        needsDisplay = true
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -196,22 +211,6 @@ private final class CropOverlayView: NSView {
     private func updateCursor(_ event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         guard model.isCropping else { return NSCursor.arrow.set() }
-        guard let edges = edges(at: point) else {
-            return (model.cropDraft?.contains(source(point)) == true ? NSCursor.openHand : NSCursor.crosshair).set()
-        }
-        // Source frames grow downward, so the minimum-y edge is the visual top.
-        let top = edges.contains(.bottom), bottom = edges.contains(.top)
-        let left = edges.contains(.left), right = edges.contains(.right)
-        let position: NSCursor.FrameResizePosition = switch (top, bottom, left, right) {
-        case (true, _, true, _): .topLeft
-        case (true, _, _, true): .topRight
-        case (_, true, true, _): .bottomLeft
-        case (_, true, _, true): .bottomRight
-        case (true, _, _, _): .top
-        case (_, true, _, _): .bottom
-        case (_, _, true, _): .left
-        default: .right
-        }
-        NSCursor.frameResize(position: position, directions: .all).set()
+        NSCursor.crop(edges: edges(at: point), inside: model.cropDraft?.contains(source(point)) == true).set()
     }
 }
