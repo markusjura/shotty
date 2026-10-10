@@ -150,14 +150,11 @@ struct ScrollViewport {
         return profiles
     }
 
-    /// Lines `range` along `axis` as a tightly packed row-major block.
-    func copyLines(_ range: Range<Int>, along axis: ScrollAxis) -> [UInt32] {
+    /// Copies lines `range` along `axis` into `destination`, whose rows start `stride` pixels apart.
+    func copyLines(_ range: Range<Int>, along axis: ScrollAxis, into destination: UnsafeMutablePointer<UInt32>, stride: Int) {
         let (columns, rows) = axis == .vertical ? (0..<width, range) : (range, 0..<height)
-        return [UInt32](unsafeUninitializedCapacity: columns.count * rows.count) { buffer, count in
-            for (index, row) in rows.enumerated() {
-                memcpy(buffer.baseAddress! + index * columns.count, base + row * bytesPerRow + columns.lowerBound * 4, columns.count * 4)
-            }
-            count = columns.count * rows.count
+        for (index, row) in rows.enumerated() {
+            memcpy(destination + index * stride, base + row * bytesPerRow + columns.lowerBound * 4, columns.count * 4)
         }
     }
 }
@@ -171,7 +168,8 @@ struct ScrollViewport {
 /// when hashes find nothing, lines vote wherever their profiles match within noise. The first
 /// movement fixes the axis. Lines that stay in place at either edge are sticky chrome; they appear
 /// once, at the matching end of the output. Frames that cannot be aligned are skipped, and the
-/// next one is compared with the same accepted frame. Only newly revealed lines are copied.
+/// next one is compared with the same accepted frame. Accepted frames go to a `Canvas`, which
+/// keeps each line's cleanest copy.
 struct ScrollStitcher {
     struct Limits: Sendable {
         var maximumExtent = 30_000
@@ -193,12 +191,6 @@ struct ScrollStitcher {
         var trailing = 0
     }
 
-    /// Accepted lines placed at `start` along the axis; a row-major block of pixels.
-    private struct Strip {
-        let start: Int
-        let pixels: [UInt32]
-    }
-
     let width: Int
     let height: Int
     private(set) var axis: ScrollAxis?
@@ -212,7 +204,9 @@ struct ScrollStitcher {
     private var position = 0
     private var minimum = 0
     private var maximum = 0
-    private var strips: [Strip]
+    /// The first frame, row-major, until the first movement fixes the axis and `canvas` takes it.
+    private var first: [UInt32]
+    private var canvas: Canvas?
 
     init(first frame: ScrollViewport, limits: Limits = .init()) {
         width = frame.width
@@ -220,7 +214,10 @@ struct ScrollStitcher {
         self.limits = limits
         rows = frame.lines(along: .vertical)
         columns = frame.lines(along: .horizontal)
-        strips = [Strip(start: 0, pixels: frame.copyLines(0..<frame.height, along: .vertical))]
+        first = [UInt32](unsafeUninitializedCapacity: frame.width * frame.height) { buffer, count in
+            frame.copyLines(0..<frame.height, along: .vertical, into: buffer.baseAddress!, stride: frame.width)
+            count = frame.width * frame.height
+        }
     }
 
     /// Output length along the axis; the viewport height before any movement.
@@ -260,13 +257,26 @@ struct ScrollStitcher {
             isFull = true
             return .full
         }
-        if newPosition > maximum {
-            let lower = max(match.bands.leading, extent - match.bands.trailing - (newPosition - maximum))
-            strips.append(Strip(start: newPosition + lower, pixels: frame.copyLines(lower..<extent, along: matchedAxis)))
-        } else if newPosition < minimum {
-            let upper = min(extent - match.bands.trailing, match.bands.leading + minimum - newPosition)
-            strips.append(Strip(start: newPosition, pixels: frame.copyLines(0..<upper, along: matchedAxis)))
+        if canvas == nil {
+            // Written with this frame's bands, so the first frame's chrome is not taken for content.
+            let first = first
+            self.first = []
+            canvas = Canvas(axis: matchedAxis, breadth: breadth(along: matchedAxis))
+            first.withUnsafeBytes { bytes in
+                canvas!.write(ScrollViewport(base: bytes.baseAddress!, width: width, height: height, bytesPerRow: width * 4),
+                              at: 0, bands: match.bands)
+            }
         }
+        // Lines past the edge the frame extends, with its chrome there, replace what earlier frames
+        // left at that edge even when they rank lower, as the bands found then may have been smaller.
+        let extending = if newPosition > maximum {
+            max(match.bands.leading, extent - match.bands.trailing - (newPosition - maximum))..<extent
+        } else if newPosition < minimum {
+            0..<min(extent - match.bands.trailing, match.bands.leading + minimum - newPosition)
+        } else {
+            0..<0
+        }
+        canvas!.write(frame, at: newPosition, bands: match.bands, extending: extending)
         axis = matchedAxis
         bands = match.bands
         position = newPosition
@@ -277,26 +287,16 @@ struct ScrollStitcher {
         return .moved
     }
 
-    /// The stitched image. Strips are copied in acceptance order, so newer lines replace the
-    /// sticky chrome that earlier frames placed at the edge they extend.
+    /// The stitched image.
     func render(colorSpace: CGColorSpace, bitmapInfo: CGBitmapInfo) -> CGImage? {
         let axis = axis ?? .vertical
-        let breadth = breadth(along: axis)
         let (outputWidth, outputHeight) = axis == .vertical ? (width, extent) : (extent, height)
         let byteCount = outputWidth * outputHeight * 4
-        guard byteCount > 0, let output = malloc(byteCount) else { return nil }
-        for strip in strips {
-            let lines = strip.pixels.count / breadth
-            let offset = strip.start - minimum
-            strip.pixels.withUnsafeBytes { source in
-                if axis == .vertical {
-                    memcpy(output + offset * outputWidth * 4, source.baseAddress!, strip.pixels.count * 4)
-                } else {
-                    for row in 0..<height {
-                        memcpy(output + (row * outputWidth + offset) * 4, source.baseAddress! + row * lines * 4, lines * 4)
-                    }
-                }
-            }
+        guard byteCount > 0, let output = calloc(byteCount, 1) else { return nil }
+        if let canvas {
+            canvas.render(minimum..<(minimum + extent), into: output.assumingMemoryBound(to: UInt32.self))
+        } else {
+            memcpy(output, first, byteCount)
         }
         guard let provider = CGDataProvider(dataInfo: nil, data: output, size: byteCount, releaseData: { _, data, _ in free(UnsafeMutableRawPointer(mutating: data)) }) else {
             free(output)
@@ -305,6 +305,106 @@ struct ScrollStitcher {
         return CGImage(width: outputWidth, height: outputHeight, bitsPerComponent: 8, bitsPerPixel: 32,
                        bytesPerRow: outputWidth * 4, space: colorSpace, bitmapInfo: bitmapInfo, provider: provider,
                        decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+    }
+
+    /// Accepted lines by document position along the axis. Each line keeps the copy from the frame
+    /// that showed it farthest inside the scrolling content. Translucent overlays at the edges, like
+    /// a toolbar's scroll edge effect or a fade above a chat composer, tint whatever scrolls under
+    /// them, so lines copied as they enter would carry the tint into the middle of the image as
+    /// stripes. Lines live in blocks, so the image grows at either end without moving what it has.
+    private struct Canvas {
+        private static let blockLines = 256
+
+        private struct Block {
+            /// Row-major pixels of the block's lines.
+            var pixels: [UInt32]
+            /// How far inside its frame each line's copy was, from `Canvas.write`; nil until copied.
+            var quality: [Int?]
+
+            /// Copies those of the frame's `lines` whose `rank` beats the held copy's, and those in
+            /// `extending`, the first to the block's line `index`, in runs of consecutive lines.
+            mutating func write(_ frame: ScrollViewport, lines: Range<Int>, at index: Int, axis: ScrollAxis,
+                                rank: (Int) -> Int, extending: Range<Int>) {
+                let (stride, step) = axis == .vertical ? (frame.width, frame.width) : (Canvas.blockLines, 1)
+                let offset = index - lines.lowerBound
+                var run: Range<Int>?
+                func flush() {
+                    guard let copied = run else { return }
+                    pixels.withUnsafeMutableBufferPointer {
+                        frame.copyLines(copied, along: axis, into: $0.baseAddress! + (copied.lowerBound + offset) * step, stride: stride)
+                    }
+                    run = nil
+                }
+                for line in lines {
+                    let rank = rank(line)
+                    if extending.contains(line) || quality[line + offset].map({ rank > $0 }) ?? true {
+                        quality[line + offset] = rank
+                        run = (run?.lowerBound ?? line)..<(line + 1)
+                    } else {
+                        flush()
+                    }
+                }
+                flush()
+            }
+        }
+
+        let axis: ScrollAxis
+        let breadth: Int
+        private var blocks: [Int: Block] = [:]
+
+        init(axis: ScrollAxis, breadth: Int) {
+            self.axis = axis
+            self.breadth = breadth
+        }
+
+        /// Copies the lines of `frame`, its first line at document line `position`, that improve on
+        /// the copies held, and its lines `extending` regardless. A content line ranks by its distance
+        /// to the nearer edge of the content, counted up to a quarter of the content, so a copy that
+        /// far inside is final and a steady scroll rewrites about that many lines per frame. Chrome
+        /// ranks below any content, so it only fills lines that no frame has shown as content.
+        mutating func write(_ frame: ScrollViewport, at position: Int, bands: Bands, extending: Range<Int> = 0..<0) {
+            let extent = axis == .vertical ? frame.height : frame.width
+            let content = bands.leading..<(extent - bands.trailing)
+            let cap = max(1, content.count / 4)
+            let quality = { (line: Int) in
+                content.contains(line) ? min(line - content.lowerBound, content.upperBound - 1 - line, cap) : -1
+            }
+            var line = 0
+            while line < extent {
+                let (block, index) = Self.locate(position + line)
+                let lines = line..<min(extent, line + Self.blockLines - index)
+                blocks[block, default: Block(pixels: Array(repeating: 0, count: Self.blockLines * breadth),
+                                             quality: Array(repeating: nil, count: Self.blockLines))]
+                    .write(frame, lines: lines, at: index, axis: axis, rank: quality, extending: extending)
+                line = lines.upperBound
+            }
+        }
+
+        /// Copies document lines `lines` into `output`, a tightly packed image of exactly them.
+        func render(_ lines: Range<Int>, into output: UnsafeMutablePointer<UInt32>) {
+            var line = lines.lowerBound
+            while line < lines.upperBound {
+                let (block, index) = Self.locate(line)
+                let count = min(lines.upperBound - line, Self.blockLines - index)
+                let offset = line - lines.lowerBound
+                blocks[block]?.pixels.withUnsafeBufferPointer { pixels in
+                    if axis == .vertical {
+                        memcpy(output + offset * breadth, pixels.baseAddress! + index * breadth, count * breadth * 4)
+                    } else {
+                        for row in 0..<breadth {
+                            memcpy(output + row * lines.count + offset, pixels.baseAddress! + row * Self.blockLines + index, count * 4)
+                        }
+                    }
+                }
+                line += count
+            }
+        }
+
+        /// The block holding a document line, which may be negative, and the line's index in it.
+        private static func locate(_ line: Int) -> (block: Int, index: Int) {
+            let block = line >= 0 ? line / blockLines : (line + 1) / blockLines - 1
+            return (block, line - block * blockLines)
+        }
     }
 
     private func length(along axis: ScrollAxis) -> Int { axis == .vertical ? height : width }
