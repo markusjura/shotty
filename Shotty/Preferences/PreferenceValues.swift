@@ -242,7 +242,7 @@ struct ThumbnailPreferences: Codable, Equatable, Sendable {
 enum EditorTool: String, Codable, CaseIterable, Sendable {
     case select, rectangle, filledRectangle, ellipse, line, arrow, text, redact, spotlight, counter, crop
 
-    /// Tools that create objects. The editor reopens with the last one used.
+    /// Tools that create objects.
     var isDrawing: Bool { self != .select && self != .crop }
 }
 
@@ -407,7 +407,7 @@ struct EditorPreferences: Codable, Equatable, Sendable {
     var closesAfterCopy = false
     var closesAfterSave = false
     var tools = EditorToolDefaults()
-    /// The last drawing tool, selected when an editor opens.
+    /// The last tool from the tool strip (any tool but Crop), selected when an editor opens.
     var tool = EditorTool.rectangle
     /// Starts playback as soon as the video editor opens. Off by default, like QuickTime, so
     /// trimming and cropping start from a still frame.
@@ -416,5 +416,5 @@ struct EditorPreferences: Codable, Equatable, Sendable {
     var loopsPlayback = false
     var gifFrameRate = GIFFrameRate.fps15
 
-    var isValid: Bool { tools.isValid && tool.isDrawing }
+    var isValid: Bool { tools.isValid && tool != .crop }
 }

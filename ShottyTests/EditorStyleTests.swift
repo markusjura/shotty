@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class EditorStyleTests: XCTestCase {
-    func testEditorReopensWithTheLastDrawingToolAndSharedColorAndWidth() throws {
+    func testEditorReopensWithTheLastStripToolAndSharedColorAndWidth() throws {
         let suite = "shotty-style-tests-\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -29,7 +29,7 @@ final class EditorStyleTests: XCTestCase {
         first.tool = .crop
 
         let reopened = try makeModel(AppPreferences(defaults: defaults), defaults)
-        XCTAssertEqual(reopened.tool, .arrow, "Select and Crop are not drawing tools")
+        XCTAssertEqual(reopened.tool, .select, "Select is remembered; Crop is not")
         let tools = reopened.defaults
         XCTAssertEqual(tools.line, EditorToolDefaults.Line(color: .annotationRed, width: 6))
         XCTAssertEqual(tools.filledRectangle.fillColor, .annotationRed)

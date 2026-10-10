@@ -96,12 +96,13 @@ final class EditorWindowModel {
     let canvas: EditorCanvas
     let coordinator: AppCoordinator
     let commands: CommandRegistry
-    /// Starts as the last drawing tool, which every later drawing tool choice updates.
+    /// Starts as the last tool from the tool strip, which every later strip choice updates.
+    /// Crop sits outside the strip and is never remembered.
     var tool: EditorTool {
         willSet { if newValue != tool { styleGesture(false) } }
         didSet {
             canvas.tool = tool
-            if tool.isDrawing { coordinator.preferences.editor.tool = tool }
+            if tool != .crop { coordinator.preferences.editor.tool = tool }
         }
     }
     var selectionVersion = 0
