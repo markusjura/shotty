@@ -23,10 +23,14 @@ enum CropGeometry {
         return fitted(size, aspect: aspect, anchor: rect.origin, unitAnchor: .zero, within: bounds)
     }
 
-    static func dragged(_ rect: CGRect, edges: SelectionEdges?, moving: Bool, from start: CGPoint,
-                        to point: CGPoint, aspect: CGFloat?, within bounds: CGRect, snap: CGFloat) -> CGRect {
-        let delta = CGVector(dx: point.x - start.x, dy: point.y - start.y)
+    /// A pointer drag that moves the crop, resizes it from `edges`, or draws a new one without edges.
+    /// `constrained` is Shift: it keeps a move on one axis, a resize at the crop's starting
+    /// proportions, and a drawn crop square. A chosen `aspect` takes precedence.
+    static func dragged(_ rect: CGRect, edges: SelectionEdges?, moving: Bool, from start: CGPoint, to point: CGPoint,
+                        aspect: CGFloat?, constrained: Bool = false, within bounds: CGRect, snap: CGFloat) -> CGRect {
+        var delta = CGVector(dx: point.x - start.x, dy: point.y - start.y)
         if moving {
+            if constrained { if abs(delta.dx) >= abs(delta.dy) { delta.dy = 0 } else { delta.dx = 0 } }
             var origin = CGPoint(x: rect.minX + delta.dx, y: rect.minY + delta.dy)
             origin.x = min(max(origin.x, bounds.minX), bounds.maxX - rect.width)
             origin.y = min(max(origin.y, bounds.minY), bounds.maxY - rect.height)
@@ -37,6 +41,7 @@ enum CropGeometry {
             return CGRect(x: origin.x.rounded(), y: origin.y.rounded(), width: rect.width, height: rect.height)
         }
 
+        let aspect = aspect ?? (constrained ? (edges == nil ? 1 : rect.width / rect.height) : nil)
         let activeEdges = edges ?? []
         let horizontal = edges == nil || !activeEdges.intersection([.left, .right]).isEmpty
         let vertical = edges == nil || !activeEdges.intersection([.bottom, .top]).isEmpty

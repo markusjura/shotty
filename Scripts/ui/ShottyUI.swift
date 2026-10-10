@@ -21,11 +21,11 @@ func number(_ index: Int) -> Double {
 func point(_ index: Int) -> CGPoint { CGPoint(x: number(index), y: number(index + 1)) }
 /// Posts one mouse event. Exiting right after posting sometimes drops the event, so a `move` would
 /// leave the pointer where it was; the short wait lets it through.
-func mouse(_ type: CGEventType, _ point: CGPoint) {
-    // Explicit empty flags: posted key presses can leave modifiers in the source state, and an
+func mouse(_ type: CGEventType, _ point: CGPoint, flags: CGEventFlags = []) {
+    // Explicit flags: posted key presses can leave modifiers in the source state, and an
     // inherited Option would turn a drag into a centered selection.
     let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: .left)
-    event?.flags = []
+    event?.flags = flags
     event?.post(tap: .cghidEventTap)
     usleep(8_000)
 }
@@ -44,6 +44,20 @@ func press(_ element: AXUIElement) { print(AXUIElementPerformAction(element, kAX
 func window(named name: String, in id: String = bundleID) -> AXUIElement? {
     (attribute(app(id).1, kAXWindowsAttribute) as [AXUIElement]?)?.first { title($0) == name }
 }
+/// Parses a modifier list such as `command,shift`.
+func modifiers(_ list: String) -> CGEventFlags {
+    var flags: CGEventFlags = []
+    for name in list.split(separator: ",") {
+        switch name {
+        case "command": flags.insert(.maskCommand)
+        case "shift": flags.insert(.maskShift)
+        case "option": flags.insert(.maskAlternate)
+        case "control": flags.insert(.maskControl)
+        default: fail("unknown modifier \(name)")
+        }
+    }
+    return flags
+}
 let clipMark = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("shotty-ui-clip")
 
 switch args.first {
@@ -56,38 +70,33 @@ case "click":
     mouse(.leftMouseUp, target)
 case "drag", "drag-path":
     // Slow enough for drag and drop receivers: a hold after the press, even steps, a hold before release.
+    // A trailing modifier list, such as `shift`, holds those modifiers for the whole drag.
+    let held = args.count > 5 && Double(args[args.count - 1]) == nil ? args[args.count - 1] : nil
+    let flags = held.map(modifiers) ?? []
+    let count = args.count - (held == nil ? 0 : 1)
     let points: [CGPoint]
     if args.first == "drag-path" {
-        guard args.count >= 5, (args.count - 1).isMultiple(of: 2) else { fail("usage: drag-path x1 y1 x2 y2 [x3 y3 ...]") }
-        points = stride(from: 1, to: args.count, by: 2).map(point)
+        guard count >= 5, (count - 1).isMultiple(of: 2) else { fail("usage: drag-path x1 y1 x2 y2 [x3 y3 ...] [modifiers]") }
+        points = stride(from: 1, to: count, by: 2).map(point)
     } else { points = [point(1), point(3)] }
-    let steps = args.first == "drag" && args.count > 5 ? Int(number(5)) : 30
+    let steps = args.first == "drag" && count > 5 ? Int(number(5)) : 30
     guard steps > 0 else { fail("drag steps must be positive") }
     mouse(.mouseMoved, points[0]); usleep(100_000)
-    mouse(.leftMouseDown, points[0]); usleep(150_000)
+    mouse(.leftMouseDown, points[0], flags: flags); usleep(150_000)
     for (from, to) in zip(points, points.dropFirst()) {
         for step in 1...steps {
             let t = Double(step) / Double(steps)
-            mouse(.leftMouseDragged, CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t))
+            mouse(.leftMouseDragged, CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t), flags: flags)
             usleep(15_000)
         }
     }
     usleep(200_000)
-    mouse(.leftMouseUp, points[points.count - 1])
+    mouse(.leftMouseUp, points[points.count - 1], flags: flags)
 case "press":
     // Posts one key press with modifiers, such as `press 22 command,shift`, at the HID level, where
     // global hotkeys see it. Use it where System Events lacks Accessibility access.
     guard args.count > 1, let code = UInt16(args[1]) else { fail("usage: press <keycode> [command,shift,option,control]") }
-    var flags: CGEventFlags = []
-    for name in args.count > 2 ? args[2].split(separator: ",") : [] {
-        switch name {
-        case "command": flags.insert(.maskCommand)
-        case "shift": flags.insert(.maskShift)
-        case "option": flags.insert(.maskAlternate)
-        case "control": flags.insert(.maskControl)
-        default: fail("unknown modifier \(name)")
-        }
-    }
+    let flags = args.count > 2 ? modifiers(args[2]) : []
     for down in [true, false] {
         let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down)
         event?.flags = flags
@@ -179,8 +188,8 @@ case "clip":
 default:
     fail("""
     usage: shotty-ui <command>
-      move x y | click x y | drag x1 y1 x2 y2 [steps]
-      drag-path x1 y1 x2 y2 [x3 y3 ...]
+      move x y | click x y | drag x1 y1 x2 y2 [steps] [modifiers]
+      drag-path x1 y1 x2 y2 [x3 y3 ...] [modifiers]
       menu <menu> [item] | button <title> | windows [bundleID] | resize <title> w h | close <bundleID> <title>
       focus | front | text <bundleID> | cursor | clip mark | clip wait [out.png]
       keys <text> | key <code> [command,shift,option,control] | press <code> [command,shift,option,control]

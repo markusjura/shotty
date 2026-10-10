@@ -486,7 +486,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
     override func mouseMoved(with event: NSEvent) { updateCursor() }
 
     /// Sets the cursor for what a press at the pointer would do: resize cursors on handles, a
-    /// hand on objects, the capture crosshair where a drawing tool draws.
+    /// hand on objects and inside the crop, the capture crosshair where a drawing tool or the crop draws.
     private func updateCursor() {
         guard gesture == nil, !spaceHeld, let window, window.isKeyWindow else { return }
         let viewPoint = convert(window.mouseLocationOutsideOfEventStream, from: nil)
@@ -495,7 +495,10 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
     }
 
     private func cursor(at point: CGPoint) -> NSCursor {
-        guard tool != .crop else { return .arrow }
+        if tool == .crop {
+            let rect = cropDraft ?? sourceBounds
+            return .crop(edges: SelectionGeometry.edges(near: point, of: rect, tolerance: 7 / zoom), inside: rect.contains(point))
+        }
         let handles = (editingBox.map { EditorGeometry.textHandles(for: textChrome($0)) } ?? []) + selectionHandles(in: document.state)
         if let handle = handles.first(where: { hypot($0.1.x - point.x, $0.1.y - point.y) <= 8 / zoom })?.0 {
             return resizeCursor(for: handle)
@@ -507,16 +510,12 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
     }
 
     /// The standard frame resize cursor. Line and arrow handles point along the line, and a
-    /// curved arrow's bend handle across it. Image y grows downward, as on screen.
+    /// curved arrow's bend handle across it.
     private func resizeCursor(for handle: EditorHandle) -> NSCursor {
         let position: NSCursor.FrameResizePosition
         switch handle {
         case .textSize: position = .bottomRight
-        case .edges(let edges):
-            let top = edges.contains(.bottom), bottom = edges.contains(.top)
-            let left = edges.contains(.left), right = edges.contains(.right)
-            position = top ? (left ? .topLeft : right ? .topRight : .top)
-                : bottom ? (left ? .bottomLeft : right ? .bottomRight : .bottom) : (left ? .left : .right)
+        case .edges(let edges): return .frameResize(edges: edges)
         case .point(let index):
             guard selected.count == 1, let annotation = document.state.annotations.first(where: { selected.contains($0.id) })
             else { return .crosshair }
@@ -675,7 +674,7 @@ final class EditorCanvas: NSView, NSTextViewDelegate, NSMenuItemValidation {
             return
         case .crop(let edges, let start, let moving):
             cropDraft = CropGeometry.dragged(start, edges: edges, moving: moving, from: anchor, to: point,
-                                             aspect: cropAspect, within: sourceBounds,
+                                             aspect: cropAspect, constrained: modifiers.contains(.shift), within: sourceBounds,
                                              snap: modifiers.contains(.command) ? 0 : 6 / zoom)
             selectionChanged?()
             return
@@ -1159,5 +1158,23 @@ private actor EditorPreviewRenderer {
             try Task.checkCancellation()
             return (region.standardized.integral.intersection(bounds), try renderer.render(source: source, state: state, region: region))
         }
+    }
+}
+
+extension NSCursor {
+    /// The frame resize cursor for box edges in image coordinates, where y grows downward as on
+    /// screen, so `.bottom` is the visual top.
+    static func frameResize(edges: SelectionEdges) -> NSCursor {
+        let top = edges.contains(.bottom), bottom = edges.contains(.top)
+        let left = edges.contains(.left), right = edges.contains(.right)
+        let position: FrameResizePosition = top ? (left ? .topLeft : right ? .topRight : .top)
+            : bottom ? (left ? .bottomLeft : right ? .bottomRight : .bottom) : (left ? .left : .right)
+        return .frameResize(position: position, directions: .all)
+    }
+
+    /// Both editors' crop cursor: resize on the box edges, a hand inside, which moves the box, and
+    /// the capture crosshair outside, which draws a new box.
+    @MainActor static func crop(edges: SelectionEdges?, inside: Bool) -> NSCursor {
+        edges.map(frameResize(edges:)) ?? (inside ? .openHand : .captureCrosshair)
     }
 }
