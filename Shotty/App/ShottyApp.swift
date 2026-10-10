@@ -178,7 +178,11 @@ final class ShottyApplicationDelegate: NSObject, NSApplicationDelegate {
         keepOneShottyRunning()
         #endif
         coordinator.thumbnails.commands = commands
-        coordinator.recognizeText = { [weak self] image, settings, ticket in self?.textCapture.start(image, settings: settings, ticket: ticket) }
+        coordinator.recognizeText = { [weak self] image, region, settings, ticket in
+            self?.textCapture.start(image, region: region, settings: settings, ticket: ticket)
+        }
+        let text = coordinator.preferences.text
+        Task.detached(priority: .utility) { await TextRecognizer.prepare(preferences: text) }
         coordinator.startScrolling = { [weak self] region, display, settings, ticket in
             self?.scrollingCapture.start(region: region, displayID: display, settings: settings, ticket: ticket)
         }

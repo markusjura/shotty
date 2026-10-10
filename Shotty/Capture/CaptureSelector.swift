@@ -10,6 +10,8 @@ struct SelectionConfiguration {
 
 enum CaptureSelection {
     case image(CGImage, kind: CaptureKind, scale: Double)
+    /// Pixels to recognize text in, and where they were on screen, so feedback can appear there.
+    case text(CGImage, region: CGRect)
     case scrolling(region: CGRect, displayID: CGDirectDisplayID)
 }
 
@@ -350,6 +352,7 @@ final class CaptureSelector {
                 }
             }
             let image = try await renderer.compose(region: selection, displays: images)
+            if kind == .text { return .text(image, region: selection) }
             return .image(image, kind: kind, scale: Double(SelectionGeometry.outputScale(for: selection, displays: images)))
         }
     }

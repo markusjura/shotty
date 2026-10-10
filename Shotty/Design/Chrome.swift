@@ -2,9 +2,9 @@ import AppKit
 import SwiftUI
 
 /// Design tokens for Shotty's own floating chrome: thumbnails, capture overlays, scrolling
-/// controls, and brief result panels. This chrome sits on arbitrary captured pixels, so it uses
-/// fixed light controls with dark labels and system materials. Windows, forms, and the editor
-/// toolbar use standard system colors and controls instead.
+/// controls, and Capture Text's feedback. This chrome sits on arbitrary captured pixels, so it uses
+/// fixed light controls with dark labels. Windows, forms, and the editor toolbar use standard
+/// system colors and controls instead.
 ///
 /// Colors are `NSColor` so AppKit drawing and SwiftUI share one value; `Color(nsColor:)`
 /// bridges them in views.
@@ -27,6 +27,10 @@ enum Chrome {
     /// light controls stand out on any capture while its colors still show through. The same in both
     /// appearances, since it sits on captured pixels.
     static let cardScrim = NSColor.black.withAlphaComponent(0.5)
+    /// Tint over the blurred capture in a card's bottom stripe, measured from CleanShot X's recording
+    /// thumbnails: white turns (120, 120, 124) and near black (34, 34, 37), so the stripe stays a mid
+    /// dark gray that white text reads on over any capture.
+    static let cardStripe = NSColor(srgbRed: 44 / 255, green: 44 / 255, blue: 50 / 255, alpha: 0.64)
     /// Small dark readouts such as selection dimensions.
     static let readoutFill = NSColor.black.withAlphaComponent(0.78)
 
@@ -58,7 +62,6 @@ enum Chrome {
     // MARK: Shape and type
 
     static let cardRadius: CGFloat = 13
-    static let panelRadius: CGFloat = 12
     static let pillHeight: CGFloat = 28
     static let cardPillSize = CGSize(width: 52, height: 27)
     static let iconButtonDiameter: CGFloat = 22
@@ -81,12 +84,6 @@ enum Chrome {
 }
 
 extension View {
-    /// A floating HUD surface: system material, panel radius, and the shared hairline.
-    func floatingSurface() -> some View {
-        background(.regularMaterial, in: RoundedRectangle(cornerRadius: Chrome.panelRadius))
-            .overlay(RoundedRectangle(cornerRadius: Chrome.panelRadius).strokeBorder(Color(nsColor: .separatorColor)))
-    }
-
     /// Secondary explanatory text under a control or message.
     func secondaryNote() -> some View {
         font(.callout).foregroundStyle(.secondary)

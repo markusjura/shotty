@@ -10,12 +10,21 @@ final class ThumbnailCoordinator {
     struct Card: Identifiable {
         let id: UUID
         var image: NSImage
-        /// A clip's output length, such as `0:12`, shown on its card; nil for a screenshot.
-        var duration: String?
+        /// What a clip card's bottom stripe shows; nil for a screenshot.
+        var clip: ClipSummary?
         var status: String?
         /// The copy or save that succeeded last. Its pill shows a checkmark: a copy's for a moment,
         /// a save's until the card goes away.
         var success: Action?
+    }
+    /// A clip's format, length, and file size, which its card shows in a stripe along the bottom,
+    /// as CleanShot X does.
+    struct ClipSummary: Equatable {
+        var format: ClipFormat
+        /// Seconds the output plays, after trimming and speeding up.
+        var duration: TimeInterval
+        /// Bytes of the file that copy, save, and drag hand over; nil until that file exists.
+        var byteCount: Int?
     }
     enum Feedback {
         case copied, saved, saving, rendering, waitingToSave, message(String)
@@ -124,20 +133,21 @@ final class ThumbnailCoordinator {
     }
 
     /// Adds a card at the top of the stack without taking keyboard focus.
-    func add(_ id: UUID, image: CGImage, duration: String? = nil) {
+    func add(_ id: UUID, image: CGImage, clip: ClipSummary? = nil) {
         cards.removeAll { $0.id == id }
-        cards.insert(Card(id: id, image: NSImage(cgImage: image, size: .zero), duration: duration), at: 0)
+        cards.insert(Card(id: id, image: NSImage(cgImage: image, size: .zero), clip: clip), at: 0)
         let settings = preferences.thumbnails
         if settings.autoClose != .never { countdown.start(id, seconds: TimeInterval(settings.autoCloseDelaySeconds)) }
         runCountdown()
         refresh()
     }
 
-    /// Replaces a clip card's frame and length in place, after an edit, without moving it in the stack.
-    func replace(_ id: UUID, image: CGImage, duration: String) {
+    /// Updates a clip card in place without moving it in the stack: its frame and summary after an
+    /// edit, or only the summary once the clip's file is rendered.
+    func replace(_ id: UUID, image: CGImage? = nil, clip: ClipSummary) {
         guard let index = cards.firstIndex(where: { $0.id == id }) else { return }
-        cards[index].image = NSImage(cgImage: image, size: .zero)
-        cards[index].duration = duration
+        if let image { cards[index].image = NSImage(cgImage: image, size: .zero) }
+        cards[index].clip = clip
     }
 
     func update(_ id: UUID, feedback: Feedback) {

@@ -12,7 +12,7 @@ final class AppCoordinator {
     let store = CaptureSessionStore()
     let exporter = ExportService()
     let clipExporter = ClipExporter()
-    let clipboard = ClipboardWriter()
+    let clipboard: ClipboardWriter
     let selector = CaptureSelector()
     let recording = RecordingController()
     @ObservationIgnored lazy var recordingSelector = RecordingSelector(preferences: preferences)
@@ -27,11 +27,12 @@ final class AppCoordinator {
     private(set) var isClosing = false
     private var saveAllTask: Task<Void, Never>?
     var openEditor: ((UUID) -> Void)?
-    var recognizeText: ((CGImage, CaptureOutputSnapshot, ClipboardWriter.Ticket) -> Void)?
+    /// Recognizes the text in a selection; the rectangle is where it was on screen, in AppKit coordinates.
+    var recognizeText: ((CGImage, CGRect, CaptureOutputSnapshot, ClipboardWriter.Ticket) -> Void)?
     var startScrolling: ((CGRect, CGDirectDisplayID, CaptureOutputSnapshot, ClipboardWriter.Ticket) -> Void)?
     var stopAuxiliaryCapture: (() async -> Void)?
     var auxiliaryCaptureActive: (() -> Bool)?
-    /// True while recognized text is on screen, in its result panel or a review window.
+    /// True while recognized text is on screen in a review window.
     var textResultsOpen: (() -> Bool)?
     var hasEditor: ((UUID) -> Bool)?
     private var captureTask: Task<Void, Never>?
@@ -58,8 +59,11 @@ final class AppCoordinator {
     /// Only one runs at a time.
     var isBusy: Bool { isCapturing || recording.isActive || auxiliaryCaptureActive?() == true }
 
-    /// Tests pass preferences backed by their own defaults suite.
-    init(preferences: AppPreferences = AppPreferences()) { self.preferences = preferences }
+    /// Tests pass preferences backed by their own defaults suite, and a clipboard on a private pasteboard.
+    init(preferences: AppPreferences = AppPreferences(), clipboard: ClipboardWriter = ClipboardWriter()) {
+        self.preferences = preferences
+        self.clipboard = clipboard
+    }
 
     func launch() async {
         thumbnails.perform = { [weak self] id, action in self?.perform(id, action: action) }
@@ -90,6 +94,7 @@ final class AppCoordinator {
             await self?.accept(movie, kind: kind, settings: settings, ticket: ticket)
         }
         recording.failed = { [weak self] error in self?.showError(error, title: "Couldn't record") }
+        observeRenderOptions()
         // Captures live only as long as the app. Whatever a crash or kill left behind goes silently.
         do {
             try CaptureScratchSpace.cleanPreviousLaunch()
@@ -136,14 +141,13 @@ final class AppCoordinator {
                 thumbnails.hiddenForCapture = false
                 switch result {
                 case .success(.image(let image, let selectedKind, let scale)):
-                    if selectedKind == .text { recognizeText?(image, settings, ticket) }
-                    else {
-                        isCapturing = true
-                        captureTask = Task {
-                            await self.accept(image, kind: selectedKind, scale: scale, settings: settings, ticket: ticket)
-                            self.captureTask = nil; self.isCapturing = false
-                        }
+                    isCapturing = true
+                    captureTask = Task {
+                        await self.accept(image, kind: selectedKind, scale: scale, settings: settings, ticket: ticket)
+                        self.captureTask = nil; self.isCapturing = false
                     }
+                case .success(.text(let image, let region)):
+                    recognizeText?(image, region, settings, ticket)
                 case .success(.scrolling(let region, let display)):
                     startScrolling?(region, display, settings, ticket)
                 case .failure(let error):
@@ -269,14 +273,28 @@ final class AppCoordinator {
     }
 
     /// Pass `source` while a new screenshot is still in memory; otherwise the store reads it back.
-    /// A clip's card also shows its length.
+    /// A clip's card also shows its format, length, and size.
     private func showThumbnail(_ id: UUID, source: CGImage? = nil) async {
         do {
             let image = if let source { try await store.thumbnail(of: source) } else { try await store.thumbnail(for: id) }
-            var duration: String?
-            if case .clip(let record) = try await store.record(id) { duration = ClipTime.duration(record.snapshot.outputDuration) }
-            thumbnails.add(id, image: image, duration: duration)
+            var clip: ThumbnailCoordinator.ClipSummary?
+            if case .clip(let record) = try await store.record(id) { clip = summary(of: record.snapshot) }
+            thumbnails.add(id, image: image, clip: clip)
         } catch { showError(error, title: "Couldn't show capture") }
+    }
+
+    /// What a clip's card shows. The size is the file that copy, save, and drag hand over: the
+    /// recording itself while it is unedited, else the render `prepare` made for this revision.
+    /// Until that render exists, the size is unknown.
+    func summary(of snapshot: ClipSnapshot) -> ThumbnailCoordinator.ClipSummary {
+        let output: URL? = if snapshot.edit.isPassthrough(sourceSize: snapshot.pixelSize, sourceDuration: snapshot.duration) {
+            snapshot.sourceURL
+        } else if let file = prepared[snapshot.captureID], file.revision == snapshot.revision,
+                  file.options == preferences.snapshot().renderOptions {
+            file.url
+        } else { nil }
+        return .init(format: snapshot.edit.format, duration: snapshot.outputDuration,
+                     byteCount: output.flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize })
     }
 
     func perform(_ id: UUID, action: ThumbnailCoordinator.Action) {
@@ -457,7 +475,7 @@ final class AppCoordinator {
         await refreshRecords()
         if thumbnails.cards.contains(where: { $0.id == id }),
            let image = try? await store.thumbnail(for: id), let snapshot = try? await store.clipSnapshot(for: id) {
-            thumbnails.replace(id, image: image, duration: ClipTime.duration(snapshot.outputDuration))
+            thumbnails.replace(id, image: image, clip: summary(of: snapshot))
         }
         // Edits often come in runs, such as several trims; render once they settle.
         prepare(id, after: .seconds(1))
@@ -544,9 +562,25 @@ final class AppCoordinator {
         }
     }
 
+    /// Settings can change the codec or GIF frame rate, and with them the file that copy, save, and
+    /// drag hand over. Every clip then renders again, and a card whose size came from the old render
+    /// shows none until the new one is done.
+    private func observeRenderOptions(after previous: RenderOptions? = nil) {
+        let options = preferences.snapshot().renderOptions
+        withObservationTracking { _ = preferences.snapshot().renderOptions } onChange: { [weak self] in
+            Task { @MainActor in self?.observeRenderOptions(after: options) }
+        }
+        guard let previous, previous != options else { return }
+        for case .clip(let record) in records {
+            thumbnails.replace(record.id, clip: summary(of: record.snapshot))
+            prepare(record.id, after: .zero)
+        }
+    }
+
     /// Renders the clip's current revision in the background after `delay`, so a drag can hand
-    /// over a finished file. A newer call for the same clip replaces a pending one and waits for a
-    /// render already under way, so a run of edits never renders a long clip several times at once.
+    /// over a finished file and the card can show its size. A newer call for the same clip replaces
+    /// a pending one and waits for a render already under way, so a run of edits never renders a long
+    /// clip several times at once.
     private func prepare(_ id: UUID, after delay: Duration) {
         let previous = preparing[id]
         previous?.cancel()
@@ -558,6 +592,7 @@ final class AppCoordinator {
                   let url = try? await clipExporter.rendered(snapshot, options: options),
                   records.first(where: { $0.id == id })?.revision == snapshot.revision else { return }
             prepared[id] = (snapshot.revision, options, url)
+            thumbnails.replace(id, clip: summary(of: snapshot))
         }
     }
 

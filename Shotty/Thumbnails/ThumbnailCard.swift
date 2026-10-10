@@ -22,7 +22,7 @@ private struct ThumbnailImage: NSViewRepresentable {
     func updateNSView(_ view: ThumbnailImageView, context: Context) {
         view.image = card.image
         view.captureID = card.id
-        view.duration = card.duration
+        view.clip = card.clip
         view.coordinator = coordinator
         view.status = card.status
         view.setSuccess(card.success)
@@ -37,16 +37,19 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
     var image: NSImage? {
         didSet {
             guard image !== oldValue else { return }
-            backdrop = controlsVisible ? makeBackdrop() : nil
+            backdrop = nil
             needsDisplay = true
         }
     }
     var captureID: UUID?
-    /// A clip's length for the badge in the corner; nil for a screenshot.
-    var duration: String? {
+    /// A clip's format, length, and size for the stripe along the bottom; nil for a screenshot.
+    var clip: ThumbnailCoordinator.ClipSummary? {
         didSet {
-            guard duration != oldValue else { return }
-            if (duration == nil) != (oldValue == nil) { describe() }
+            guard clip != oldValue else { return }
+            if (clip == nil) != (oldValue == nil) { describe() }
+            // A size that arrives once the clip is rendered, or a new length after an edit, fades in.
+            if oldValue != nil { Chrome.crossfade(layer) }
+            setAccessibilityValue(clip.map(ClipStripe.spokenSummary))
             needsDisplay = true
         }
     }
@@ -58,7 +61,8 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
     private var tracking: NSTrackingArea?
     private var hovered = false
     private var controls: [NSButton] = []
-    /// The blurred capture drawn behind the hover controls, under `Chrome.cardScrim`.
+    /// The blurred capture behind the hover controls and in the bottom stripe. Built on first use per
+    /// image, so a screenshot card that is never hovered costs nothing.
     private var backdrop: CGImage?
     private let statusLabel = NSTextField(labelWithString: "")
     private var success: ThumbnailCoordinator.Action?
@@ -129,8 +133,8 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
 
     /// Names the card and its Dismiss button after what it holds, a capture or a clip.
     private func describe() {
-        let noun = duration == nil ? "capture" : "clip"
-        setAccessibilityLabel(duration == nil ? "Capture thumbnail" : "Clip thumbnail")
+        let noun = clip == nil ? "capture" : "clip"
+        setAccessibilityLabel(clip == nil ? "Capture thumbnail" : "Clip thumbnail")
         controls[0].setAccessibilityLabel("Dismiss \(noun)")
         controls[0].toolTip = "Dismiss \(noun)"
     }
@@ -189,16 +193,19 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         needsDisplay = true
         guard controlsVisible != visible else { return }
         controlsVisible = visible
-        if visible, backdrop == nil { backdrop = makeBackdrop() }
         controls.forEach { $0.isHidden = !visible }
-        // One crossfade covers the backdrop drawn by this view and the controls above it.
+        // One crossfade covers what this view draws, the backdrop or the stripe, and the controls above it.
         Chrome.crossfade(layer)
     }
 
     private static let ciContext = CIContext(options: [.cacheIntermediates: false])
 
-    /// Blurs the capture at card resolution for the hover background.
-    /// Built once per image on first reveal, so cards that are never hovered cost nothing.
+    /// The capture blurred at card resolution, made on first use.
+    private var blurredImage: CGImage? {
+        if backdrop == nil { backdrop = makeBackdrop() }
+        return backdrop
+    }
+
     private func makeBackdrop() -> CGImage? {
         guard let image, let source = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
               source.width > 0, source.height > 0 else { return nil }
@@ -244,26 +251,19 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         bounds.fill()
         if let image, image.size.width > 0, image.size.height > 0 {
             let rect = ThumbnailLayout.imageRect(imageSize: image.size, bounds: bounds)
-            if controlsVisible, let backdrop {
+            if controlsVisible, let backdrop = blurredImage {
                 NSGraphicsContext.current?.cgContext.draw(backdrop, in: rect)
                 Chrome.cardScrim.setFill()
                 rect.fill(using: .sourceOver)
-            } else { image.draw(in: rect) }
+            } else {
+                image.draw(in: rect)
+                if !controlsVisible, status != nil || clip != nil { drawStripe(over: rect) }
+            }
         }
         // White status text alone is too faint on the scrimmed backdrop of a bright capture.
         if status != nil, controlsVisible {
             Chrome.readoutFill.setFill()
             NSBezierPath(roundedRect: statusLabel.frame.insetBy(dx: -4, dy: -2), xRadius: 6, yRadius: 6).fill()
-        }
-        if let status, !controlsVisible {
-            let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .medium),
-                                                           .foregroundColor: NSColor.white]
-            let rect = CGRect(x: 10, y: 6, width: bounds.width - 20, height: 16)
-            Chrome.readoutFill.setFill()
-            NSBezierPath(roundedRect: rect.insetBy(dx: -4, dy: -2), xRadius: 6, yRadius: 6).fill()
-            (status as NSString).draw(with: rect, options: [.truncatesLastVisibleLine], attributes: attributes)
-        } else if !controlsVisible, let duration {
-            drawDuration(duration)
         }
         NSGraphicsContext.restoreGraphicsState()
         // The edge sits on top of the capture, like a macOS window frame. It is stroked unclipped: the clip's
@@ -274,20 +274,35 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         strokeCardRing(inset: edgeWidth, width: 1, color: Chrome.cardRim)
     }
 
-    /// A clip's length in a small dark badge nested in the bottom right corner, like a video player's.
-    private func drawDuration(_ duration: String) {
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
-        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
-        let text = duration as NSString
-        // The corner buttons' inset, with a radius concentric to the card's corner so the badge sits evenly in it.
-        let inset: CGFloat = 6, padding: CGFloat = 6, radius = cornerRadius - inset
-        let width = text.size(withAttributes: attributes).width.rounded(.up) + 2 * padding
-        let badge = CGRect(x: bounds.maxX - inset - width, y: inset, width: width, height: 16)
-        Chrome.readoutFill.setFill()
-        NSBezierPath(roundedRect: badge, xRadius: radius, yRadius: radius).fill()
-        // Center the digits' cap height, not the line box, whose descender space digits never use.
-        let baseline = (badge.midY - font.capHeight / 2).rounded()
-        text.draw(at: CGPoint(x: badge.minX + padding, y: baseline + font.descender), withAttributes: attributes)
+    /// The stripe along the bottom while the controls are hidden, as on CleanShot X's recordings: a
+    /// status if there is one, else a clip's format, length, and file size. It blurs and tints the
+    /// capture beneath it, so its white text reads on any capture.
+    private func drawStripe(over imageRect: CGRect) {
+        let stripe = CGRect(x: 0, y: 0, width: bounds.width, height: ClipStripe.height)
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath.clip(stripe)
+        if let backdrop = blurredImage { NSGraphicsContext.current?.cgContext.draw(backdrop, in: imageRect) }
+        Chrome.cardStripe.setFill()
+        stripe.fill(using: .sourceOver)
+        NSGraphicsContext.restoreGraphicsState()
+        let inset = ClipStripe.inset
+        if let status {
+            ClipStripe.drawLine(status, font: ClipStripe.detailFont, color: .white,
+                                in: CGRect(x: inset, y: 0, width: stripe.width - 2 * inset, height: stripe.height))
+            return
+        }
+        guard let clip else { return }
+        ClipStripe.drawIcon(for: clip.format, centeredAt: ClipStripe.iconCenter)
+        var lengthWidth = stripe.width - inset - ClipStripe.textStart
+        if let bytes = clip.byteCount {
+            let size = ClipStripe.fileSize(bytes)
+            let width = ClipStripe.width(of: size, font: ClipStripe.detailFont)
+            ClipStripe.drawLine(size, font: ClipStripe.detailFont, color: ClipStripe.secondary,
+                                in: CGRect(x: stripe.width - inset - width, y: 0, width: width, height: stripe.height))
+            lengthWidth -= width + 8
+        }
+        ClipStripe.drawLine(ClipTime.compact(clip.duration), font: ClipStripe.lengthFont, color: .white,
+                            in: CGRect(x: ClipStripe.textStart, y: 0, width: lengthWidth, height: stripe.height))
     }
 
     /// Strokes a band `width` wide whose outer side is `inset` from the card edge. The band's path is
@@ -384,7 +399,7 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu()
         menu.delegate = self
-        let items: [(String, ThumbnailCoordinator.Action)] = [("Open Editor", .open), (duration == nil ? "Copy Image" : "Copy Clip", .copy),
+        let items: [(String, ThumbnailCoordinator.Action)] = [("Open Editor", .open), (clip == nil ? "Copy Image" : "Copy Clip", .copy),
             ("Save to Folder", .save), ("Save As…", .saveAs), ("Dismiss", .dismiss)]
         for (tag, (title, action)) in items.enumerated() {
             let item = NSMenuItem(title: title, action: #selector(menuAction(_:)), keyEquivalent: "")
@@ -418,6 +433,73 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         dragging = false
         press = nil
     }
+}
+
+/// Metrics and drawing for a card's bottom stripe, measured from CleanShot X's recording thumbnails:
+/// 25 pt tall, an 11 pt length beside a video or GIF mark, and the file size dimmed at the right.
+@MainActor
+private enum ClipStripe {
+    static let height: CGFloat = 25
+    static let inset: CGFloat = 8
+    /// The mark sits a little above the stripe's middle, level with the digits.
+    static let iconCenter = CGPoint(x: 18, y: 13)
+    static let textStart: CGFloat = 34
+    static let lengthFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
+    static let detailFont = NSFont.systemFont(ofSize: 11, weight: .medium)
+    static let secondary = NSColor.white.withAlphaComponent(0.7)
+
+    /// What VoiceOver reads for a clip card, such as "GIF, 14s, 1,7 MB".
+    static func spokenSummary(_ clip: ThumbnailCoordinator.ClipSummary) -> String {
+        [clip.format.title, ClipTime.compact(clip.duration), clip.byteCount.map(fileSize)].compactMap { $0 }.joined(separator: ", ")
+    }
+
+    /// A file size as Finder writes it, such as `9,8 MB` in a German locale.
+    static func fileSize(_ bytes: Int) -> String { ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file) }
+
+    static func width(of text: String, font: NSFont) -> CGFloat {
+        (text as NSString).size(withAttributes: [.font: font]).width.rounded(.up)
+    }
+
+    /// One line of `text` in `rect`, its cap height centered vertically, cut off with an ellipsis
+    /// when it is too wide.
+    static func drawLine(_ text: String, font: NSFont, color: NSColor, in rect: CGRect) {
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = .byTruncatingTail
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color, .paragraphStyle: style]
+        // Center the cap height, not the line box, whose descender space digits and capitals never use.
+        let baseline = (rect.midY - font.capHeight / 2).rounded()
+        let line = (font.ascender - font.descender).rounded(.up)
+        (text as NSString).draw(with: CGRect(x: rect.minX, y: baseline + font.ascender - line, width: rect.width, height: line),
+                                options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attributes)
+    }
+
+    /// A white video camera for an MP4 clip, or a white GIF tag with its letters cut out for a GIF.
+    static func drawIcon(for format: ClipFormat, centeredAt center: CGPoint) {
+        switch format {
+        case .mp4:
+            // At 13 pt the camera's ink is 16 × 11 pt, centered in its image.
+            guard let camera else { return }
+            camera.draw(in: CGRect(x: center.x - camera.size.width / 2, y: center.y - camera.size.height / 2,
+                                   width: camera.size.width, height: camera.size.height))
+        case .gif:
+            guard let context = NSGraphicsContext.current?.cgContext else { return }
+            let tag = CGRect(x: center.x - 9.5, y: center.y - 6, width: 19, height: 12)
+            context.beginTransparencyLayer(auxiliaryInfo: nil)
+            NSColor.white.setFill()
+            NSBezierPath(roundedRect: tag, xRadius: 3, yRadius: 3).fill()
+            context.setBlendMode(.destinationOut)
+            let font = NSFont.systemFont(ofSize: 8.5, weight: .heavy)
+            let width = Self.width(of: "GIF", font: font)
+            let baseline = (tag.midY - font.capHeight / 2).rounded()
+            ("GIF" as NSString).draw(at: CGPoint(x: tag.midX - width / 2, y: baseline + font.descender),
+                                     withAttributes: [.font: font, .foregroundColor: NSColor.black])
+            context.endTransparencyLayer()
+        }
+    }
+
+    private static let camera = NSImage(systemSymbolName: "video.fill", accessibilityDescription: nil)?
+        .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+            .applying(.init(paletteColors: [.white])))
 }
 
 /// Native buttons keep AppKit hit testing and accessibility while matching the compact
