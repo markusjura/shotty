@@ -34,7 +34,7 @@ extension RecordingPreferences {
 }
 
 /// The microphone switch of the Record bar. It names the input it records from, or says it records
-/// none, and opens a menu to pick another input or none. White while it records, like the other
+/// none, and opens a menu to pick another input or none. Filled while it records, like the other
 /// audio switch.
 struct MicrophoneButton: View {
     @Bindable var preferences: AppPreferences
@@ -47,8 +47,8 @@ struct MicrophoneButton: View {
         Button {
             guard let view = anchor.view else { return }
             available = Microphone.available()
-            // Left-aligned below the button, clear of its shadow, like a pull-down menu.
-            menu().popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.maxY + 5), in: view)
+            // Left-aligned below the button, clear of the island, like a pull-down menu.
+            menu().popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.maxY + 9), in: view)
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: isOn ? "mic.fill" : "mic.slash")
@@ -56,7 +56,7 @@ struct MicrophoneButton: View {
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).opacity(0.6)
             }
         }
-        .buttonStyle(isOn ? .overlayCapsuleProminent : .overlayCapsule)
+        .buttonStyle(.islandSwitch(isOn: isOn))
         .background(MenuAnchor(reference: anchor))
         .help("Microphone: \(isOn ? title : "Off")")
         .accessibilityLabel("Microphone")

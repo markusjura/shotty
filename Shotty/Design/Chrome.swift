@@ -3,8 +3,8 @@ import SwiftUI
 
 /// Design tokens for Shotty's own floating chrome: thumbnails, capture overlays, scrolling
 /// controls, and Capture Text's feedback. This chrome sits on arbitrary captured pixels, so it uses
-/// fixed light controls with dark labels. Windows, forms, and the editor toolbar use standard
-/// system colors and controls instead.
+/// fixed light controls with dark labels, and the recording bars a fixed dark island. Windows,
+/// forms, and the editor toolbar use standard system colors and controls instead.
 ///
 /// Colors are `NSColor` so AppKit drawing and SwiftUI share one value; `Color(nsColor:)`
 /// bridges them in views.
@@ -33,6 +33,13 @@ enum Chrome {
     static let cardStripe = NSColor(srgbRed: 44 / 255, green: 44 / 255, blue: 50 / 255, alpha: 0.64)
     /// Small dark readouts such as selection dimensions.
     static let readoutFill = NSColor.black.withAlphaComponent(0.78)
+    /// The recording bars' dark capsule and the flat controls on it.
+    static let islandFill = NSColor(white: 0.24, alpha: 0.94)
+    static let islandRim = NSColor(white: 1, alpha: 0.14)
+    static let islandLabel = NSColor(white: 0.96, alpha: 1)
+    /// Record, Stop, and the live dot: shadcn's red-500 on light and Apple's increased-contrast red
+    /// on dark, lifted the way `SettingsColor.success` is. Islands always show the dark value.
+    static let record = NSColor.settings(light: 0xEF4444, dark: 0xFF6961)
 
     /// Hairline around cards and floating surfaces; stronger with Increase Contrast.
     static var hairline: NSColor {
@@ -63,6 +70,10 @@ enum Chrome {
 
     static let cardRadius: CGFloat = 13
     static let pillHeight: CGFloat = 28
+    static let islandHeight: CGFloat = 36
+    static let islandControlHeight: CGFloat = 28
+    /// Padding around an island for its shadow.
+    static let islandShadowInset: CGFloat = 12
     static let cardPillSize = CGSize(width: 52, height: 27)
     static let iconButtonDiameter: CGFloat = 22
     static let controlFont = NSFont.systemFont(ofSize: 13, weight: .medium)

@@ -321,6 +321,8 @@ final class RecordingSelector {
         panel.level = NSWindow.Level(Chrome.floatingLevel.rawValue + 1)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.animationBehavior = .none
+        // The island is dark in both appearances; its menus and dynamic colors follow.
+        panel.appearance = NSAppearance(named: .darkAqua)
         let content = NSHostingView(rootView: RecordBar(selector: self, preferences: preferences))
         // Only report the size; `layoutRecordBar` resizes the panel, keeping it centered as it grows.
         content.sizingOptions = [.intrinsicContentSize]
@@ -361,47 +363,43 @@ final class RecordingSelector {
     var showsReadout: Bool { errorMessage != nil || kind == .area && (selection == nil || drag != nil) }
 }
 
-/// Cancel, audio toggles, and Record, below the adjustable area.
+/// Cancel, the audio toggles, and Record on one island below the adjustable area.
 private struct RecordBar: View {
     let selector: RecordingSelector
     @Bindable var preferences: AppPreferences
 
     var body: some View {
-        HStack(spacing: 8) {
+        Island {
             Button("Cancel", systemImage: "xmark") { selector.cancel() }
-                .buttonStyle(.overlayIcon)
+                .buttonStyle(.islandIcon)
                 .help("Cancel (Escape)")
+            IslandDivider()
             AudioToggles(preferences: preferences)
-            Button { selector.confirm() } label: {
-                Label { Text("Record") } icon: { Image(systemName: "record.circle.fill").foregroundStyle(.red) }
-            }
-            .buttonStyle(.overlayCapsuleProminent)
-            .help("Start recording (Return)")
+            IslandDivider()
+            Button("Record", systemImage: "record.circle") { selector.confirm() }
+                .buttonStyle(.islandRecord)
+                .help("Start recording (Return)")
         }
-        .buttonStyle(.overlayCapsule)
         .fixedSize()
         .onGeometryChange(for: CGFloat.self, of: \.size.width) { _ in selector.layoutRecordBar() }
-        // Room for the controls' shadows.
-        .padding(9)
     }
 }
 
-/// The microphone menu and the system audio switch, white while on. They are the only place to set
-/// either, and they persist, so the next recording (also after a relaunch) starts the same way.
+/// The microphone menu and the system audio switch, filled while on, laid out by the island they
+/// sit on. They are the only place to set either, and they persist, so the next recording (also
+/// after a relaunch) starts the same way.
 struct AudioToggles: View {
     @Bindable var preferences: AppPreferences
 
     var body: some View {
         let isOn = preferences.recording.recordsSystemAudio
-        HStack(spacing: 8) {
-            MicrophoneButton(preferences: preferences)
-            Button("System Audio", systemImage: isOn ? "speaker.wave.2.fill" : "speaker.slash") {
-                preferences.recording.recordsSystemAudio.toggle()
-            }
-            .buttonStyle(isOn ? .overlayIconProminent : .overlayIcon)
-            .help("System Audio: \(isOn ? "On" : "Off")")
-            .accessibilityValue(isOn ? "On" : "Off")
+        MicrophoneButton(preferences: preferences)
+        Button("System Audio", systemImage: isOn ? "speaker.wave.2.fill" : "speaker.slash") {
+            preferences.recording.recordsSystemAudio.toggle()
         }
+        .buttonStyle(.islandSwitch(isOn: isOn, isIconOnly: true))
+        .help("System Audio: \(isOn ? "On" : "Off")")
+        .accessibilityValue(isOn ? "On" : "Off")
     }
 }
 
