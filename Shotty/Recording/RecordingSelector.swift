@@ -471,11 +471,10 @@ private final class RecordingSelectionView: NSView {
         let local: (CGRect) -> CGRect = { $0.offsetBy(dx: -self.displayFrame.minX, dy: -self.displayFrame.minY) }
         if let selected = selector.targetFrame {
             let rect = local(selected)
-            if selector.kind != .area {
-                NSColor.controlAccentColor.withAlphaComponent(0.22).setFill()
-                rect.fill()
-            } else {
-                Chrome.drawSelection(rect)
+            switch selector.kind {
+            case .area: Chrome.drawSelection(rect)
+            case .window: SelectionDrawing.drawWindowHighlight(rect)
+            case .screen: SelectionDrawing.drawDisplayHighlight(rect)
             }
             if selector.drawsHandles { SelectionDrawing.drawHandles(around: rect) }
         }

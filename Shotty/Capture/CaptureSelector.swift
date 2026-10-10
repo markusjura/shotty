@@ -6,6 +6,8 @@ import os
 struct SelectionConfiguration {
     var freeze = true
     var shadow = true
+    /// Capture Screen highlights this display until the pointer moves; nil starts at the one under the pointer.
+    var preferredDisplayID: CGDirectDisplayID?
 }
 
 enum CaptureSelection {
@@ -23,11 +25,8 @@ final class CaptureSelector {
     private(set) var kind: CaptureKind = .area
     private(set) var selection: CGRect?
     private(set) var pointer = NSEvent.mouseLocation
-    /// Unshadowed frozen pixels of the hovered window, sized to its frame. Output uses
-    /// the shadow variant chosen at confirmation; the unshadowed raster maps exactly onto
-    /// the window frame, while shadow padding has no reported offset.
-    private(set) var selectedWindowPreview: NSImage?
     private(set) var selectedWindowFrame: CGRect?
+    private(set) var selectedDisplayID: CGDirectDisplayID?
     /// True until window targets and any frozen snapshot are ready. The selection surface is already
     /// visible and interactive; a confirmation made meanwhile runs as soon as loading finishes.
     private(set) var isLoading = false
@@ -46,7 +45,6 @@ final class CaptureSelector {
     /// Window pixels for window selection. The frozen displays are in `displays`.
     private var frozenWindows: FrozenCaptureSet?
     private var operation: Task<Void, Never>?
-    private var hoverOperation: Task<Void, Never>?
     private var screenObservation: NSObjectProtocol?
     private var requestID = UUID()
     private var completion: ((Result<CaptureSelection, Error>) -> Void)?
@@ -99,14 +97,24 @@ final class CaptureSelector {
             if NSMouseInRect(pointer, display.frame, false) { panel.makeKey(); panel.makeFirstResponder(view) }
         }
         updateCursor()
+        if kind == .fullscreen { selectedDisplayID = configuration.preferredDisplayID ?? display(at: pointer)?.id }
         updatePointer(pointer, modifiers: [])
+        let freezes = configuration.freeze && kind != .scrolling
+        let overlays = overlayWindowIDs
         operation = Task { [self] in
             do {
-                let freezes = configuration.freeze && kind != .scrolling
-                if freezes {
-                    // The displays freeze first and on their own, so the frozen screen shows the moment the
-                    // capture started. Freezing every window as well can take a second or more.
-                    let set = try await FrozenCaptureSet.acquire(.displays, excludingWindowIDs: overlayWindowIDs)
+                // The displays freeze at once, so the frozen screen shows the moment the capture started.
+                async let frozenDisplays = freezes ? FrozenCaptureSet.acquire(.displays, excludingWindowIDs: overlays) : nil
+                // Only area and window selection target windows; the other modes skip listing and freezing them.
+                // Listing takes milliseconds, so hovering highlights windows at once, while freezing them can
+                // take a second or more. A confirmation waits for both.
+                let targets = try await selectsWindows ? WindowTarget.onScreen(screens, includesShotty: true) : []
+                try Task.checkCancellation()
+                guard requestID == request else { return }
+                windows = targets
+                if kind == .window { selectWindow(windowUnderPointer) }
+                redraw()
+                if let set = try await frozenDisplays {
                     var loaded: [SelectionDisplay] = []
                     for display in displays {
                         guard let snapshot = set.displays.first(where: { $0.displayID == display.id }) else {
@@ -125,20 +133,17 @@ final class CaptureSelector {
                         if let display = loaded.first(where: { $0.id == view.displayID }) { view.show(display) }
                     }
                 }
-                // Only area and window selection target windows; the other modes skip listing and freezing them.
-                var targets = try await selectsWindows ? WindowTarget.onScreen(screens, includesShotty: true) : []
                 if freezes && selectsWindows {
-                    let set = try await FrozenCaptureSet.acquire(.windows, excludingWindowIDs: overlayWindowIDs)
+                    let set = try await FrozenCaptureSet.acquire(.windows, excludingWindowIDs: overlays)
                     guard requestID == request, !Task.isCancelled else { try? await set.close(); return }
                     frozenWindows = set
                     // Only windows with frozen pixels are selectable; others would export live content.
-                    targets = targets.filter { target in set.windows.contains { $0.windowID == target.id } }
+                    windows.removeAll { target in !set.windows.contains { $0.windowID == target.id } }
+                    // A window picked with Tab stays picked; one that lost its pixels gives way to the window under the pointer.
+                    if kind == .window, !windows.contains(where: { $0.id == selectedWindowID }) { selectWindow(windowUnderPointer) }
                 }
-                try Task.checkCancellation()
-                guard requestID == request else { return }
-                windows = targets
                 isLoading = false
-                updatePointer(pointer, modifiers: [])
+                redraw()
                 if confirmWhenLoaded { confirm() }
             } catch is CancellationError { }
             catch { if requestID == request { finish(.failure(error)) } }
@@ -148,10 +153,14 @@ final class CaptureSelector {
     /// Area and window selection switch into each other with Space; the other modes never pick a window.
     private var selectsWindows: Bool { kind == .area || kind == .window }
 
-    /// A crosshair for drawing an area or scrolling region, before and while dragging; the
-    /// normal arrow for picking a window. Set directly as well as through cursor rects, because
-    /// Shotty is not the active app and the frontmost app may otherwise keep its cursor.
-    var cursor: NSCursor { kind == .window ? .arrow : .captureCrosshair }
+    /// Area, scrolling and text selection draw a region; window and screen capture pick a target
+    /// under the pointer instead.
+    var drawsRegion: Bool { kind != .window && kind != .fullscreen }
+
+    /// A crosshair for drawing a region, before and while dragging; the normal arrow for picking
+    /// a window or display. Set directly as well as through cursor rects, because Shotty is not
+    /// the active app and the frontmost app may otherwise keep its cursor.
+    var cursor: NSCursor { drawsRegion ? .captureCrosshair : .arrow }
 
     func updateCursor() { cursor.set() }
 
@@ -186,17 +195,12 @@ final class CaptureSelector {
 
     func updatePointer(_ point: CGPoint, modifiers: NSEvent.ModifierFlags) {
         pointer = point
-        let inverted = modifiers.contains(.option)
         if kind == .window {
-            shadowInverted = inverted
-            if let target = windows.first(where: { $0.frame.contains(point) }) {
-                if target.id != selectedWindowID { selectWindow(target) }
-            } else {
-                selectedWindowID = nil
-                selectedWindowFrame = nil
-                selectedWindowPreview = nil
-                hoverOperation?.cancel()
-            }
+            shadowInverted = modifiers.contains(.option)
+            selectWindow(windowUnderPointer)
+        } else if kind == .fullscreen {
+            // The preferred display stays highlighted until the pointer moves.
+            if hasPointerInteraction, let display = display(at: point) { selectedDisplayID = display.id }
         } else if var drag {
             drag.update(to: point, square: modifiers.contains(.shift), centered: modifiers.contains(.option))
             self.drag = drag
@@ -216,29 +220,30 @@ final class CaptureSelector {
         else { updatePointer(pointer, modifiers: modifiers) }
     }
 
-    private func selectWindow(_ target: WindowTarget) {
-        selectedWindowID = target.id
-        selectedWindowFrame = target.frame
-        selectedWindowPreview = nil
-        errorMessage = nil
-        hoverOperation?.cancel()
-        guard let frozen = frozenWindows,
-              let snapshot = frozen.windows.first(where: { $0.windowID == target.id && !$0.includesShadow }) else { redraw(); return }
-        let request = requestID
-        hoverOperation = Task {
-            do {
-                let image = try await frozen.image(for: snapshot.raster)
-                try Task.checkCancellation()
-                guard requestID == request, selectedWindowID == target.id else { return }
-                selectedWindowPreview = NSImage(cgImage: image, size: target.frame.size)
-                redraw()
-            } catch is CancellationError { }
-            catch { errorMessage = error.localizedDescription; redraw() }
-        }
+    /// The frontmost window under the pointer; `windows` is ordered front to back.
+    private var windowUnderPointer: WindowTarget? { windows.first { $0.frame.contains(pointer) } }
+
+    private func selectWindow(_ target: WindowTarget?) {
+        selectedWindowID = target?.id
+        selectedWindowFrame = target?.frame
+    }
+
+    private func display(at point: CGPoint) -> SelectionDisplay? {
+        displays.first { NSMouseInRect(point, $0.frame, false) }
     }
 
     func mouseDown(at point: CGPoint, modifiers: NSEvent.ModifierFlags) {
-        if kind == .window { updatePointer(point, modifiers: modifiers); confirm(); return }
+        switch kind {
+        case .window:
+            updatePointer(point, modifiers: modifiers)
+            return confirm()
+        case .fullscreen:
+            guard let display = display(at: point) else { return }
+            selectedDisplayID = display.id
+            redraw()
+            return confirm()
+        default: break
+        }
         // A 6-point band on each side of an edge gives handles a 12-point hit area.
         let drag = SelectionDrag(at: point, adjusting: isAdjusting ? selection : nil, tolerance: 6)
         self.drag = drag
@@ -278,7 +283,13 @@ final class CaptureSelector {
             let current = choices.firstIndex(where: { $0.id == selectedWindowID }) ?? -1
             let index = (current + (event.modifierFlags.contains(.shift) ? choices.count - 1 : 1)) % choices.count
             selectWindow(choices[max(0, index)])
-        case 123...126 where kind != .window:
+            redraw()
+        case 48 where kind == .fullscreen:
+            guard let current = displays.firstIndex(where: { $0.id == selectedDisplayID }) else { return }
+            let step = event.modifierFlags.contains(.shift) ? displays.count - 1 : 1
+            selectedDisplayID = displays[(current + step) % displays.count].id
+            redraw()
+        case 123...126 where drawsRegion:
             if selection == nil {
                 selection = CGRect(x: pointer.x, y: pointer.y - 100, width: 100, height: 100)
             }
@@ -327,6 +338,16 @@ final class CaptureSelector {
                 produce { [capture] in
                     .image(try await capture.window(id: id, shadow: shadow), kind: .window, scale: scale)
                 }
+            }
+            return
+        }
+        if kind == .fullscreen {
+            guard let display = displays.first(where: { $0.id == selectedDisplayID }) else { return }
+            // Frozen displays already hold their pixels; live ones are taken once the surface is gone.
+            let overlays = overlayWindowIDs
+            produce { [capture] in
+                let image = if let frozen = display.image { frozen } else { try await capture.display(id: display.id, excluding: overlays) }
+                return .image(image, kind: .fullscreen, scale: Double(display.scale))
             }
             return
         }
@@ -388,8 +409,6 @@ final class CaptureSelector {
         requestID = UUID()
         operation?.cancel()
         operation = nil
-        hoverOperation?.cancel()
-        hoverOperation = nil
         hidePanels()
         panels.removeAll()
         if let screenObservation { NotificationCenter.default.removeObserver(screenObservation) }
@@ -399,9 +418,9 @@ final class CaptureSelector {
         if let set { Task { try? await set.close() } }
         displays.removeAll()
         windows.removeAll()
-        selectedWindowPreview = nil
         selectedWindowID = nil
         selectedWindowFrame = nil
+        selectedDisplayID = nil
         selection = nil
         drag = nil
         shadowInverted = false
@@ -487,9 +506,9 @@ final class CaptureSelector {
     }
 
     var drawsHandles: Bool { isAdjusting }
-    /// The pointer readout helps while drawing. It stays away once a region exists; errors are
-    /// always shown.
-    var showsReadout: Bool { errorMessage != nil || selection == nil || drag != nil }
+    /// The pointer readout helps while drawing a region. It stays away once one exists and while
+    /// picking a window or display; errors are always shown.
+    var showsReadout: Bool { errorMessage != nil || drawsRegion && (selection == nil || drag != nil) }
 }
 
 private struct SelectionAdjustment: View {
@@ -525,9 +544,12 @@ private final class SelectionView: NSView {
         super.init(frame: CGRect(origin: .zero, size: display.frame.size))
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel(selector.kind == .scrolling
-            ? "Scrolling capture. Drag to select the scrolling part of the screen. Arrow keys adjust. Return starts. Escape cancels."
-            : "Capture selection. Drag to select. Arrow keys adjust. Return captures. Escape cancels.")
+        let label = switch selector.kind {
+        case .scrolling: "Scrolling capture. Drag to select the scrolling part of the screen. Arrow keys adjust. Return starts. Escape cancels."
+        case .fullscreen: "Screen capture. Click a display or press Tab to pick it. Return captures the highlighted display. Escape cancels."
+        default: "Capture selection. Drag to select. Arrow keys adjust. Return captures. Escape cancels."
+        }
+        setAccessibilityLabel(label)
     }
     required init?(coder: NSCoder) { nil }
     override var acceptsFirstResponder: Bool { true }
@@ -543,6 +565,8 @@ private final class SelectionView: NSView {
         let value: String
         if selector.kind == .window {
             value = selector.accessibleWindowTitle ?? "No window selected"
+        } else if selector.kind == .fullscreen {
+            value = selector.selectedDisplayID == display.id ? "This display" : "Another display"
         } else if let rect = selector.selection {
             let size = selector.pixelDimensions
             value = "X \(Int(rect.minX - display.frame.minX)), Y \(Int(display.frame.maxY - rect.maxY)), width \(Int(size.width)), height \(Int(size.height)) pixels"
@@ -582,26 +606,25 @@ private final class SelectionView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        displayImage?.draw(in: bounds)
+        // The frozen backdrop shows only where the output is cut from it. Window capture uses each
+        // window's own frozen pixels and shows the live screen, as Record Window does: ScreenCaptureKit
+        // renders shadows, glass and the tint's blending slightly differently, so swapping the
+        // backdrop in would visibly flicker every window.
+        if selector.kind != .window { displayImage?.draw(in: bounds) }
         let local: (CGRect) -> CGRect = { $0.offsetBy(dx: -self.display.frame.minX, dy: -self.display.frame.minY) }
-        let selected = selector.kind == .window ? selector.selectedWindowFrame : selector.selection
-        if selector.kind == .window, let selected, let preview = selector.selectedWindowPreview {
-            // Occluded parts of the frozen target become visible, exactly where the window is.
-            preview.draw(in: local(selected))
-        }
-        // Nothing covers the screen until a region exists. An area or scrolling region is outlined
-        // in white with a light grey wash; a hovered window gets a blue tint.
-        if let selected {
-            let rect = local(selected)
-            if selector.kind == .window {
-                NSColor.controlAccentColor.withAlphaComponent(0.22).setFill()
-                rect.fill()
-                let symbol = NSImage(systemSymbolName: "camera.fill", accessibilityDescription: "Capture window")
-                symbol?.draw(in: CGRect(x: rect.midX - 18, y: rect.midY - 15, width: 36, height: 30))
-            } else {
+        // Nothing covers the screen until a region exists. A region is outlined in white with a
+        // light grey wash; a hovered window or the picked display gets a blue tint.
+        switch selector.kind {
+        case .window:
+            if let frame = selector.selectedWindowFrame { SelectionDrawing.drawWindowHighlight(local(frame)) }
+        case .fullscreen:
+            if selector.selectedDisplayID == display.id { SelectionDrawing.drawDisplayHighlight(bounds) }
+        default:
+            if let selection = selector.selection {
+                let rect = local(selection)
                 Chrome.drawSelection(rect)
+                if selector.drawsHandles { SelectionDrawing.drawHandles(around: rect) }
             }
-            if selector.drawsHandles { SelectionDrawing.drawHandles(around: rect) }
         }
         let point = CGPoint(x: selector.pointer.x - display.frame.minX, y: selector.pointer.y - display.frame.minY)
         guard selector.showsReadout, bounds.contains(point) else { return }
