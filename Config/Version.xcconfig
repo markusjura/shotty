@@ -1,4 +1,4 @@
 // Shotty's version, the only one we maintain. Scripts/release.sh bumps it.
 // CFBundleVersion equals the version, so every release is identified by it alone.
-MARKETING_VERSION = 0.2.1
+MARKETING_VERSION = 0.2.2
 CURRENT_PROJECT_VERSION = $(MARKETING_VERSION)
