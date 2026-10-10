@@ -20,12 +20,12 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .general: "gearshape"
-        case .capture: "camera.viewfinder"
+        case .capture: "camera"
         case .recording: "record.circle"
         case .thumbnails: "rectangle.stack"
-        case .editor: "pencil.and.outline"
+        case .editor: "highlighter"
         case .shortcuts: "command"
-        case .permissions: "lock.shield"
+        case .permissions: "lock"
         }
     }
 }
