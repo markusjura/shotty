@@ -45,7 +45,7 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         switch self {
         case .captureArea: "Capture Area"
         case .captureWindow: "Capture Window"
-        case .captureFullscreen: "Capture Fullscreen"
+        case .captureFullscreen: "Capture Screen"
         case .captureScrolling: "Capture Scrolling"
         case .captureText: "Capture Text"
         case .recordArea: "Record Area"

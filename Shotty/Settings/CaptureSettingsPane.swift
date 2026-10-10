@@ -64,7 +64,7 @@ struct CaptureSettingsPane: View {
                 Text("1× (points)").tag(OutputScalePreference.logical)
             }
             .buttonStyle(.borderless)
-            Picker("Fullscreen", selection: $preferences.capture.fullscreenTarget) {
+            Picker("Capture Screen", selection: $preferences.capture.fullscreenTarget) {
                 Text("Current display").tag(FullscreenTarget.pointerDisplay)
                 Text("Main display").tag(FullscreenTarget.mainDisplay)
                 Text("Each display").tag(FullscreenTarget.allDisplays)

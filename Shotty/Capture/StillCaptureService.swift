@@ -48,7 +48,9 @@ actor StillCaptureService {
     /// (the capture overlays, when present).
     func display(id: CGDirectDisplayID, excluding excludedWindowIDs: Set<CGWindowID> = []) async throws -> CGImage {
         try preflight()
-        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        // Off-screen windows too: overlays ordered out a moment ago can still show up in the frame,
+        // but are no longer listed as on screen, so an on-screen list could not exclude them.
+        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: excludedWindowIDs.isEmpty)
         guard let display = content.displays.first(where: { $0.displayID == id }) else {
             throw CaptureFailure.targetUnavailable
         }

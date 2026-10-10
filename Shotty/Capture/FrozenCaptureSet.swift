@@ -204,8 +204,7 @@ actor FrozenCaptureSet {
                                target: .display(display.displayID, display.frame))
                 }
             case .windows:
-                // The unshadowed raster previews the window exactly on its frame; Option at
-                // confirmation can pick either variant for the output.
+                // Both variants, so Option at confirmation can pick either for the output.
                 jobs = selectedWindows.flatMap { window in
                     [false, true].map { includesShadow in
                         CaptureJob(filter: SCContentFilter(desktopIndependentWindow: window), shadow: includesShadow,
@@ -345,7 +344,8 @@ actor FrozenCaptureSet {
         let output = try await SCScreenshotManager.captureScreenshot(contentFilter: job.filter, configuration: configuration)
         try Task.checkCancellation()
         guard let image = output.sdrImage else { throw CaptureFailure.noImage }
-        // The selection overlay draws unshadowed rasters exactly onto the window frame.
+        // An unshadowed window is exactly its frame; anything else captured more than the window,
+        // such as a parent group, or the window moved.
         if job.isWindow, !job.shadow, !matchesWindowFrame(image, filter: job.filter) {
             logger.error("Frozen window raster does not match its frame \(job.diagnosticLabel, privacy: .public) actual=\(image.width)x\(image.height)")
             throw FrozenCaptureFailure.targetChanged

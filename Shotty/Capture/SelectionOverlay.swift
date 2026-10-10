@@ -1,5 +1,6 @@
 import AppKit
 import ScreenCaptureKit
+import SwiftUI
 
 // Pieces the screenshot and recording selections share: their panels, the crosshair, the windows
 // they can pick, and how they draw handles and the pointer readout.
@@ -38,6 +39,9 @@ final class SelectionPanel: NSPanel {
         panel.isReleasedWhenClosed = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
+        // A borderless window casts a shadow around whatever it draws, which would outline every
+        // highlight with a dark rim.
+        panel.hasShadow = false
         // Transparent areas would otherwise pass clicks through to the app underneath.
         panel.ignoresMouseEvents = false
         panel.level = Chrome.floatingLevel
@@ -130,6 +134,27 @@ struct WindowTarget {
 /// Drawing shared by the selection views, in view coordinates.
 @MainActor
 enum SelectionDrawing {
+    /// The blue tint over a hovered window. Covers the window's edge as well: macOS draws a dark
+    /// rim one device pixel wide just outside the frame, which would otherwise outline the tint.
+    /// The corners match a standard window's on macOS 27; there is no public API for another
+    /// app's corner radius.
+    static func drawWindowHighlight(_ frame: CGRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        let rim = context.convertToUserSpace(CGSize(width: 1, height: 1)).width
+        context.addPath(RoundedRectangle(cornerRadius: 16 + rim, style: .continuous)
+            .path(in: frame.insetBy(dx: -rim, dy: -rim)).cgPath)
+        targetTint.setFill()
+        context.fillPath()
+    }
+
+    /// The blue tint over a highlighted display.
+    static func drawDisplayHighlight(_ bounds: CGRect) {
+        targetTint.setFill()
+        bounds.fill()
+    }
+
+    private static var targetTint: NSColor { .controlAccentColor.withAlphaComponent(0.22) }
+
     /// White corner brackets and edge bars drawn just outside the region, clear of its pixels.
     static func drawHandles(around rect: CGRect) {
         let width: CGFloat = 4

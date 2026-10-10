@@ -113,17 +113,14 @@ final class AppCoordinator {
         isCapturing = true
         // Ordered out before any pixels are taken, and back once they are, so new cards still appear.
         thumbnails.hiddenForCapture = preferences.thumbnails.hidesDuringCapture
-        if kind == .fullscreen {
-            let screens = NSScreen.screens
-            let targets: [NSScreen]
-            switch settings.capture.fullscreenTarget {
-            case .allDisplays: targets = screens
-            case .mainDisplay: targets = screens.filter { $0.displayID == CGMainDisplayID() }
-            case .pointerDisplay: targets = screens.filter { $0.frame.contains(NSEvent.mouseLocation) }
-            }
+        let screens = NSScreen.screens
+        let target = settings.capture.fullscreenTarget
+        // With several displays, Capture Screen lets you pick one, starting at the preferred display.
+        // One display, or Each display, needs no choice.
+        if kind == .fullscreen, screens.count == 1 || target == .allDisplays {
             captureTask = Task {
                 defer { isCapturing = false; captureTask = nil; thumbnails.hiddenForCapture = false }
-                for screen in targets {
+                for screen in screens {
                     guard let id = screen.displayID else { continue }
                     do {
                         let image = try await stillCapture.display(id: id)
@@ -134,7 +131,8 @@ final class AppCoordinator {
                 }
             }
         } else {
-            let config = SelectionConfiguration(freeze: settings.capture.freezesScreen, shadow: settings.capture.includesWindowShadow)
+            let config = SelectionConfiguration(freeze: settings.capture.freezesScreen, shadow: settings.capture.includesWindowShadow,
+                                                preferredDisplayID: target == .mainDisplay ? CGMainDisplayID() : nil)
             selector.begin(kind: kind, configuration: config) { [weak self] result in
                 guard let self else { return }
                 isCapturing = false
