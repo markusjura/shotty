@@ -140,7 +140,7 @@ private struct MenuBarContent: View {
         Divider()
         UpdateMenuItem(updater: delegate.updater)
         SettingsButton()
-        Button("Quit Shotty") { NSApp.terminate(nil) }.keyboardShortcut("q")
+        Button("Quit") { NSApp.terminate(nil) }.keyboardShortcut("q")
     }
 
     private func item(_ command: CommandID) -> some View {
