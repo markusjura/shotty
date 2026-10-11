@@ -41,7 +41,7 @@ The Debug build is Shotty Dev, bundle ID `local.markus.Shotty.dev`. It has its o
 
 `Scripts/package.sh` refuses to run unless the working tree is clean and `HEAD` is `origin/main`, so each version names one pushed commit. It builds Release, refuses to continue unless `codesign --verify --deep --strict` passes and the bundle ID is `local.markus.Shotty`, and writes to `.build/releases/`:
 
-- `Shotty-<version>.zip`, created with `ditto` so the signature survives. `install.sh` and fleet use it.
+- `Shotty-<version>.zip`, created with `ditto` so the signature survives. `install.sh` and Sparkle updates use it.
 - `Shotty-<version>.dmg`, built by `uvx dmgbuild` with the layout in `Config/dmg.py`. It opens to a window for dragging Shotty onto Applications. `swift Scripts/GenerateDMGBackground.swift Config` regenerates its background.
 - A `.sha256` checksum beside each.
 - A `.txt` record of the signing authority, team, designated requirement, and entitlements.
@@ -56,10 +56,6 @@ The installer checks the checksum when the `.sha256` file is present, verifies t
 
 Neither script strips quarantine or changes Gatekeeper settings. There is no auto-updater.
 
-## Fleet
-
-Install on any fleet Mac as above. Fleet sync from `markusjura/mac-settings` then observes the newer version in `/Applications`, archives it, and installs it on the other Macs within minutes. It quits a running Shotty gracefully and reopens it afterwards. Fleet refuses builds whose designated requirement differs from the one pinned in its policy. Check progress with `fleet status` (`shotty.activation`). Fleet never lowers its target, so it reinstalls the newer build within minutes of `install.sh --rollback`. Set `shotty.enabled` to false in the fleet policy first, or fix forward with a higher version.
-
 ## Permissions
 
 Grant permissions to the installed `/Applications/Shotty.app`. Shotty Dev has its own bundle ID, so it needs its own grants once; they then survive rebuilds. Grants are per Mac; signing does not carry them to another machine.
@@ -69,4 +65,4 @@ Grant permissions to the installed `/Applications/Shotty.app`. Shotty Dev has it
 - **Accessibility** is needed only for Auto Scroll and for Thumbnails > "Dismiss after pasting", which watches for ⌘V in other apps. Auto Scroll asks for it when you start it; manual scrolling capture works without it.
 - Input Monitoring, Full Disk Access, and camera are not needed.
 
-Keeping the bundle ID and signing identity stable keeps these grants across updates. Grants have survived signed Release replacements with an unchanged designated requirement, including fleet installs.
+Keeping the bundle ID and signing identity stable keeps these grants across updates. Grants have survived signed Release replacements with an unchanged designated requirement.
