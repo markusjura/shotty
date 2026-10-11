@@ -1,7 +1,7 @@
 #!/bin/zsh
 # Builds the signed Release app and packages it as Shotty-<version>.zip and Shotty-<version>.dmg.
 # Usage: Scripts/package.sh
-# Output in .build/releases: the ZIP for Scripts/install.sh and fleet, the DMG for people, a .sha256 for
+# Output in .build/releases: the ZIP for Scripts/install.sh and Sparkle, the DMG for people, a .sha256 for
 # each, and a .txt record of the signature details (designated requirement and entitlements).
 # The DMG opens to the usual window for dragging Shotty to Applications; Config/dmg.py lays it out.
 # This is Apple Development signing, not a notarized Developer ID release.
@@ -10,7 +10,7 @@ cd "${0:A:h:h}"
 
 bundle_id=local.markus.Shotty
 
-# Fleet syncs the installed build to every Mac by version, so each version must name exactly one commit.
+# Installs and updates go by version, so each version must name exactly one commit.
 # Packaging only a clean, pushed main makes git serialize the bumps across machines.
 git fetch --quiet origin main
 [[ -z "$(git status --porcelain)" ]] || { print -u2 "Commit or stash your changes first."; exit 1 }

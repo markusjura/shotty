@@ -19,8 +19,8 @@ struct FrozenCaptureLimits: Sendable {
         return bytes
     }
 
-    /// Pre-capture budget for an SDR screenshot of `pointSize` at `scale`. Studio's
-    /// SCScreenshotManager `.sdr` output measured 8 bits per component, 32 bits per pixel,
+    /// Pre-capture budget for an SDR screenshot of `pointSize` at `scale`. On a Mac Studio,
+    /// SCScreenshotManager's `.sdr` output measured 8 bits per component, 32 bits per pixel,
     /// 128-byte row alignment and at most 224 px of shadow padding. This rounds rows up
     /// to 256 bytes and pads shadows by 256 px; `FrozenRasterFile.store` still validates
     /// the actual raster after capture.

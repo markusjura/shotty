@@ -3,7 +3,7 @@
 # launches, and publishes that release on GitHub.
 # Usage: Scripts/release.sh [patch|minor|major|X.Y.Z]
 #   patch (default) 0.1.0 → 0.1.1, minor 0.1.4 → 0.2.0, major 0.2.0 → 1.0.0, or an exact higher version.
-# Run it only when Markus asks. Fleet sync then installs the release on the other Macs.
+# Run it only when the user asks.
 set -euo pipefail
 cd "${0:A:h:h}"
 
@@ -26,7 +26,7 @@ case "${1:-patch}" in
   <->.<->.<->) next="$1" ;;
   *) fail "$usage" ;;
 esac
-# Installs and fleet order releases by version, so it only ever goes up.
+# Installs and updates order releases by version, so it only ever goes up.
 autoload -Uz is-at-least
 [[ "$next" != "$current" ]] && is-at-least "$current" "$next" || fail "$next is not above the current $current."
 [[ -z "$(git tag --list "v$next")" ]] || fail "Tag v$next already exists."
