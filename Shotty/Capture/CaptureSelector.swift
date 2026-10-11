@@ -7,6 +7,8 @@ struct SelectionConfiguration {
     var freeze = true
     var shadow = true
     var readout = SelectionReadout.positionAndSize
+    /// How long Self-Timer counts down between the selection and the screenshot.
+    var selfTimerSeconds = 5.0
     /// Capture Screen highlights this display until the pointer moves; nil starts at the one under the pointer.
     var preferredDisplayID: CGDirectDisplayID?
 }
@@ -100,7 +102,6 @@ final class CaptureSelector {
         updateCursor()
         if kind == .fullscreen { selectedDisplayID = configuration.preferredDisplayID ?? display(at: pointer)?.id }
         updatePointer(pointer, modifiers: [])
-        let freezes = configuration.freeze && kind != .scrolling
         let overlays = overlayWindowIDs
         operation = Task { [self] in
             do {
@@ -153,6 +154,9 @@ final class CaptureSelector {
 
     /// Area and window selection switch into each other with Space; the other modes never pick a window.
     private var selectsWindows: Bool { kind == .area || kind == .window }
+
+    /// Scrolling capture and Self-Timer take their pixels after the selection, so they select on the live screen.
+    private var freezes: Bool { configuration.freeze && kind != .scrolling && kind != .selfTimer }
 
     /// Area, scrolling and text selection draw a region; window and screen capture pick a target
     /// under the pointer instead.
@@ -363,8 +367,13 @@ final class CaptureSelector {
             finish(.success(.scrolling(region: selection, displayID: display.id)))
             return
         }
-        let (kind, displays, freeze, overlays) = (kind, displays, configuration.freeze, overlayWindowIDs)
-        produce { [capture, renderer] in
+        let (kind, displays, freeze, overlays) = (kind, displays, freezes, overlayWindowIDs)
+        let countdown = kind == .selfTimer ? configuration.selfTimerSeconds : nil
+        produce { [capture, renderer, weak self] in
+            var overlays = overlays
+            if let countdown {
+                overlays.formUnion(try await SelfTimerCountdown.run(seconds: countdown, over: selection) { self?.cancel() })
+            }
             var images = displays
             if !freeze {
                 images = []
@@ -551,6 +560,7 @@ private final class SelectionView: NSView {
         let label = switch selector.kind {
         case .scrolling: "Scrolling capture. Drag to select the scrolling part of the screen. Arrow keys adjust. Return starts. Escape cancels."
         case .fullscreen: "Screen capture. Click a display or press Tab to pick it. Return captures the highlighted display. Escape cancels."
+        case .selfTimer: "Self-timer capture. Drag to select. Arrow keys adjust. Return starts the countdown. Escape cancels."
         default: "Capture selection. Drag to select. Arrow keys adjust. Return captures. Escape cancels."
         }
         setAccessibilityLabel(label)

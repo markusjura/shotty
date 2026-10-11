@@ -73,6 +73,15 @@ enum SelectionGeometry {
         return [region.minY - gap - size.height, region.maxY + gap, region.minY + gap].map { CGPoint(x: x, y: $0) }
     }
 
+    /// The origin for an island of `size` that belongs to `frame`: below it, else above it, else at the
+    /// bottom of its screen, whose visible frame is `visibleFrame`.
+    static func islandOrigin(size: CGSize, for frame: CGRect, within visibleFrame: CGRect) -> CGPoint {
+        let visible = visibleFrame.insetBy(dx: 12, dy: 12)
+        return firstClearOrigin(attachedOrigins(size: size, to: frame, within: visible, gap: 8),
+                                size: size, avoiding: [frame], within: visible)
+            ?? CGPoint(x: visible.midX - size.width / 2, y: visible.minY)
+    }
+
     /// The first origin whose frame lies inside `visible` without touching any `avoiding` rectangle.
     static func firstClearOrigin(_ candidates: [CGPoint], size: CGSize, avoiding: [CGRect], within visible: CGRect) -> CGPoint? {
         candidates.first { origin in

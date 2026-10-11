@@ -1,7 +1,7 @@
 import Foundation
 
 enum CaptureKind: String, Codable, CaseIterable, Sendable {
-    case area, window, fullscreen, scrolling, text
+    case area, window, fullscreen, scrolling, selfTimer, text
 }
 
 struct CaptureRecord: Codable, Identifiable, Equatable, Sendable {

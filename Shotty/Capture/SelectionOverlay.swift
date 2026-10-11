@@ -59,6 +59,48 @@ final class SelectionPanel: NSPanel {
 final class NonKeyPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    /// A transparent, nonactivating floating panel for a region outline or an island. It is dark in
+    /// both appearances, as the island is.
+    static func overlay(frame: CGRect, content: NSView) -> NonKeyPanel {
+        let panel = NonKeyPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.level = Chrome.floatingLevel
+        panel.hidesOnDeactivate = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        // The outline covers the display; AppKit's window animation would zoom it on show and hide.
+        panel.animationBehavior = .none
+        panel.appearance = NSAppearance(named: .darkAqua)
+        panel.contentView = content
+        return panel
+    }
+}
+
+/// Marks the area of a recording or a Self-Timer countdown with the selection border, without the
+/// wash, so the content stays true to what is captured. It fills a panel covering `screen`.
+final class RegionOutlineView: NSView {
+    private let region: CGRect
+
+    /// `region` is in global AppKit points.
+    init(region: CGRect, on screen: NSScreen) {
+        self.region = region.offsetBy(dx: -screen.frame.minX, dy: -screen.frame.minY)
+        super.init(frame: .zero)
+    }
+    required init?(coder: NSCoder) { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let outer = NSBezierPath(rect: region.insetBy(dx: -1.5, dy: -1.5))
+        outer.lineWidth = 1
+        NSColor.black.withAlphaComponent(0.35).setStroke()
+        outer.stroke()
+        let border = NSBezierPath(rect: region.insetBy(dx: -0.5, dy: -0.5))
+        border.lineWidth = 1
+        Chrome.selectionBorder.setStroke()
+        border.stroke()
+    }
 }
 
 extension NSScreen {

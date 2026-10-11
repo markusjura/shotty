@@ -32,7 +32,7 @@ enum CommandGroup: CaseIterable, Sendable {
 /// The `.editor` group also holds what both editors share, such as Crop, Copy, and Save, so one
 /// binding works in the image editor and the video editor alike.
 enum CommandID: String, CaseIterable, Codable, Sendable {
-    case captureArea, captureWindow, captureFullscreen, captureScrolling, captureText
+    case captureArea, captureWindow, captureFullscreen, captureScrolling, captureSelfTimer, captureText
     case recordArea, recordWindow, recordScreen, stopRecording
     case showThumbnails, hideThumbnails, openLatest, saveAll, dismissAll
     case toolSelect, toolRectangle, toolFilledRectangle, toolEllipse, toolLine, toolArrow, toolText, toolRedact, toolSpotlight, toolCounter, toolCrop
@@ -47,6 +47,7 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         case .captureWindow: "Capture Window"
         case .captureFullscreen: "Capture Screen"
         case .captureScrolling: "Capture Scrolling"
+        case .captureSelfTimer: "Self-Timer"
         case .captureText: "Capture Text (OCR)"
         case .recordArea: "Record Area"
         case .recordWindow: "Record Window"
@@ -93,6 +94,7 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         case .captureWindow: "macwindow"
         case .captureFullscreen: "display"
         case .captureScrolling: "arrow.down"
+        case .captureSelfTimer: "timer"
         case .captureText: "text.viewfinder"
         case .recordArea: "rectangle.dashed"
         case .recordWindow: "macwindow"
@@ -104,7 +106,7 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
 
     var group: CommandGroup {
         switch self {
-        case .captureArea, .captureWindow, .captureFullscreen, .captureScrolling, .captureText: .capture
+        case .captureArea, .captureWindow, .captureFullscreen, .captureScrolling, .captureSelfTimer, .captureText: .capture
         case .recordArea, .recordWindow, .recordScreen, .stopRecording: .record
         case .showThumbnails, .hideThumbnails, .openLatest, .saveAll, .dismissAll: .thumbnails
         case .toolSelect, .toolRectangle, .toolFilledRectangle, .toolEllipse, .toolLine, .toolArrow, .toolText, .toolRedact,
@@ -129,6 +131,7 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         case .captureWindow: .window
         case .captureFullscreen: .fullscreen
         case .captureScrolling: .scrolling
+        case .captureSelfTimer: .selfTimer
         case .captureText: .text
         default: nil
         }
@@ -170,7 +173,7 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
     /// Final Cut Pro. None of them collide with a drawing tool, so both editors keep every key.
     var defaultShortcut: Shortcut? {
         switch self {
-        case .captureArea, .captureWindow, .captureFullscreen, .captureScrolling, .captureText: return nil
+        case .captureArea, .captureWindow, .captureFullscreen, .captureScrolling, .captureSelfTimer, .captureText: return nil
         case .recordArea, .recordWindow, .recordScreen, .stopRecording: return nil
         case .showThumbnails, .hideThumbnails, .openLatest, .saveAll, .dismissAll: return nil
         case .toolSelect: return Shortcut(kVK_ANSI_V)

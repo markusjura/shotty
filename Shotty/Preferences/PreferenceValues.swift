@@ -98,6 +98,7 @@ enum SelectionReadout: String, Codable, CaseIterable, Sendable {
 
 struct CapturePreferences: Codable, Equatable, Sendable {
     static let jpegQualityRange = 0.5...1.0
+    static let selfTimerRange = 1.0...60.0
 
     var outputs: Set<ScreenshotOutput> = [.showThumbnail]
     var destination = SaveDestination.downloads
@@ -111,9 +112,12 @@ struct CapturePreferences: Codable, Equatable, Sendable {
     var freezesScreen = true
     var includesWindowShadow = true
     var readout = SelectionReadout.positionAndSize
+    /// How long Self-Timer waits between the selection and the screenshot.
+    var selfTimerSeconds = 5.0
 
     var isValid: Bool {
         !outputs.isEmpty && Self.jpegQualityRange.contains(jpegQuality) && jpegBackground.isValid
+            && Self.selfTimerRange.contains(selfTimerSeconds)
     }
 }
 

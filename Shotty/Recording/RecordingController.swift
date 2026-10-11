@@ -169,65 +169,21 @@ final class RecordingController {
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(CGPoint(x: frame.midX, y: frame.midY)) })
                 ?? NSScreen.main else { return }
         if case .region(let region, _) = target {
-            let outline = Self.overlayPanel(frame: screen.frame,
-                content: RegionOutlineView(region: region.offsetBy(dx: -screen.frame.minX, dy: -screen.frame.minY)))
+            let outline = NonKeyPanel.overlay(frame: screen.frame, content: RegionOutlineView(region: region, on: screen))
             outline.ignoresMouseEvents = true
             panels.append(outline)
         }
-        let visible = screen.visibleFrame.insetBy(dx: 12, dy: 12)
         let controls = NSHostingView(rootView: RecordingControls(controller: self))
         let size = controls.fittingSize
         let origin: CGPoint
         if case .display = target {
+            let visible = screen.visibleFrame.insetBy(dx: 12, dy: 12)
             origin = CGPoint(x: visible.midX - size.width / 2, y: visible.minY)
         } else {
-            let candidates = SelectionGeometry.attachedOrigins(size: size, to: frame, within: visible, gap: 8)
-            origin = SelectionGeometry.firstClearOrigin(candidates, size: size, avoiding: [frame], within: visible)
-                ?? CGPoint(x: visible.midX - size.width / 2, y: visible.minY)
+            origin = SelectionGeometry.islandOrigin(size: size, for: frame, within: screen.visibleFrame)
         }
-        panels.append(Self.overlayPanel(frame: CGRect(origin: origin, size: size), content: controls))
+        panels.append(NonKeyPanel.overlay(frame: CGRect(origin: origin, size: size), content: controls))
         panels.forEach { $0.orderFrontRegardless() }
-    }
-
-    /// A transparent, nonactivating floating panel that never becomes key. It is dark in both
-    /// appearances, as the island it shows.
-    private static func overlayPanel(frame: CGRect, content: NSView) -> NSPanel {
-        let panel = NonKeyPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.isReleasedWhenClosed = false
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.level = Chrome.floatingLevel
-        panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-        // The outline covers the display; AppKit's window animation would zoom it on show and hide.
-        panel.animationBehavior = .none
-        panel.appearance = NSAppearance(named: .darkAqua)
-        panel.contentView = content
-        return panel
-    }
-}
-
-/// Marks the recorded area with the selection border, without the wash, so the content stays
-/// true to what is recorded.
-private final class RegionOutlineView: NSView {
-    private let region: CGRect
-
-    init(region: CGRect) {
-        self.region = region
-        super.init(frame: .zero)
-    }
-    required init?(coder: NSCoder) { nil }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let outer = NSBezierPath(rect: region.insetBy(dx: -1.5, dy: -1.5))
-        outer.lineWidth = 1
-        NSColor.black.withAlphaComponent(0.35).setStroke()
-        outer.stroke()
-        let border = NSBezierPath(rect: region.insetBy(dx: -0.5, dy: -0.5))
-        border.lineWidth = 1
-        Chrome.selectionBorder.setStroke()
-        border.stroke()
     }
 }
 
