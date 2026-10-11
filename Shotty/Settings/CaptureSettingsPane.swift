@@ -80,6 +80,9 @@ struct CaptureSettingsPane: View {
             Toggle("Include window shadow", isOn: $preferences.capture.includesWindowShadow)
                 .help("Hold Option while capturing a window to invert this once.")
             SelectionReadoutPicker(selection: $preferences.capture.readout)
+            LabeledContent("Self-Timer interval") {
+                SecondsField("Self-Timer interval", value: $preferences.capture.selfTimerSeconds, in: CapturePreferences.selfTimerRange)
+            }
         }
     }
 
@@ -166,6 +169,46 @@ struct CaptureSettingsPane: View {
 
     private static func languageName(_ identifier: String) -> String {
         Locale.current.localizedString(forIdentifier: identifier) ?? identifier
+    }
+}
+
+/// Seconds with up to two decimals, typed in. Out of range values snap to the nearest limit.
+private struct SecondsField: View {
+    let title: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+
+    init(_ title: String, value: Binding<Double>, in range: ClosedRange<Double>) {
+        self.title = title
+        _value = value
+        self.range = range
+    }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            TextField(title, value: Binding(get: { value }, set: { value = min(max($0, range.lowerBound), range.upperBound) }),
+                      format: SecondsFormat())
+                .labelsHidden()
+                .multilineTextAlignment(.trailing)
+                .monospacedDigit()
+                .frame(width: 48)
+            Text("seconds").settingsValue()
+        }
+    }
+}
+
+/// Seconds as text. It reads a comma or a period as the decimal separator, whatever the locale, so
+/// both 2,5 and 2.5 work, and writes the value the way the user's locale does.
+struct SecondsFormat: ParseableFormatStyle, ParseStrategy {
+    var parseStrategy: SecondsFormat { self }
+
+    func format(_ value: Double) -> String { value.formatted(.number.precision(.fractionLength(0...2))) }
+
+    func parse(_ value: String) throws -> Double {
+        let text = value.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
+        guard let seconds = Double(text), seconds.isFinite else { throw CocoaError(.formatting) }
+        // What the field shows afterwards is what is stored.
+        return (seconds * 100).rounded() / 100
     }
 }
 
