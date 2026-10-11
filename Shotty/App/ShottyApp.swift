@@ -55,7 +55,8 @@ struct ShottyApp: App {
         MenuBarExtra(isInserted: Binding(
             get: { delegate.coordinator.preferences.general.showsMenuBarIcon },
             set: { delegate.coordinator.preferences.general.showsMenuBarIcon = $0 })) {
-            MenuBarContent(delegate: delegate)
+            // Menus show only titles by default.
+            MenuBarContent(delegate: delegate).labelStyle(.titleAndIcon)
         } label: {
             MenuBarLabel(recording: delegate.coordinator.recording, showsUpdateDot: delegate.updater.needsAttention)
         }
@@ -118,8 +119,8 @@ private struct MenuBarLabel: View {
     }
 }
 
-/// The menu bar menu: the screenshot commands, then the recording commands. While recording it
-/// offers Stop, Pause, and Discard instead.
+/// The menu bar menu: the screenshot commands, then the recording commands, each with its symbol.
+/// While recording it offers Stop, Pause, and Discard instead.
 private struct MenuBarContent: View {
     let delegate: ShottyApplicationDelegate
 
@@ -127,9 +128,10 @@ private struct MenuBarContent: View {
         let recording = delegate.coordinator.recording
         if recording.isActive {
             item(.stopRecording)
-            Button(recording.isPaused ? "Resume Recording" : "Pause Recording") { recording.togglePause() }
+            Button(recording.isPaused ? "Resume Recording" : "Pause Recording",
+                   systemImage: recording.isPaused ? "play.fill" : "pause.fill") { recording.togglePause() }
                 .disabled(recording.phase != .recording && recording.phase != .paused)
-            Button("Discard Recording") { recording.cancel() }
+            Button("Discard Recording", systemImage: "trash") { recording.cancel() }
         } else {
             ForEach(CommandGroup.capture.commands, id: \.self) { item($0) }
             Divider()
@@ -142,9 +144,44 @@ private struct MenuBarContent: View {
     }
 
     private func item(_ command: CommandID) -> some View {
-        Button(command.title) { delegate.execute(command) }
-            .keyboardShortcut(delegate.commands.shortcut(for: command)?.keyboardShortcut)
-            .disabled(!delegate.commands.isAvailable(command))
+        Button { delegate.execute(command) } label: {
+            if let symbol = command.symbol {
+                Label { Text(command.title) } icon: {
+                    if command.recordingKind != nil { Image(nsImage: Self.recordBadged(symbol)) } else { Image(systemName: symbol) }
+                }
+            } else {
+                Text(command.title)
+            }
+        }
+        .keyboardShortcut(delegate.commands.shortcut(for: command)?.keyboardShortcut)
+        .disabled(!delegate.commands.isAvailable(command))
+    }
+
+    /// A symbol with a record badge, a ring around a dot, over its bottom right corner. SF Symbols
+    /// has that variant for only some of the capture symbols, so this draws it for all of them.
+    /// A menu fits an image into 16 points and draws a symbol at 0.8 of its 13 point size, so the
+    /// image is 16 points with the symbol drawn as the menu would, in line with the capture symbols.
+    private static func recordBadged(_ name: String) -> NSImage {
+        let base = NSImage(systemSymbolName: name, accessibilityDescription: nil)!
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .regular))!
+        let image = NSImage(size: CGSize(width: 16, height: 16), flipped: false) { bounds in
+            let size = CGSize(width: base.size.width * 0.8, height: base.size.height * 0.8)
+            // Measured against the capture symbols: a menu puts a symbol's top left corner here.
+            base.draw(in: CGRect(x: 1.35, y: 13.05 - size.height, width: size.width, height: size.height))
+            let badge = CGRect(x: bounds.maxX - 7, y: 0, width: 7, height: 7)
+            // A clear ring keeps the badge apart from the symbol it overlaps.
+            NSGraphicsContext.current?.compositingOperation = .clear
+            NSBezierPath(ovalIn: badge.insetBy(dx: -1, dy: -1)).fill()
+            NSGraphicsContext.current?.compositingOperation = .sourceOver
+            NSColor.black.set()
+            let ring = NSBezierPath(ovalIn: badge.insetBy(dx: 0.5, dy: 0.5))
+            ring.lineWidth = 1
+            ring.stroke()
+            NSBezierPath(ovalIn: badge.insetBy(dx: 2.25, dy: 2.25)).fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 }
 

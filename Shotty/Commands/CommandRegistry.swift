@@ -47,7 +47,7 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         case .captureWindow: "Capture Window"
         case .captureFullscreen: "Capture Screen"
         case .captureScrolling: "Capture Scrolling"
-        case .captureText: "Capture Text"
+        case .captureText: "Capture Text (OCR)"
         case .recordArea: "Record Area"
         case .recordWindow: "Record Window"
         case .recordScreen: "Record Screen"
@@ -82,6 +82,23 @@ enum CommandID: String, CaseIterable, Codable, Sendable {
         case .trimEnd: "Trim End to Playhead"
         case .toggleAudio: "Remove Audio"
         case .loopPlayback: "Loop Playback"
+        }
+    }
+
+    /// The SF Symbol beside the command in the menu bar menu. Only capture and record commands have one.
+    /// A record command shares its capture counterpart's symbol; the menu adds a record badge to it.
+    var symbol: String? {
+        switch self {
+        case .captureArea: "rectangle.dashed"
+        case .captureWindow: "macwindow"
+        case .captureFullscreen: "display"
+        case .captureScrolling: "arrow.down"
+        case .captureText: "text.viewfinder"
+        case .recordArea: "rectangle.dashed"
+        case .recordWindow: "macwindow"
+        case .recordScreen: "display"
+        case .stopRecording: "stop.fill"
+        default: nil
         }
     }
 
