@@ -10,8 +10,14 @@ struct ThumbnailCard: View {
     var body: some View {
         ThumbnailImage(card: card, coordinator: coordinator)
             .frame(height: ThumbnailLayout.previewHeight(width: coordinator.width))
-            // A card fades in and out with a slight scale; the cards around it stay put.
-            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            // A card fades in sliding a little from the anchored screen edge, as macOS's own screenshot
+            // thumbnail does, and fades out with a slight scale. The cards around it stay put.
+            .transition(.asymmetric(insertion: .opacity.combined(with: .offset(x: entranceOffset)),
+                                    removal: .opacity.combined(with: .scale(scale: 0.96))))
+    }
+
+    private var entranceOffset: CGFloat {
+        (ThumbnailLayout.anchoredLeft(coordinator.placement) ? -1 : 1) * 20
     }
 }
 

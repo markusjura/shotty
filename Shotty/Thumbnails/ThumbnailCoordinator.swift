@@ -288,15 +288,17 @@ final class ThumbnailCoordinator {
         // visibleFrame excludes the menu bar, notch area, and Dock. The stack starts 40 pt in and
         // 100 pt up from the bottom corner; the top keeps a 12 pt margin.
         let visible = screen.visibleFrame
-        let frame = CGRect(x: visible.minX + 40, y: visible.minY + 100, width: visible.width - 80, height: visible.height - 112)
+        let margin = ThumbnailLayout.edgeMargin
+        let frame = CGRect(x: visible.minX + margin, y: visible.minY + 100, width: visible.width - 2 * margin, height: visible.height - 112)
         let width = min(self.width, frame.width)
         let heights = Array(repeating: ThumbnailLayout.previewHeight(width: width), count: cards.count)
         visibleCount = ThumbnailLayout.visibleCount(heights: heights, available: frame.height)
         if visibleCount == cards.count { showingOverflow = false }
-        let x = ThumbnailLayout.anchoredLeft(placement) ? frame.minX : frame.maxX - width
+        let x = ThumbnailLayout.anchoredLeft(placement) ? visible.minX : frame.maxX - width
         // The panel spans the whole column and keeps its size as cards come and go; its transparent
-        // part passes clicks through. Resizing it per card would move the cards under it.
-        panel.setFrame(CGRect(x: x, y: frame.minY, width: width, height: frame.height), display: true)
+        // part passes clicks through. Resizing it per card would move the cards under it. It reaches
+        // out to the screen edge, so a card sliding in from there is never clipped in mid-air.
+        panel.setFrame(CGRect(x: x, y: frame.minY, width: width + margin, height: frame.height), display: true)
     }
 }
 
@@ -336,6 +338,8 @@ private struct ThumbnailStack: View {
         }
         .frame(width: coordinator.width)
         .animation(reduceMotion ? nil : .smooth(duration: Chrome.moveDuration), value: coordinator.cards.map(\.id))
+        // The panel's strip between the cards and the screen edge.
+        .padding(ThumbnailLayout.anchoredLeft(coordinator.placement) ? .leading : .trailing, ThumbnailLayout.edgeMargin)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
     }
 
