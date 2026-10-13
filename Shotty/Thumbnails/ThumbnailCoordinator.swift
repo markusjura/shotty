@@ -27,7 +27,7 @@ final class ThumbnailCoordinator {
         var byteCount: Int?
     }
     enum Feedback {
-        case copied, saved, saving, rendering, waitingToSave, message(String)
+        case copied, saved, rendering, message(String)
     }
     enum Action {
         case open, copy, save, saveAs, dismiss
@@ -157,9 +157,7 @@ final class ThumbnailCoordinator {
             cards[index].success = .copy; cards[index].status = nil
             showCopyReset(for: id)
         case .saved: cards[index].success = .save; cards[index].status = nil
-        case .saving: cards[index].status = "Saving…"
         case .rendering: cards[index].status = "Preparing…"
-        case .waitingToSave: cards[index].status = "Waiting to save…"
         case .message(let message): cards[index].status = message
         }
         place()

@@ -352,7 +352,6 @@ final class AppCoordinator {
     /// Saves into the capture's folder under the first free name; screenshots and clips each have their own.
     func save(_ id: UUID, settings: CaptureOutputSnapshot, dismissAfter: Bool, automatic: Bool = false) async {
         retain(id); defer { release(id) }
-        thumbnails.update(id, feedback: .saving)
         do {
             let receipt = switch try await store.record(id) {
             case .image(let record): try await exporter.export(record.snapshot, to: settings.saveDirectory, options: settings.exportOptions)
@@ -371,7 +370,7 @@ final class AppCoordinator {
         let settings = preferences.snapshot()
         let ids = records.map(\.id).filter { !dismissed.contains($0) }
         // Holding every capture up front keeps Quit from starting between saves.
-        for id in ids { retain(id); thumbnails.update(id, feedback: .waitingToSave) }
+        for id in ids { retain(id) }
         saveAllTask = Task {
             defer { for id in ids { release(id) }; saveAllTask = nil }
             for id in ids { await save(id, settings: settings, dismissAfter: false, automatic: true) }
@@ -431,7 +430,6 @@ final class AppCoordinator {
         panel.nameFieldStringValue = name
         NSApp.activate()
         guard await panel.begin() == .OK, let destination = panel.url else { return false }
-        thumbnails.update(id, feedback: .saving)
         do {
             let receipt = try await write(destination)
             try await store.markSaved(receipt)
