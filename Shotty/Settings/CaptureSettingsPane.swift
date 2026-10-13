@@ -26,10 +26,6 @@ struct CaptureSettingsPane: View {
                 Toggle(output.title, isOn: membership(\.capture.outputs, output))
                     .disabled(preferences.capture.outputs == [output])
             }
-            if preferences.capture.outputs.count == 1 {
-                Text("At least one option must be enabled.")
-                    .settingsNote()
-            }
         }
     }
 
@@ -76,7 +72,7 @@ struct CaptureSettingsPane: View {
     private var selectionSection: some View {
         Section("Selection") {
             Toggle("Freeze screen", isOn: $preferences.capture.freezesScreen)
-                .settingsRowNote("Holds the screen still while you select, so you can capture hover effects, animations, and moving content.")
+                .settingsRowNote("Lets you capture hover effects and animations.")
             Toggle("Include window shadow", isOn: $preferences.capture.includesWindowShadow)
                 .help("Hold Option while capturing a window to invert this once.")
             SelectionReadoutPicker(selection: $preferences.capture.readout)
@@ -93,8 +89,6 @@ struct CaptureSettingsPane: View {
             ForEach(TextOutput.allCases, id: \.self) { output in
                 Toggle(output.title, isOn: membership(\.text.outputs, output))
                     .disabled(preferences.text.outputs == [output])
-                    .settingsRowNote(output == .saveText && preferences.text.outputs.contains(.saveText)
-                                     ? "Saved as UTF-8 in the save location above." : nil)
             }
             Toggle("Keep line breaks", isOn: $preferences.text.preservesLineBreaks)
             Toggle("Detect languages automatically", isOn: $preferences.text.detectsLanguageAutomatically)

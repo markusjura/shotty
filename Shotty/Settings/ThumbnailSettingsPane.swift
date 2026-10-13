@@ -38,20 +38,6 @@ struct ThumbnailSettingsPane: View {
                 Toggle("Hide while capturing", isOn: $preferences.thumbnails.hidesDuringCapture)
             }
             Section("Closing") {
-                Picker("Close automatically", selection: $preferences.thumbnails.autoClose) {
-                    Text("Never").tag(ThumbnailAutoClose.never)
-                    Text("Dismiss").tag(ThumbnailAutoClose.dismiss)
-                    Text("Save, then dismiss").tag(ThumbnailAutoClose.saveThenDismiss)
-                }
-                .buttonStyle(.borderless)
-                if preferences.thumbnails.autoClose != .never {
-                    Stepper(value: $preferences.thumbnails.autoCloseDelaySeconds, in: ThumbnailPreferences.autoCloseDelayRange) {
-                        LabeledContent("After") { Text("\(preferences.thumbnails.autoCloseDelaySeconds) seconds").settingsValue() }
-                    }
-                    .settingsRowNote(preferences.thumbnails.autoClose == .dismiss
-                                     ? "Discards unsaved captures. Hovering, editing, or a failed save pauses it."
-                                     : "Saves first. A failed save keeps the thumbnail.")
-                }
                 Toggle("Dismiss after saving", isOn: $preferences.thumbnails.dismissesAfterSave)
                 Toggle("Dismiss after dragging out", isOn: $preferences.thumbnails.dismissesAfterDrag)
                 Toggle("Dismiss after pasting", isOn: $preferences.thumbnails.dismissesAfterPaste)
@@ -69,7 +55,7 @@ struct ThumbnailSettingsPane: View {
         if case .display(let uuid, _) = preferences.thumbnails.display, !screens.contains(where: { $0.uuid == uuid }) {
             return "Uses the main display until this one reconnects."
         }
-        return preferences.thumbnails.display == .followPointer ? "The whole stack moves to the display under the pointer." : nil
+        return nil
     }
 
     /// Connected displays plus a remembered one that is currently disconnected.

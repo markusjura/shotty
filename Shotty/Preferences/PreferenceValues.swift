@@ -227,18 +227,10 @@ enum ThumbnailDisplayPolicy: Codable, Hashable, Sendable {
     case display(uuid: String, name: String)
 }
 
-enum ThumbnailAutoClose: String, Codable, CaseIterable, Sendable {
-    case never, dismiss, saveThenDismiss
-}
-
 struct ThumbnailPreferences: Codable, Equatable, Sendable {
-    static let autoCloseDelayRange = 3...60
-
     var placement = ThumbnailPlacement.bottomLeft
     var size = ThumbnailSize.medium
     var display = ThumbnailDisplayPolicy.followPointer
-    var autoClose = ThumbnailAutoClose.never
-    var autoCloseDelaySeconds = 10
     var dismissesAfterSave = true
     var dismissesAfterDrag = true
     /// Dismisses a thumbnail once its copied image or clip is pasted into another app.
@@ -248,7 +240,7 @@ struct ThumbnailPreferences: Codable, Equatable, Sendable {
     /// leave Shotty's windows out.
     var hidesDuringCapture = false
 
-    var isValid: Bool { Self.autoCloseDelayRange.contains(autoCloseDelaySeconds) }
+    var isValid: Bool { true }
 }
 
 // MARK: - Editor

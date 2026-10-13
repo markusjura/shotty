@@ -3,7 +3,7 @@ import Observation
 import SwiftUI
 
 /// Owns the non-activating thumbnail panel: newest-first cards, display following,
-/// interaction locks, overflow, swipe dismissal, and auto-close countdowns.
+/// interaction locks, overflow, and swipe dismissal.
 /// Commands go through `perform`; the app owns documents, outputs, and dismissal.
 @MainActor @Observable
 final class ThumbnailCoordinator {
@@ -62,11 +62,6 @@ final class ThumbnailCoordinator {
     var dragItem: ((UUID) -> NSPasteboardWriting?)?
     /// Reports an accepted drop; `keepCard` is true when Option was held at the drop.
     var dropped: ((UUID, _ keepCard: Bool) -> Void)?
-    /// Runs a card's expired auto-close action. For `.saveThenDismiss`, dismiss only after the
-    /// save succeeds, regardless of the dismiss-after-save preference; a failed save keeps the card.
-    var autoClose: ((UUID, ThumbnailAutoClose) -> Void)?
-    /// True while an editor session or a failed save must hold that card's countdown.
-    var pausesAutoClose: ((UUID) -> Bool)?
 
     /// Cards shown in the panel; the rest open from the "N more" control.
     private(set) var visibleCount = 0
@@ -76,9 +71,6 @@ final class ThumbnailCoordinator {
     enum Interaction: Hashable { case press, menu, drag, keyboard, overflow }
     private var interactions = Set<Interaction>()
     private var externalLocks = 0
-    private var hovering = false
-    private var countdown = ThumbnailCountdown()
-    private var countdownTask: Task<Void, Never>?
     private var copyResets: [UUID: Task<Void, Never>] = [:]
     private let preferences: AppPreferences
     private var panel: ThumbnailPanel?
@@ -136,9 +128,6 @@ final class ThumbnailCoordinator {
     func add(_ id: UUID, image: CGImage, clip: ClipSummary? = nil) {
         cards.removeAll { $0.id == id }
         cards.insert(Card(id: id, image: NSImage(cgImage: image, size: .zero), clip: clip), at: 0)
-        let settings = preferences.thumbnails
-        if settings.autoClose != .never { countdown.start(id, seconds: TimeInterval(settings.autoCloseDelaySeconds)) }
-        runCountdown()
         refresh()
     }
 
@@ -177,7 +166,6 @@ final class ThumbnailCoordinator {
 
     func remove(_ id: UUID) {
         copyResets.removeValue(forKey: id)?.cancel()
-        countdown.cancel(id)
         cards.removeAll { $0.id == id }
         if focusRequest == id { focusRequest = nil }
         refresh()
@@ -201,11 +189,8 @@ final class ThumbnailCoordinator {
 
     func close() {
         stopTracking()
-        countdownTask?.cancel()
-        countdownTask = nil
         copyResets.values.forEach { $0.cancel() }
         copyResets.removeAll()
-        countdown = ThumbnailCountdown()
         panel?.close()
         panel = nil
     }
@@ -214,33 +199,6 @@ final class ThumbnailCoordinator {
         let changed = active ? interactions.insert(interaction).inserted : interactions.remove(interaction) != nil
         // Resolve the current pointer display once the last interaction ends.
         if changed, !isLocked { place() }
-    }
-
-    func setHovering(_ value: Bool) { hovering = value }
-
-    // MARK: Countdown
-
-    /// Ticks only while a countdown exists; an idle stack schedules no work.
-    private func runCountdown() {
-        guard countdownTask == nil, !countdown.isEmpty else { return }
-        countdownTask = Task { [weak self] in
-            var last = ContinuousClock.now
-            while true {
-                do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
-                guard let self, !self.countdown.isEmpty else { break }
-                let now = ContinuousClock.now
-                let elapsed = now - last
-                last = now
-                let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
-                let paused = self.hidden || self.hiddenForCapture || self.hovering || self.isLocked
-                let expired = self.countdown.advance(by: seconds) { id in paused || self.pausesAutoClose?(id) == true }
-                let mode = self.preferences.thumbnails.autoClose
-                for id in expired where mode != .never && self.cards.contains(where: { $0.id == id }) {
-                    self.autoClose?(id, mode)
-                }
-            }
-            self?.countdownTask = nil
-        }
     }
 
     // MARK: Placement
@@ -378,7 +336,6 @@ private struct ThumbnailStack: View {
         }
         .frame(width: coordinator.width)
         .animation(reduceMotion ? nil : .smooth(duration: Chrome.moveDuration), value: coordinator.cards.map(\.id))
-        .onHover { coordinator.setHovering($0) }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
     }
 

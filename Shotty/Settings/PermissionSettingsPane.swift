@@ -19,7 +19,6 @@ struct PermissionSettingsPane: View {
         Form {
             Section("Screen Recording") {
                 status(screenRecording, granted: "Allowed", missing: screenRecordingRequested ? "Not allowed" : "Not requested")
-                    .settingsRowNote("Required for every capture and recording.")
                 if !screenRecording {
                     HStack {
                         if !screenRecordingRequested {
@@ -32,7 +31,6 @@ struct PermissionSettingsPane: View {
             }
             Section("Microphone") {
                 status(microphone == .authorized, granted: "Allowed", missing: microphone == .notDetermined ? "Not requested" : "Not allowed")
-                    .settingsRowNote("Needed only for recording your microphone.")
                 if microphone == .notDetermined {
                     Button("Request Access") {
                         Task {

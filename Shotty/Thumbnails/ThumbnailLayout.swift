@@ -57,23 +57,3 @@ struct ThumbnailSwipe {
         return towardEdge >= Self.threshold && abs(dx) > 2 * abs(dy)
     }
 }
-
-/// Auto-close time elapses only while nothing pauses the card, so hover, keyboard use,
-/// an open editor, or a failed save never race the timeout.
-struct ThumbnailCountdown {
-    private(set) var remaining: [UUID: TimeInterval] = [:]
-
-    mutating func start(_ id: UUID, seconds: TimeInterval) { remaining[id] = seconds }
-    mutating func cancel(_ id: UUID) { remaining.removeValue(forKey: id) }
-    var isEmpty: Bool { remaining.isEmpty }
-
-    /// Advances unpaused cards and returns the expired ones, oldest deadline first.
-    mutating func advance(by elapsed: TimeInterval, isPaused: (UUID) -> Bool) -> [UUID] {
-        var expired: [(UUID, TimeInterval)] = []
-        for (id, value) in remaining where !isPaused(id) {
-            let next = value - elapsed
-            if next <= 0 { expired.append((id, next)); remaining.removeValue(forKey: id) } else { remaining[id] = next }
-        }
-        return expired.sorted { $0.1 < $1.1 }.map(\.0)
-    }
-}

@@ -21,9 +21,6 @@ struct RecordingSettingsPane: View {
                 Toggle(output.title, isOn: membership(output))
                     .disabled(preferences.recording.outputs == [output])
             }
-            if preferences.recording.outputs.count == 1 {
-                Text("At least one option must be enabled.").settingsNote()
-            }
         }
     }
 
@@ -40,7 +37,7 @@ struct RecordingSettingsPane: View {
             }
             .pickerStyle(.segmented)
             .settingsRowNote(preferences.recording.codec == .hevc
-                             ? "HEVC files are about half the size, but some browsers and chat apps can't play them." : nil)
+                             ? "Smaller files, but some browsers and chat apps can't play them." : nil)
             Picker("Frame rate", selection: $preferences.recording.frameRate) {
                 Text("30 fps").tag(FrameRatePreference.fps30)
                 Text("60 fps").tag(FrameRatePreference.fps60)
