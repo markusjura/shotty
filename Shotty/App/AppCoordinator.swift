@@ -288,14 +288,37 @@ final class AppCoordinator {
         guard !isClosing else { NSSound.beep(); return }
         switch action {
         case .open: openEditor?(id)
+        // Copy and save almost always succeed, so the card shows their result at the click instead of
+        // after the export, which can take a few frames. A failure takes it back and says why.
         case .copy:
             let ticket = clipboard.begin(), settings = preferences.snapshot()
+            if copiesAtOnce(id) { thumbnails.update(id, feedback: .copied) }
             Task { await copy(id, settings: settings, ticket: ticket) }
         case .save:
             let settings = preferences.snapshot()
-            Task { await save(id, settings: settings, dismissAfter: preferences.thumbnails.dismissesAfterSave) }
+            guard preferences.thumbnails.dismissesAfterSave else {
+                Task { await save(id, settings: settings, dismissAfter: false) }
+                return
+            }
+            // Holding the capture keeps the dismissal from deleting it before the save starts.
+            retain(id)
+            dismiss(id)
+            Task {
+                defer { release(id) }
+                await save(id, settings: settings, dismissAfter: false)
+            }
         case .saveAs: Task { await saveAs(id) }
         case .dismiss: dismiss(id)
+        }
+    }
+
+    /// True when copying `id` needs no render: a screenshot, or a clip whose file already exists.
+    /// A clip that has to render says Preparing… instead of an early checkmark.
+    private func copiesAtOnce(_ id: UUID) -> Bool {
+        switch records.first(where: { $0.id == id }) {
+        case .image: true
+        case .clip(let record): summary(of: record.snapshot).byteCount != nil
+        case nil: false
         }
     }
 
@@ -426,8 +449,16 @@ final class AppCoordinator {
     }
 
     private func outputFailed(_ id: UUID, error: Error, action: String, automatic: Bool = false) {
-        thumbnails.update(id, feedback: .message("Couldn't \(action): \(error.localizedDescription) Retry or choose Save As."))
-        Task { if !thumbnails.cards.contains(where: { $0.id == id }) { await showThumbnail(id) } }
+        let message = "Couldn't \(action): \(error.localizedDescription) Retry or choose Save As."
+        thumbnails.update(id, feedback: .message(message))
+        // The card returns with the message, such as after Save dismissed it at the click, and the
+        // capture stays with it.
+        dismissed.remove(id)
+        Task {
+            guard !thumbnails.cards.contains(where: { $0.id == id }) else { return }
+            await showThumbnail(id)
+            thumbnails.update(id, feedback: .message(message))
+        }
         if !automatic { showError(error, title: "Couldn't \(action) capture") }
     }
 

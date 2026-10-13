@@ -6,6 +6,8 @@ import Foundation
 enum ThumbnailLayout {
     static let gap: CGFloat = 8
     static let overflowRowHeight: CGFloat = 32
+    /// Distance from the stack to the anchored screen edge.
+    static let edgeMargin: CGFloat = 40
 
     /// Cards have a MacBook display's 16:10 aspect ratio, rounded to whole points.
     static func previewHeight(width: CGFloat) -> CGFloat {

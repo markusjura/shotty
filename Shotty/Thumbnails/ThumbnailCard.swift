@@ -10,8 +10,14 @@ struct ThumbnailCard: View {
     var body: some View {
         ThumbnailImage(card: card, coordinator: coordinator)
             .frame(height: ThumbnailLayout.previewHeight(width: coordinator.width))
-            // A card fades in and out with a slight scale; the cards around it stay put.
-            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            // A card fades in sliding a little from the anchored screen edge, as macOS's own screenshot
+            // thumbnail does, and fades out with a slight scale. The cards around it stay put.
+            .transition(.asymmetric(insertion: .opacity.combined(with: .offset(x: entranceOffset)),
+                                    removal: .opacity.combined(with: .scale(scale: 0.96))))
+    }
+
+    private var entranceOffset: CGFloat {
+        (ThumbnailLayout.anchoredLeft(coordinator.placement) ? -1 : 1) * 20
     }
 }
 
@@ -228,7 +234,9 @@ final class ThumbnailImageView: NSView, NSDraggingSource, NSMenuDelegate {
         for (index, action, title) in [(2, ThumbnailCoordinator.Action.copy, "Copy"), (3, .save, "Save")]
         where (action == success) != (action == self.success) {
             let button = controls[index], done = action == success
-            Chrome.crossfade(button.layer)
+            // The checkmark is a click's result and replaces the pressed pill at once, as a native
+            // button changes. Only the later return to the label fades.
+            if !done { Chrome.crossfade(button.layer) }
             button.image = done ? ThumbnailGlyph.image("checkmark") : nil
             button.title = done ? "" : title
             button.setAccessibilityLabel(done ? (index == 2 ? "Copied. Copy again" : "Saved. Save again") : title)
