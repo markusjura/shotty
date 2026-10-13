@@ -78,6 +78,8 @@ final class ThumbnailCoordinator {
     private var trackingObservers: [NSObjectProtocol] = []
     private var spaceObserver: NSObjectProtocol?
     private var relocation: Task<Void, Never>?
+    /// Orders the emptied panel out once the last card has faded.
+    private var emptying: Task<Void, Never>?
     private var targetDisplay: CGDirectDisplayID?
 
     init(preferences: AppPreferences) {
@@ -115,13 +117,32 @@ final class ThumbnailCoordinator {
         guard !hidden, !hiddenForCapture, !cards.isEmpty else {
             stopTracking()
             showingOverflow = false
-            panel?.orderOut(nil)
+            hidePanel(afterFade: !hidden && !hiddenForCapture)
             return
         }
+        emptying?.cancel()
+        emptying = nil
         if panel == nil { panel = makePanel() }
         startTracking()
         place()
         panel?.orderFrontRegardless()
+    }
+
+    /// Orders the panel out. After the last card is dismissed, it waits for that card's fade, which
+    /// would otherwise vanish with the panel in one frame. Hiding the stack, such as for a capture,
+    /// is immediate.
+    private func hidePanel(afterFade: Bool) {
+        emptying?.cancel()
+        emptying = nil
+        guard afterFade, panel?.isVisible == true, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            panel?.orderOut(nil)
+            return
+        }
+        emptying = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(Chrome.moveDuration)) } catch { return }
+            self?.emptying = nil
+            self?.panel?.orderOut(nil)
+        }
     }
 
     /// Adds a card at the top of the stack without taking keyboard focus.
@@ -147,7 +168,11 @@ final class ThumbnailCoordinator {
             showCopyReset(for: id)
         case .saved: cards[index].success = .save; cards[index].status = nil
         case .rendering: cards[index].status = "Preparing…"
-        case .message(let message): cards[index].status = message
+        case .message(let message):
+            cards[index].status = message
+            // A message reports a failure. It withdraws Copy's checkmark, which shows at the click,
+            // before the copy has finished.
+            if cards[index].success == .copy { cards[index].success = nil }
         }
         place()
     }
@@ -191,6 +216,8 @@ final class ThumbnailCoordinator {
         stopTracking()
         copyResets.values.forEach { $0.cancel() }
         copyResets.removeAll()
+        emptying?.cancel()
+        emptying = nil
         panel?.close()
         panel = nil
     }
