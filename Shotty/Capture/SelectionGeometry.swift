@@ -114,9 +114,10 @@ struct SelectionDrag: Sendable {
     private(set) var rect: CGRect
 
     /// With an adjustable `existing` selection, pressing its edge band resizes those edges,
-    /// pressing inside moves it, and pressing elsewhere draws a new rectangle.
-    init(at point: CGPoint, adjusting existing: CGRect?, tolerance: CGFloat) {
-        if let existing, let edges = SelectionGeometry.edges(near: point, of: existing, tolerance: tolerance) {
+    /// pressing inside moves it, and pressing elsewhere draws a new rectangle. A 6-point band on
+    /// each side of an edge gives handles a 12-point hit area.
+    init(at point: CGPoint, adjusting existing: CGRect?) {
+        if let existing, let edges = SelectionGeometry.edges(near: point, of: existing, tolerance: 6) {
             mode = .resizing(original: existing, edges: edges, from: point)
             rect = existing
         } else if let existing, existing.contains(point) {
@@ -129,6 +130,9 @@ struct SelectionDrag: Sendable {
     }
 
     var isDrawing: Bool { if case .drawing = mode { true } else { false } }
+
+    /// The edges an edge drag resizes; nil while drawing or moving.
+    var resizedEdges: SelectionEdges? { if case .resizing(_, let edges, _) = mode { edges } else { nil } }
 
     mutating func update(to point: CGPoint, square: Bool, centered: Bool) {
         switch mode {

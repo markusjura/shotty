@@ -87,10 +87,11 @@ final class RecordingSelector {
         }
     }
 
-    /// A crosshair for drawing an area, before and while dragging; the arrow once the area is drawn
-    /// and for picking a window. Set directly as well as through cursor rects, because Shotty is not
-    /// the active app.
-    var cursor: NSCursor { kind == .area && !isTargetPicked ? .captureCrosshair : .arrow }
+    /// The area selection's cursor for drawing and adjusting an area; the arrow for picking a window
+    /// or display. Set directly as well as through cursor rects, because Shotty is not the active app.
+    var cursor: NSCursor {
+        kind == .area ? .areaSelection(at: pointer, adjusting: isTargetPicked ? selection : nil, drag: drag) : .arrow
+    }
 
     func updateCursor() { cursor.set() }
 
@@ -151,12 +152,12 @@ final class RecordingSelector {
             return
         case .area: break
         }
-        // A 6-point band on each side of an edge gives handles a 12-point hit area.
-        let drag = SelectionDrag(at: point, adjusting: isTargetPicked ? selection : nil, tolerance: 6)
+        let drag = SelectionDrag(at: point, adjusting: isTargetPicked ? selection : nil)
         self.drag = drag
         selection = drag.rect
         errorMessage = nil
         updatePointer(point, modifiers: modifiers)
+        updateCursor()
     }
 
     func mouseUp(at point: CGPoint, modifiers: NSEvent.ModifierFlags) {
@@ -178,7 +179,7 @@ final class RecordingSelector {
         case 36, 76: confirm()
         case 49:
             guard !event.isARepeat else { return }
-            if drag != nil { drag?.setSpace(true, at: pointer) } else { changeMode(kind == .window ? .area : .window) }
+            if drag != nil { drag?.setSpace(true, at: pointer); updateCursor() } else { changeMode(kind == .window ? .area : .window) }
         case 48 where kind == .screen:
             guard let current = displays.firstIndex(where: { $0.id == selectedDisplayID }) else { return }
             let step = event.modifierFlags.contains(.shift) ? displays.count - 1 : 1
@@ -205,8 +206,9 @@ final class RecordingSelector {
     }
 
     func keyUp(_ event: NSEvent) {
-        guard event.keyCode == 49 else { return }
+        guard event.keyCode == 49, drag != nil else { return }
         drag?.setSpace(false, at: pointer)
+        updateCursor()
     }
 
     /// Return or Record. Return on a highlighted window or display picks it first, so the Record bar
@@ -489,8 +491,8 @@ private final class RecordingSelectionView: NSView {
 
     private func point(_ event: NSEvent) -> CGPoint { window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation }
     override func mouseMoved(with event: NSEvent) {
-        selector.updateCursor()
         selector.mouseMoved(at: point(event), modifiers: event.modifierFlags)
+        selector.updateCursor()
     }
     override func mouseDown(with event: NSEvent) {
         takeKeyFocus()
