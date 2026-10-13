@@ -514,8 +514,12 @@ final class CaptureSelector {
         guard kind == .scrolling, let panel = adjustmentPanel, let selection else { return }
         let center = CGPoint(x: selection.midX, y: selection.midY)
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }) else { return }
+        // Below the region, else just inside its bottom edge, where Auto Scroll appears once the
+        // capture starts. Never above it: the button would jump across a tall region while it is
+        // moved or resized toward the bottom of the screen.
         let candidates = SelectionGeometry.attachedOrigins(size: panel.frame.size, to: selection, within: screen.frame, gap: 2)
-        guard let origin = SelectionGeometry.firstClearOrigin(candidates, size: panel.frame.size, avoiding: [], within: screen.frame),
+        guard let origin = SelectionGeometry.firstClearOrigin([candidates[0], candidates[2]], size: panel.frame.size,
+                                                              avoiding: [], within: screen.frame),
               panel.frame.origin != origin else { return }
         panel.setFrameOrigin(origin)
     }
