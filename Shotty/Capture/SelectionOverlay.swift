@@ -140,6 +140,32 @@ extension NSCursor {
         }
         return NSCursor(image: image, hotSpot: CGPoint(x: mid, y: mid))
     }()
+
+    /// The frame resize cursor for box edges. In `flipped` coordinates, such as an image's, y grows
+    /// downward as on screen, so `.bottom` is the visual top; in AppKit's, `.top` is.
+    static func frameResize(edges: SelectionEdges, flipped: Bool) -> NSCursor {
+        let top = edges.contains(flipped ? .bottom : .top), bottom = edges.contains(flipped ? .top : .bottom)
+        let left = edges.contains(.left), right = edges.contains(.right)
+        let position: FrameResizePosition = top ? (left ? .topLeft : right ? .topRight : .top)
+            : bottom ? (left ? .bottomLeft : right ? .bottomRight : .bottom) : (left ? .left : .right)
+        return .frameResize(position: position, directions: .all)
+    }
+
+    /// Both editors' crop cursor, for edges in image coordinates: resize on the box edges, a hand
+    /// inside, which moves the box, and the capture crosshair outside, which draws a new box.
+    @MainActor static func crop(edges: SelectionEdges?, inside: Bool) -> NSCursor {
+        edges.map { frameResize(edges: $0, flipped: true) } ?? (inside ? .openHand : .captureCrosshair)
+    }
+
+    /// The area selections' cursor at `point`, in AppKit coordinates. It is the crosshair until a
+    /// region exists. An adjustable `region` gets the crop cursors on its edges and inside, where a
+    /// press resizes or moves it, and the arrow elsewhere. A `drag` keeps the cursor of what it does.
+    @MainActor static func areaSelection(at point: CGPoint, adjusting region: CGRect?, drag: SelectionDrag?) -> NSCursor {
+        let gesture = drag ?? SelectionDrag(at: point, adjusting: region)
+        if let edges = gesture.resizedEdges { return frameResize(edges: edges, flipped: false) }
+        if !gesture.isDrawing { return .openHand }
+        return drag == nil && region != nil ? .arrow : .captureCrosshair
+    }
 }
 
 /// A window a selection can pick, in AppKit coordinates.

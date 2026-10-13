@@ -68,7 +68,7 @@ final class SelectionGeometryTests: XCTestCase {
         XCTAssertEqual(SelectionGeometry.edges(near: CGPoint(x: 7, y: 25), of: CGRect(x: 0, y: 0, width: 8, height: 50),
                                                tolerance: 6), .right)
 
-        var drag = SelectionDrag(at: CGPoint(x: 100, y: 25), adjusting: rect, tolerance: 6)
+        var drag = SelectionDrag(at: CGPoint(x: 100, y: 25), adjusting: rect)
         drag.update(to: CGPoint(x: 130, y: 90), square: false, centered: false)
         XCTAssertEqual(drag.rect, CGRect(x: 0, y: 0, width: 130, height: 50))
         drag.update(to: CGPoint(x: -20, y: 90), square: false, centered: false)
@@ -77,10 +77,10 @@ final class SelectionGeometryTests: XCTestCase {
 
     func testAdjustingInsideMovesAndOutsideDrawsANewSelection() {
         let rect = CGRect(x: 0, y: 0, width: 100, height: 50)
-        var move = SelectionDrag(at: CGPoint(x: 50, y: 25), adjusting: rect, tolerance: 6)
+        var move = SelectionDrag(at: CGPoint(x: 50, y: 25), adjusting: rect)
         move.update(to: CGPoint(x: 60, y: 5), square: true, centered: true)
         XCTAssertEqual(move.rect, CGRect(x: 10, y: -20, width: 100, height: 50))
-        var draw = SelectionDrag(at: CGPoint(x: 300, y: 300), adjusting: rect, tolerance: 6)
+        var draw = SelectionDrag(at: CGPoint(x: 300, y: 300), adjusting: rect)
         XCTAssertTrue(draw.isDrawing)
         draw.update(to: CGPoint(x: 320, y: 310), square: false, centered: false)
         XCTAssertEqual(draw.rect, CGRect(x: 300, y: 300, width: 20, height: 10))
@@ -89,7 +89,7 @@ final class SelectionGeometryTests: XCTestCase {
     /// Space repositions mid-drag, and releasing it keeps drawing from the moved anchor,
     /// repeatedly and with the centered modifier.
     func testSpaceRepositionsAndResumesDrawingWithinOneDrag() {
-        var drag = SelectionDrag(at: CGPoint(x: 10, y: 10), adjusting: nil, tolerance: 6)
+        var drag = SelectionDrag(at: CGPoint(x: 10, y: 10), adjusting: nil)
         drag.update(to: CGPoint(x: 40, y: 30), square: false, centered: false)
         drag.setSpace(true, at: CGPoint(x: 40, y: 30))
         drag.update(to: CGPoint(x: 140, y: 80), square: false, centered: false)
@@ -105,6 +105,28 @@ final class SelectionGeometryTests: XCTestCase {
         drag.setSpace(false, at: CGPoint(x: 160, y: 100))
         drag.update(to: CGPoint(x: 160, y: 100), square: false, centered: true)
         XCTAssertEqual(drag.rect, CGRect(x: 80, y: 20, width: 80, height: 80))
+    }
+
+    /// Once a region is adjustable, the cursor shows what a press would do there: resize on its
+    /// edges, move inside, and the arrow elsewhere. A drag keeps the cursor of its gesture.
+    @MainActor
+    func testAreaSelectionCursorFollowsAdjustableRegion() {
+        let rect = CGRect(x: 0, y: 0, width: 100, height: 50)
+        let inside = CGPoint(x: 50, y: 25), outside = CGPoint(x: 300, y: 300), edge = CGPoint(x: 103, y: 25)
+        let isResize = { (cursor: NSCursor) in ![NSCursor.arrow, .openHand, .captureCrosshair].contains { $0 === cursor } }
+
+        XCTAssertTrue(NSCursor.areaSelection(at: inside, adjusting: nil, drag: nil) === NSCursor.captureCrosshair)
+        XCTAssertTrue(NSCursor.areaSelection(at: inside, adjusting: rect, drag: nil) === NSCursor.openHand)
+        XCTAssertTrue(NSCursor.areaSelection(at: outside, adjusting: rect, drag: nil) === NSCursor.arrow)
+        XCTAssertTrue(isResize(NSCursor.areaSelection(at: edge, adjusting: rect, drag: nil)))
+
+        let drawing = SelectionDrag(at: outside, adjusting: rect)
+        XCTAssertTrue(NSCursor.areaSelection(at: outside, adjusting: rect, drag: drawing) === NSCursor.captureCrosshair)
+        let resizing = SelectionDrag(at: edge, adjusting: rect)
+        XCTAssertTrue(isResize(NSCursor.areaSelection(at: outside, adjusting: rect, drag: resizing)))
+        var spaceMove = SelectionDrag(at: outside, adjusting: nil)
+        spaceMove.setSpace(true, at: outside)
+        XCTAssertTrue(NSCursor.areaSelection(at: outside, adjusting: nil, drag: spaceMove) === NSCursor.openHand)
     }
 
     func testAreaCompositionUsesHighestScaleAndTransparentDesktopGaps() async throws {

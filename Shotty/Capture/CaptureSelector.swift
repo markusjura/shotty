@@ -162,12 +162,20 @@ final class CaptureSelector {
     /// under the pointer instead.
     var drawsRegion: Bool { kind != .window && kind != .fullscreen }
 
-    /// A crosshair for drawing a region, before and while dragging; the normal arrow for picking
+    /// The area selection's cursor for drawing and adjusting a region; the normal arrow for picking
     /// a window or display. Set directly as well as through cursor rects, because Shotty is not
     /// the active app and the frontmost app may otherwise keep its cursor.
-    var cursor: NSCursor { drawsRegion ? .captureCrosshair : .arrow }
+    var cursor: NSCursor {
+        drawsRegion ? .areaSelection(at: pointer, adjusting: isAdjusting ? selection : nil, drag: drag) : .arrow
+    }
 
     func updateCursor() { cursor.set() }
+
+    /// Sets the cursor and the cursor rects after the selection's state changed.
+    private func refreshCursor() {
+        panels.forEach { $0.invalidateCursorRects(for: $0.contentView!) }
+        updateCursor()
+    }
 
     /// Makes the panel under a dragged pointer key and sets the cursor again. The pressed panel keeps
     /// receiving the drag on other displays, but an inactive app can set the cursor only over its key
@@ -193,8 +201,7 @@ final class CaptureSelector {
         isAdjusting = false
         adjustmentPanel?.close()
         adjustmentPanel = nil
-        panels.forEach { $0.invalidateCursorRects(for: $0.contentView!) }
-        updateCursor()
+        refreshCursor()
         updatePointer(pointer, modifiers: [])
     }
 
@@ -249,11 +256,11 @@ final class CaptureSelector {
             return confirm()
         default: break
         }
-        // A 6-point band on each side of an edge gives handles a 12-point hit area.
-        let drag = SelectionDrag(at: point, adjusting: isAdjusting ? selection : nil, tolerance: 6)
+        let drag = SelectionDrag(at: point, adjusting: isAdjusting ? selection : nil)
         self.drag = drag
         selection = drag.rect
         updatePointer(point, modifiers: modifiers)
+        updateCursor()
     }
 
     func mouseUp(at point: CGPoint, modifiers: NSEvent.ModifierFlags) {
@@ -262,11 +269,12 @@ final class CaptureSelector {
         drag = nil
         guard let selection, selection.width >= 2, selection.height >= 2 else {
             self.selection = nil
+            refreshCursor()
             redraw()
             return
         }
         // A scrolling region is always adjustable, so sticky headers can be excluded before Start.
-        if isAdjusting || kind == .scrolling { isAdjusting = true; showAdjustment(); redraw() }
+        if isAdjusting || kind == .scrolling { isAdjusting = true; showAdjustment(); refreshCursor(); redraw() }
         else { confirm() }
     }
 
@@ -278,6 +286,7 @@ final class CaptureSelector {
             guard !event.isARepeat else { return }
             if drag != nil {
                 drag?.setSpace(true, at: pointer)
+                updateCursor()
             } else if selectsWindows {
                 changeMode(kind == .window ? .area : .window)
             }
@@ -305,14 +314,16 @@ final class CaptureSelector {
             selection = selection.map { SelectionGeometry.nudged($0, dx: dx, dy: dy, resizes: event.modifierFlags.contains(.option)) }
             isAdjusting = true
             showAdjustment()
+            refreshCursor()
             redraw()
         default: break
         }
     }
 
     func keyUp(_ event: NSEvent) {
-        guard event.keyCode == 49 else { return }
+        guard event.keyCode == 49, drag != nil else { return }
         drag?.setSpace(false, at: pointer)
+        updateCursor()
     }
 
     func setDimension(width: Double?, height: Double?) {
@@ -647,8 +658,8 @@ private final class SelectionView: NSView {
 
     private func point(_ event: NSEvent) -> CGPoint { window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation }
     override func mouseMoved(with event: NSEvent) {
-        selector.updateCursor()
         selector.mouseMoved(at: point(event), modifiers: event.modifierFlags)
+        selector.updateCursor()
     }
     override func mouseDown(with event: NSEvent) {
         takeKeyFocus()
