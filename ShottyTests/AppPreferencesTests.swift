@@ -35,7 +35,6 @@ final class AppPreferencesTests: XCTestCase {
         preferences.text.outputs = []
         preferences.text.detectsLanguageAutomatically = false
         preferences.scrolling.maximumAxisPixels = 40_000
-        preferences.thumbnails.autoCloseDelaySeconds = 0
         preferences.editor.tools.width = 0
 
         let reloaded = AppPreferences(defaults: defaults)
@@ -47,7 +46,6 @@ final class AppPreferencesTests: XCTestCase {
         XCTAssertEqual(reloaded.editor.tools.width, 9)
         XCTAssertEqual(reloaded.text, TextCapturePreferences())
         XCTAssertEqual(reloaded.scrolling.maximumAxisPixels, 30_000)
-        XCTAssertEqual(reloaded.thumbnails.autoCloseDelaySeconds, 10)
         XCTAssertEqual(reloaded.recording.outputs, [.copyClip, .saveClip])
         XCTAssertTrue(reloaded.recording.recordsMicrophone, "The Record bar's audio choice survives a relaunch")
         XCTAssertEqual(reloaded.recording.microphoneID, "usb-mic")

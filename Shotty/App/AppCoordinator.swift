@@ -38,7 +38,6 @@ final class AppCoordinator {
     private var captureTask: Task<Void, Never>?
     private var holds: [UUID: Int] = [:]
     private var dismissed = Set<UUID>()
-    private var outputFailures = Set<UUID>()
     private let stillCapture = StillCaptureService()
     /// Drags need their file as they start, so they render on the main actor with their own renderer.
     @ObservationIgnored private lazy var dragRenderer = DocumentRenderer()
@@ -77,18 +76,6 @@ final class AppCoordinator {
         thumbnails.dropped = { [weak self] id, keepCard in
             guard let self, preferences.thumbnails.dismissesAfterDrag, !keepCard else { return }
             dismiss(id)
-        }
-        thumbnails.autoClose = { [weak self] id, mode in
-            guard let self else { return }
-            guard !isClosing else { return }
-            if mode == .dismiss { dismiss(id) }
-            else if mode == .saveThenDismiss {
-                let settings = preferences.snapshot()
-                Task { await self.save(id, settings: settings, dismissAfter: true, automatic: true) }
-            }
-        }
-        thumbnails.pausesAutoClose = { [weak self] id in
-            self?.hasEditor?(id) == true || self?.outputFailures.contains(id) == true
         }
         recording.finished = { [weak self] movie, kind, settings, ticket in
             await self?.accept(movie, kind: kind, settings: settings, ticket: ticket)
@@ -358,7 +345,6 @@ final class AppCoordinator {
             case .clip(let record): try await clipExporter.export(record.snapshot, to: settings.clipDirectory, options: settings.renderOptions)
             }
             try await store.markSaved(receipt)
-            outputFailures.remove(id)
             await refreshRecords()
             if dismissAfter { dismiss(id) } else { thumbnails.update(id, feedback: .saved) }
         } catch { outputFailed(id, error: error, action: "save", automatic: automatic) }
@@ -433,7 +419,6 @@ final class AppCoordinator {
         do {
             let receipt = try await write(destination)
             try await store.markSaved(receipt)
-            outputFailures.remove(id)
             await refreshRecords()
             if preferences.thumbnails.dismissesAfterSave { dismiss(id) } else { thumbnails.update(id, feedback: .saved) }
             return true
@@ -441,7 +426,6 @@ final class AppCoordinator {
     }
 
     private func outputFailed(_ id: UUID, error: Error, action: String, automatic: Bool = false) {
-        outputFailures.insert(id)
         thumbnails.update(id, feedback: .message("Couldn't \(action): \(error.localizedDescription) Retry or choose Save As."))
         Task { if !thumbnails.cards.contains(where: { $0.id == id }) { await showThumbnail(id) } }
         if !automatic { showError(error, title: "Couldn't \(action) capture") }

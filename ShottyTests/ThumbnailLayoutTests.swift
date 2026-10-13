@@ -44,16 +44,4 @@ final class ThumbnailLayoutTests: XCTestCase {
         swipe.add(dx: -40, dy: 0)
         XCTAssertFalse(swipe.dismisses(anchoredLeft: false), "Net 50 pt after reversing")
     }
-
-    func testCountdownOnlyElapsesWhileUnpaused() {
-        let a = UUID(), b = UUID()
-        var countdown = ThumbnailCountdown()
-        countdown.start(a, seconds: 3)
-        countdown.start(b, seconds: 5)
-        XCTAssertEqual(countdown.advance(by: 2) { $0 == b }, [])
-        XCTAssertEqual(countdown.advance(by: 2) { $0 == b }, [a])
-        XCTAssertEqual(countdown.advance(by: 4.9) { _ in false }, [])
-        XCTAssertEqual(countdown.advance(by: 0.1) { _ in false }, [b])
-        XCTAssertTrue(countdown.isEmpty)
-    }
 }
