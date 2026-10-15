@@ -77,19 +77,11 @@ struct FrozenWindowSnapshot: Sendable {
     let raster: FrozenRasterDescriptor
 }
 
-struct FrozenDisplaySnapshot: Sendable {
-    let displayID: CGDirectDisplayID
-    let frame: CGRect
-    let pointPixelScale: Float
-    let raster: FrozenRasterDescriptor
-}
-
-/// A window is an optional selection target; display pixels are required for area selection.
+/// Captures window rasters. A window that ScreenCaptureKit lists but cannot capture is left out as nil.
 /// Keep results in request order, including failures, so a failed window cannot shift another raster's target.
 enum FrozenCaptureBatch {
     struct Request: Sendable {
         let estimatedBytes: Int
-        let isWindow: Bool
         let diagnosticLabel: String
     }
 
@@ -124,7 +116,7 @@ enum FrozenCaptureBatch {
                         let failure = error as NSError
                         // ScreenCaptureKit can list a transient window but fail to capture it,
                         // notably a ChatGPT popover on macOS 27. This is not a TCC denial.
-                        guard request.isWindow, failure.domain == SCStreamErrorDomain,
+                        guard failure.domain == SCStreamErrorDomain,
                               failure.code == SCStreamError.Code.internalError.rawValue else { throw error }
                         logger.warning("Frozen window unavailable \(request.diagnosticLabel, privacy: .public) domain=\(failure.domain, privacy: .public) code=\(failure.code)")
                         return (index, nil)
@@ -138,33 +130,28 @@ enum FrozenCaptureBatch {
     }
 }
 
-/// All acquisition finishes before this value is returned. An overlay and its
-/// eventual export must both load the same descriptor, never capture another frame.
+/// Frozen window pixels for window selection. All acquisition finishes before this value is returned.
+/// An overlay and its eventual export must both load the same descriptor, never capture another frame.
 /// Call close at session end. Deinitialization also removes the private directory.
 actor FrozenCaptureSet {
-    /// Displays and windows freeze as separate sets, so a selection can show its frozen displays
-    /// before its windows are done.
-    enum Targets: Sendable { case displays, windows }
+    /// Every eligible window, or one, such as the window under the pointer.
+    enum Targets: Sendable { case windows, window(CGWindowID) }
 
     private static let logger = Logger(subsystem: "local.markus.Shotty", category: "FrozenCapture")
     /// Captures in flight at once.
     private static let concurrentCaptures = 3
-    /// Empty in a set of displays.
     nonisolated let windows: [FrozenWindowSnapshot]
-    /// Empty in a set of windows.
-    nonisolated let displays: [FrozenDisplaySnapshot]
     private let directory: URL
     private var isClosed = false
 
-    private init(directory: URL, windows: [FrozenWindowSnapshot], displays: [FrozenDisplaySnapshot]) {
+    private init(directory: URL, windows: [FrozenWindowSnapshot]) {
         self.directory = directory
         self.windows = windows
-        self.displays = displays
     }
 
     deinit { try? FileManager.default.removeItem(at: directory) }
 
-    /// Freezes every display, or every eligible window with and without its shadow, with up to
+    /// Freezes every eligible window, or just one, with and without its shadow, with up to
     /// `concurrentCaptures` at once. The stored set must fit `maximumDiskBytes`. Shotty's own
     /// windows stay visible, such as Settings and thumbnails; only the capture overlays in
     /// `excludingWindowIDs` are left out.
@@ -175,11 +162,11 @@ actor FrozenCaptureSet {
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
         let selectedDisplays = content.displays
         guard !selectedDisplays.isEmpty else { throw CaptureFailure.targetUnavailable }
-        // On-screen normal application windows on the frozen displays, overlays excluded.
+        let only: CGWindowID? = if case .window(let id) = targets { id } else { nil }
+        // On-screen normal application windows on the displays, overlays excluded.
         func eligible(_ windows: [SCWindow]) -> [SCWindow] {
-            guard targets == .windows else { return [] }
-            return windows.filter { window in
-                window.isOnScreen && window.windowLayer == 0 && !window.frame.isEmpty && window.owningApplication != nil
+            windows.filter { window in
+                (only == nil || window.windowID == only) && window.isOnScreen && window.windowLayer == 0 && !window.frame.isEmpty && window.owningApplication != nil
                     && !excludingWindowIDs.contains(window.windowID)
                     && selectedDisplays.contains { $0.frame.intersects(window.frame) }
             }
@@ -195,21 +182,11 @@ actor FrozenCaptureSet {
             resourceValues.isExcludedFromBackup = true
             var privateDirectory = directory
             try privateDirectory.setResourceValues(resourceValues)
-            let jobs: [CaptureJob]
-            switch targets {
-            case .displays:
-                let overlays = content.windows.filter { excludingWindowIDs.contains($0.windowID) }
-                jobs = selectedDisplays.map { display in
-                    CaptureJob(filter: SCContentFilter(display: display, excludingWindows: overlays), shadow: false,
-                               target: .display(display.displayID, display.frame))
-                }
-            case .windows:
-                // Both variants, so Option at confirmation can pick either for the output.
-                jobs = selectedWindows.flatMap { window in
-                    [false, true].map { includesShadow in
-                        CaptureJob(filter: SCContentFilter(desktopIndependentWindow: window), shadow: includesShadow,
-                                   target: .window(window.windowID, window.frame))
-                    }
+            // Both variants, so Option at confirmation can pick either for the output.
+            let jobs = selectedWindows.flatMap { window in
+                [false, true].map { includesShadow in
+                    CaptureJob(filter: SCContentFilter(desktopIndependentWindow: window), shadow: includesShadow,
+                               windowID: window.windowID, frame: window.frame)
                 }
             }
             let estimates = try jobs.map { job in
@@ -222,7 +199,7 @@ actor FrozenCaptureSet {
                 }
             }
             let requests = zip(jobs, estimates).map { job, estimate in
-                FrozenCaptureBatch.Request(estimatedBytes: estimate, isWindow: job.isWindow, diagnosticLabel: job.diagnosticLabel)
+                FrozenCaptureBatch.Request(estimatedBytes: estimate, diagnosticLabel: job.diagnosticLabel)
             }
             // The batch joins all tasks before throwing, so cleanup never removes files still being written.
             let rasters = try await FrozenCaptureBatch.capture(requests, maximumDiskBytes: limits.maximumDiskBytes,
@@ -230,20 +207,11 @@ actor FrozenCaptureSet {
                 try await capture(jobs[index], directory: directory, remainingDiskBytes: estimates[index], limits: limits)
             }
             var windows: [FrozenWindowSnapshot] = []
-            var displays: [FrozenDisplaySnapshot] = []
             var unavailableWindows = Set<CGWindowID>()
             for (job, raster) in zip(jobs, rasters) {
-                guard let raster else {
-                    if case .window(let id, _) = job.target { unavailableWindows.insert(id) }
-                    continue
-                }
-                switch job.target {
-                case .window(let id, let frame):
-                    windows.append(FrozenWindowSnapshot(windowID: id, frame: frame, pointPixelScale: job.filter.pointPixelScale,
-                                                        includesShadow: job.shadow, raster: raster))
-                case .display(let id, let frame):
-                    displays.append(FrozenDisplaySnapshot(displayID: id, frame: frame, pointPixelScale: job.filter.pointPixelScale, raster: raster))
-                }
+                guard let raster else { unavailableWindows.insert(job.windowID); continue }
+                windows.append(FrozenWindowSnapshot(windowID: job.windowID, frame: job.frame, pointPixelScale: job.filter.pointPixelScale,
+                                                    includesShadow: job.shadow, raster: raster))
             }
             // Both variants are needed for window selection and Option's shadow toggle.
             windows.removeAll { unavailableWindows.contains($0.windowID) }
@@ -275,7 +243,7 @@ actor FrozenCaptureSet {
                 throw FrozenCaptureFailure.targetChanged
             }
             try Task.checkCancellation()
-            return FrozenCaptureSet(directory: directory, windows: windows, displays: displays)
+            return FrozenCaptureSet(directory: directory, windows: windows)
         } catch {
             try? FileManager.default.removeItem(at: directory)
             throw error
@@ -286,7 +254,7 @@ actor FrozenCaptureSet {
     /// Returned images remain usable after close because their providers own the mapping.
     func image(for descriptor: FrozenRasterDescriptor) throws -> CGImage {
         guard !isClosed else { throw FrozenCaptureFailure.closed }
-        guard windows.contains(where: { $0.raster.id == descriptor.id }) || displays.contains(where: { $0.raster.id == descriptor.id }) else {
+        guard windows.contains(where: { $0.raster.id == descriptor.id }) else {
             throw CaptureFailure.targetUnavailable
         }
         return try FrozenRasterFile.load(descriptor, directory: directory)
@@ -309,24 +277,16 @@ actor FrozenCaptureSet {
     /// a distinct filter, configured before launch and never mutated or shared with
     /// another capture. Parent-side reads happen before launch or after the group joins.
     private struct CaptureJob: @unchecked Sendable {
-        enum Target: Sendable {
-            case window(CGWindowID, CGRect)
-            case display(CGDirectDisplayID, CGRect)
-        }
         let filter: SCContentFilter
         let shadow: Bool
-        let target: Target
-
-        var isWindow: Bool { if case .window = target { true } else { false } }
+        let windowID: CGWindowID
+        /// Global top-left ScreenCaptureKit coordinates, before shadow padding.
+        let frame: CGRect
 
         /// Identifiers and geometry only; never titles or application names.
         var diagnosticLabel: String {
             let size = filter.contentRect.size
-            let kind = switch target {
-            case .window(let id, _): "window \(id)"
-            case .display(let id, _): "display \(id)"
-            }
-            return "\(kind) \(Int(size.width))x\(Int(size.height))pt scale=\(filter.pointPixelScale) shadow=\(shadow)"
+            return "window \(windowID) \(Int(size.width))x\(Int(size.height))pt scale=\(filter.pointPixelScale) shadow=\(shadow)"
         }
     }
 
@@ -346,7 +306,7 @@ actor FrozenCaptureSet {
         guard let image = output.sdrImage else { throw CaptureFailure.noImage }
         // An unshadowed window is exactly its frame; anything else captured more than the window,
         // such as a parent group, or the window moved.
-        if job.isWindow, !job.shadow, !matchesWindowFrame(image, filter: job.filter) {
+        if !job.shadow, !matchesWindowFrame(image, filter: job.filter) {
             logger.error("Frozen window raster does not match its frame \(job.diagnosticLabel, privacy: .public) actual=\(image.width)x\(image.height)")
             throw FrozenCaptureFailure.targetChanged
         }

@@ -5,13 +5,11 @@ import XCTest
 @testable import Shotty
 
 final class FrozenCaptureSetTests: XCTestCase {
-    func testUnavailableWindowDoesNotAbortOrReorderDisplayCaptures() async throws {
+    func testUnavailableWindowDoesNotAbortOrReorderOtherCaptures() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let raster = try FrozenRasterFile.store(fixture(), directory: directory, remainingDiskBytes: 1_000_000, limits: .init())
-        let requests = [true, true, false].map {
-            FrozenCaptureBatch.Request(estimatedBytes: raster.byteCount, isWindow: $0, diagnosticLabel: "fixture")
-        }
+        let requests = Array(repeating: FrozenCaptureBatch.Request(estimatedBytes: raster.byteCount, diagnosticLabel: "fixture"), count: 3)
         let results = try await FrozenCaptureBatch.capture(requests, maximumDiskBytes: raster.byteCount * 3, concurrency: 3) { index in
             if index == 1 { throw NSError(domain: SCStreamErrorDomain, code: SCStreamError.Code.internalError.rawValue) }
             if index == 0 { try await Task.sleep(for: .milliseconds(20)) }
@@ -27,9 +25,7 @@ final class FrozenCaptureSetTests: XCTestCase {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let raster = try FrozenRasterFile.store(fixture(), directory: directory, remainingDiskBytes: 1_000_000, limits: .init())
-        let requests = [true, false].map {
-            FrozenCaptureBatch.Request(estimatedBytes: raster.byteCount, isWindow: $0, diagnosticLabel: "fixture")
-        }
+        let requests = Array(repeating: FrozenCaptureBatch.Request(estimatedBytes: raster.byteCount, diagnosticLabel: "fixture"), count: 2)
         let results = try await FrozenCaptureBatch.capture(requests, maximumDiskBytes: raster.byteCount, concurrency: 3) { index in
             if index == 0 { throw NSError(domain: SCStreamErrorDomain, code: SCStreamError.Code.internalError.rawValue) }
             return raster
@@ -38,17 +34,16 @@ final class FrozenCaptureSetTests: XCTestCase {
         XCTAssertEqual(results[1]?.id, raster.id)
     }
 
-    func testDisplayPermissionAndResourceFailuresStillAbortFreezing() async {
-        let cases: [(isWindow: Bool, error: NSError)] = [
-            (false, NSError(domain: SCStreamErrorDomain, code: SCStreamError.Code.internalError.rawValue)),
-            (true, NSError(domain: SCStreamErrorDomain, code: SCStreamError.Code.userDeclined.rawValue)),
-            (true, NSError(domain: SCStreamErrorDomain, code: SCStreamError.Code.missingEntitlements.rawValue)),
-            (true, FrozenCaptureFailure.diskLimit as NSError),
-            (true, FrozenCaptureFailure.resourceLimit as NSError),
-            (true, NSError(domain: "UnrelatedError", code: SCStreamError.Code.internalError.rawValue))
+    func testPermissionAndResourceFailuresStillAbortFreezing() async {
+        let errors: [NSError] = [
+            NSError(domain: SCStreamErrorDomain, code: SCStreamError.Code.userDeclined.rawValue),
+            NSError(domain: SCStreamErrorDomain, code: SCStreamError.Code.missingEntitlements.rawValue),
+            FrozenCaptureFailure.diskLimit as NSError,
+            FrozenCaptureFailure.resourceLimit as NSError,
+            NSError(domain: "UnrelatedError", code: SCStreamError.Code.internalError.rawValue)
         ]
-        for (isWindow, error) in cases {
-            let request = FrozenCaptureBatch.Request(estimatedBytes: 1, isWindow: isWindow, diagnosticLabel: "fixture")
+        for error in errors {
+            let request = FrozenCaptureBatch.Request(estimatedBytes: 1, diagnosticLabel: "fixture")
             do {
                 _ = try await FrozenCaptureBatch.capture([request], maximumDiskBytes: 1, concurrency: 1) { _ in throw error }
                 XCTFail("Expected \(error) to abort freezing")
@@ -60,7 +55,7 @@ final class FrozenCaptureSetTests: XCTestCase {
     }
 
     func testWindowCaptureCancellationStillAbortsFreezing() async {
-        let request = FrozenCaptureBatch.Request(estimatedBytes: 1, isWindow: true, diagnosticLabel: "fixture")
+        let request = FrozenCaptureBatch.Request(estimatedBytes: 1, diagnosticLabel: "fixture")
         do {
             _ = try await FrozenCaptureBatch.capture([request], maximumDiskBytes: 1, concurrency: 1) { _ in
                 throw CancellationError()
