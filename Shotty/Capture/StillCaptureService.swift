@@ -14,8 +14,8 @@ enum CaptureFailure: LocalizedError {
     }
 }
 
-/// Live screenshots of one window or display, independent of AppKit. Frozen selections read
-/// their pixels from `FrozenCaptureSet` instead.
+/// Live screenshots of one window or display, independent of AppKit. Freezing the screen takes its
+/// displays from here; frozen window selection reads its windows from `FrozenCaptureSet`.
 actor StillCaptureService {
     private let budget = RasterBudget()
 
@@ -44,20 +44,33 @@ actor StillCaptureService {
         return image
     }
 
-    /// Everything on the display, Shotty's own windows included, except `excludedWindowIDs`
-    /// (the capture overlays, when present).
+    /// Everything on the display as it looks, shadows included, Shotty's own windows too, except
+    /// `excludedWindowIDs` (the capture overlays, when present). Without exclusions it captures the
+    /// display's rect and skips listing shareable content, which freezing the screen waits for.
     func display(id: CGDirectDisplayID, excluding excludedWindowIDs: Set<CGWindowID> = []) async throws -> CGImage {
         try preflight()
+        let configuration = SCScreenshotConfiguration()
+        configuration.showsCursor = false
+        configuration.dynamicRange = .sdr
+        // Display captures leave out window shadows by default, so overlapping windows look farther apart.
+        configuration.ignoreShadows = false
+        if excludedWindowIDs.isEmpty {
+            // The rect capture comes out at the display mode's native pixel size; check it before allocating.
+            guard let mode = CGDisplayCopyDisplayMode(id) else { throw CaptureFailure.targetUnavailable }
+            _ = try budget.byteCount(width: mode.pixelWidth, height: mode.pixelHeight)
+            let output = try await SCScreenshotManager.captureScreenshot(rect: CGDisplayBounds(id), configuration: configuration)
+            try Task.checkCancellation()
+            guard let image = output.sdrImage else { throw CaptureFailure.noImage }
+            _ = try budget.byteCount(width: image.width, height: image.height)
+            return image
+        }
         // Off-screen windows too: overlays ordered out a moment ago can still show up in the frame,
         // but are no longer listed as on screen, so an on-screen list could not exclude them.
-        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: excludedWindowIDs.isEmpty)
+        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
         guard let display = content.displays.first(where: { $0.displayID == id }) else {
             throw CaptureFailure.targetUnavailable
         }
         let filter = SCContentFilter(display: display, excludingWindows: content.windows.filter { excludedWindowIDs.contains($0.windowID) })
-        let configuration = SCScreenshotConfiguration()
-        configuration.showsCursor = false
-        configuration.dynamicRange = .sdr
         configuration.width = Int(CGFloat(display.width) * CGFloat(filter.pointPixelScale))
         configuration.height = Int(CGFloat(display.height) * CGFloat(filter.pointPixelScale))
         _ = try budget.byteCount(width: configuration.width, height: configuration.height)
