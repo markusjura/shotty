@@ -21,6 +21,10 @@ git fetch --quiet origin main
 Scripts/xcode.sh release build
 app=.build/Build/Products/Release/Shotty.app
 
+# Xcode never updates the bundle folder's own date, and launchers like Raycast keep a cached
+# icon until that date changes. Touching the folder leaves the signature intact.
+touch "$app"
+
 # Refuse to package anything that is unsigned, altered, or not the stable bundle identity.
 codesign --verify --deep --strict --verbose=2 "$app"
 [[ "$(/usr/bin/defaults read "$PWD/$app/Contents/Info" CFBundleIdentifier)" == "$bundle_id" ]] || {
