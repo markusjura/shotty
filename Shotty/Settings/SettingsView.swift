@@ -146,6 +146,12 @@ struct SettingsButton: View {
         Button("Settings…") {
             NSApp.activate()
             openWindow(id: SettingsView.windowID)
+            // Activation is cooperative, and macOS can refuse it even for a menu bar click, which
+            // would leave Settings behind the app in front. Bring the window forward regardless, on the
+            // next pass, once openWindow has created it.
+            DispatchQueue.main.async {
+                NSApp.windows.first { $0.identifier?.rawValue == SettingsView.windowID }?.orderFrontRegardless()
+            }
         }
         .keyboardShortcut(",")
     }
