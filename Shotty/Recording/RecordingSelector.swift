@@ -65,7 +65,7 @@ final class RecordingSelector {
             panel.orderFrontRegardless()
             if NSMouseInRect(pointer, display.frame, false) { panel.makeKey(); panel.makeFirstResponder(view) }
         }
-        updateCursor()
+        settleCursor()
         if kind == .screen {
             let main = displays.first { $0.id == CGMainDisplayID() }
             let underPointer = display(at: pointer)
@@ -94,6 +94,16 @@ final class RecordingSelector {
     }
 
     func updateCursor() { cursor.set() }
+
+    /// Sets the cursor until the system shows it, for moments the window server may still reject
+    /// it: as the surfaces appear, and as the pointer enters another display's surface.
+    func settleCursor() {
+        NSCursor.settle { [weak self] in
+            guard let self, isActive else { return nil }
+            updateCursor()
+            return cursor
+        }
+    }
 
     private func refreshCursor() {
         panels.forEach { $0.invalidateCursorRects(for: $0.contentView!) }
@@ -463,7 +473,7 @@ private final class RecordingSelectionView: NSView {
     /// can set the cursor, and Escape and Return must reach the selection.
     override func mouseEntered(with event: NSEvent) {
         takeKeyFocus()
-        selector.updateCursor()
+        selector.settleCursor()
     }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
