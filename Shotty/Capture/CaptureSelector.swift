@@ -43,6 +43,7 @@ final class CaptureSelector {
     private var hasPointerInteraction = false
     private var drag: SelectionDrag?
     private var isAdjusting = false
+    private var cursorProbe = CursorOverrideProbe()
     private var panels: [SelectionPanel] = []
     private var adjustmentPanel: NSPanel?
     /// Window pixels for window selection: the window under the pointer when the capture started, then
@@ -67,6 +68,7 @@ final class CaptureSelector {
         requestID = request
         pointer = NSEvent.mouseLocation
         hasPointerInteraction = false
+        cursorProbe = CursorOverrideProbe()
         isLoading = true
         confirmWhenLoaded = false
         errorMessage = nil
@@ -178,7 +180,7 @@ final class CaptureSelector {
             // Inclusive of the top edge, where the pointer rests after using the menu bar.
             if NSMouseInRect(pointer, display.frame, false) { panel.makeKey(); panel.makeFirstResponder(view) }
         }
-        updateCursor()
+        settleCursor()
         updatePointer(pointer, modifiers: [])
     }
 
@@ -199,7 +201,35 @@ final class CaptureSelector {
         drawsRegion ? .areaSelection(at: pointer, adjusting: isAdjusting ? selection : nil, drag: drag) : .arrow
     }
 
-    func updateCursor() { cursor.set() }
+    func updateCursor() {
+        cursorProbe.check(context: cursorContext)
+        let cursor = cursor
+        cursor.set()
+        cursorProbe.expect(cursor)
+    }
+
+    /// Sets the cursor until the system shows it, for moments the window server may still reject
+    /// it: as the surfaces appear, and as the pointer enters another display's surface.
+    func settleCursor() {
+        NSCursor.settle { [weak self] in
+            guard let self, isActive else { return nil }
+            updateCursor()
+            return cursor
+        }
+    }
+
+    /// What might compete for the cursor, for the cursor probe's log line: the frontmost app, the
+    /// key state of the panel under the pointer, Shotty's windows, and how long Shotty has run. A
+    /// Shotty window that AppKit still thinks the pointer is in sets the arrow on every mouse move.
+    private var cursorContext: String {
+        let panel = panels.first { NSMouseInRect(pointer, $0.frame, false) }
+        let hours = NSRunningApplication.current.launchDate.map { Date().timeIntervalSince($0) / 3600 } ?? -1
+        let name: (NSWindow) -> String = { String(describing: type(of: $0)) }
+        let visible = NSApp.windows.filter(\.isVisible).map(name).joined(separator: ",")
+        let front = NSWorkspace.shared.frontmostApplication.map { $0.bundleIdentifier ?? $0.localizedName ?? "unnamed" }
+        return "front=\(front ?? "none") panelKey=\(panel?.isKeyWindow ?? false) keyWindow=\(NSApp.keyWindow.map(name) ?? "none") "
+            + "visible=[\(visible)] windows=\(NSApp.windows.count) uptime=\(String(format: "%.1f", hours)) h"
+    }
 
     /// Sets the cursor and the cursor rects after the selection's state changed.
     private func refreshCursor() {
@@ -457,6 +487,7 @@ final class CaptureSelector {
     }
 
     private func cleanup() {
+        if let report = cursorProbe.report { logger.notice("\(report, privacy: .public)") }
         requestID = UUID()
         operation?.cancel()
         operation = nil
@@ -644,7 +675,7 @@ private final class SelectionView: NSView {
     /// panel of an inactive app can set the cursor, and Escape and Return must reach the selection.
     override func mouseEntered(with event: NSEvent) {
         if !selector.adjustmentIsKey { takeKeyFocus() }
-        selector.updateCursor()
+        selector.settleCursor()
     }
     /// A press starts the selection even on a panel that is not key yet; otherwise the first press
     /// would only make it key and the overlay would sit there with a frozen readout.

@@ -157,6 +157,19 @@ extension NSCursor {
         edges.map { frameResize(edges: $0, flipped: true) } ?? (inside ? .openHand : .captureCrosshair)
     }
 
+    /// Sets the cursor `update` sets and returns, again every 50 ms for up to half a second until the
+    /// system shows it. A set made before the window server has a key surface under the pointer is
+    /// lost, and without a move nothing would set it again. `update` returns nil once the selection
+    /// has ended.
+    @MainActor static func settle(attempts: Int = 10, _ update: @escaping @MainActor () -> NSCursor?) {
+        guard let cursor = update(), attempts > 1, currentSystem?.looksLike(cursor) != true else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { settle(attempts: attempts - 1, update) }
+    }
+
+    /// Whether this cursor shows the same image as `other`, judged by size and hot spot: system
+    /// cursors read back from the window server are new objects.
+    func looksLike(_ other: NSCursor) -> Bool { image.size == other.image.size && hotSpot == other.hotSpot }
+
     /// The area selections' cursor at `point`, in AppKit coordinates. It is the crosshair until a
     /// region exists. An adjustable `region` gets the crop cursors on its edges and inside, where a
     /// press resizes or moves it, and the arrow elsewhere. A `drag` keeps the cursor of what it does.
@@ -165,6 +178,42 @@ extension NSCursor {
         if let edges = gesture.resizedEdges { return frameResize(edges: edges, flipped: false) }
         if !gesture.isDrawing { return .openHand }
         return drag == nil && region != nil ? .arrow : .captureCrosshair
+    }
+}
+
+/// Diagnostic for the log only: notices when something else replaces the cursor a selection set.
+/// A Shotty that had run for days lost the crosshair to the arrow on every mouse move until the
+/// drag began, and a relaunch cleared it. Call `check` before each set and `expect` after it;
+/// `report` summarizes the selection. It samples at most every 100 ms, because reading the system
+/// cursor asks the window server.
+@MainActor
+struct CursorOverrideProbe {
+    private let start = Date()
+    private var expected: NSCursor?
+    private var lastSample = Date.distantPast
+    private var overrides = 0
+    private var firstOverride: TimeInterval?
+    private var lastOverride = ""
+
+    /// Counts a system cursor that no longer matches the one set last, keeping the latest one's context.
+    mutating func check(context: @autoclosure () -> String) {
+        guard let expected, Date().timeIntervalSince(lastSample) >= 0.1 else { return }
+        lastSample = Date()
+        guard let current = NSCursor.currentSystem, !current.looksLike(expected) else { return }
+        overrides += 1
+        firstOverride = firstOverride ?? Date().timeIntervalSince(start)
+        let size = current.image.size
+        lastOverride = String(format: "last at %.2f s by a %.0fx%.0f cursor, ", Date().timeIntervalSince(start), size.width, size.height) + context()
+    }
+
+    mutating func expect(_ cursor: NSCursor) { expected = cursor }
+
+    /// One line for the log, or nil unless the cursor was replaced in at least three samples. A single
+    /// one is routine: AppKit sets the arrow as the pointer leaves a window, such as another display's
+    /// surface, and the window server keeps it until the next surface is key, about 40 ms.
+    var report: String? {
+        guard overrides >= 3, let firstOverride else { return nil }
+        return String(format: "Selection cursor replaced in %d samples, first at %.2f s, ", overrides, firstOverride) + lastOverride
     }
 }
 
