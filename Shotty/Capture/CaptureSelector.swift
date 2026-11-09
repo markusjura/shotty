@@ -201,7 +201,10 @@ final class CaptureSelector {
         drawsRegion ? .areaSelection(at: pointer, adjusting: isAdjusting ? selection : nil, drag: drag) : .arrow
     }
 
+    /// Does nothing once a confirmed selection has hidden its surfaces: a set then would put the
+    /// crosshair over the app underneath.
     func updateCursor() {
+        guard panels.contains(where: \.isVisible) else { return }
         cursorProbe.check(context: cursorContext)
         let cursor = cursor
         cursor.set()
@@ -219,16 +222,26 @@ final class CaptureSelector {
     }
 
     /// What might compete for the cursor, for the cursor probe's log line: the frontmost app, the
-    /// key state of the panel under the pointer, Shotty's windows, and how long Shotty has run. A
-    /// Shotty window that AppKit still thinks the pointer is in sets the arrow on every mouse move.
+    /// key state of the panel under the pointer, the window the window server has under the pointer,
+    /// Shotty's windows, and how long Shotty has run. `atPointer` names another app's window when one
+    /// sits above the selection surface.
     private var cursorContext: String {
         let panel = panels.first { NSMouseInRect(pointer, $0.frame, false) }
         let hours = NSRunningApplication.current.launchDate.map { Date().timeIntervalSince($0) / 3600 } ?? -1
         let name: (NSWindow) -> String = { String(describing: type(of: $0)) }
         let visible = NSApp.windows.filter(\.isVisible).map(name).joined(separator: ",")
         let front = NSWorkspace.shared.frontmostApplication.map { $0.bundleIdentifier ?? $0.localizedName ?? "unnamed" }
+        let number = NSWindow.windowNumber(at: pointer, belowWindowWithWindowNumber: 0)
+        let atPointer = NSApp.window(withWindowNumber: number).map(name) ?? Self.foreignWindow(number)
         return "front=\(front ?? "none") panelKey=\(panel?.isKeyWindow ?? false) keyWindow=\(NSApp.keyWindow.map(name) ?? "none") "
-            + "visible=[\(visible)] windows=\(NSApp.windows.count) uptime=\(String(format: "%.1f", hours)) h"
+            + "atPointer=\(atPointer) visible=[\(visible)] windows=\(NSApp.windows.count) uptime=\(String(format: "%.1f", hours)) h"
+    }
+
+    /// Another app's window as its owner and level, for the cursor probe.
+    private static func foreignWindow(_ number: Int) -> String {
+        let info = (CGWindowListCopyWindowInfo(.optionIncludingWindow, CGWindowID(number)) as? [[String: Any]])?.first
+        let owner = info?[kCGWindowOwnerName as String] as? String ?? "unknown"
+        return "\(owner)@\(info?[kCGWindowLayer as String] as? Int ?? 0)"
     }
 
     /// Sets the cursor and the cursor rects after the selection's state changed.
