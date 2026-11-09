@@ -182,10 +182,13 @@ extension NSCursor {
 }
 
 /// Diagnostic for the log only: notices when something else replaces the cursor a selection set.
-/// A Shotty that had run for days lost the crosshair to the arrow on every mouse move until the
-/// drag began, and a relaunch cleared it. Call `check` before each set and `expect` after it;
-/// `report` summarizes the selection. It samples at most every 100 ms, because reading the system
-/// cursor asks the window server.
+/// A Shotty that had run for a day showed the crosshair while the pointer rested, but the arrow
+/// after every mouse move until the drag began, whichever app was frontmost; a relaunch cleared it.
+/// Call `check` before each set, only while the surface is visible, and `expect` after it; `report`
+/// summarizes the selection. It samples at most every 100 ms, because reading the system cursor asks
+/// the window server. `appKit` narrows where the arrow came from: `changed` means AppKit in Shotty
+/// set another cursor since; `kept` means it did not, so the window server, another app, or an
+/// AppKit override cursor, which defers every set while it lasts, replaced it.
 @MainActor
 struct CursorOverrideProbe {
     private let start = Date()
@@ -203,14 +206,17 @@ struct CursorOverrideProbe {
         overrides += 1
         firstOverride = firstOverride ?? Date().timeIntervalSince(start)
         let size = current.image.size
-        lastOverride = String(format: "last at %.2f s by a %.0fx%.0f cursor, ", Date().timeIntervalSince(start), size.width, size.height) + context()
+        let appKit = NSCursor.current === expected ? "kept" : "changed"
+        lastOverride = String(format: "last at %.2f s by a %.0fx%.0f cursor, ", Date().timeIntervalSince(start), size.width, size.height)
+            + "appKit=\(appKit) " + context()
     }
 
     mutating func expect(_ cursor: NSCursor) { expected = cursor }
 
-    /// One line for the log, or nil unless the cursor was replaced in at least three samples. A single
-    /// one is routine: AppKit sets the arrow as the pointer leaves a window, such as another display's
-    /// surface, and the window server keeps it until the next surface is key, about 40 ms.
+    /// One line for the log, or nil unless the cursor was replaced in at least three samples. One or
+    /// two are routine: the first set can land before the window server shows the surface, and AppKit
+    /// sets the arrow as the pointer leaves a window, such as another display's surface, which the
+    /// window server keeps until the next surface is key, about 40 ms.
     var report: String? {
         guard overrides >= 3, let firstOverride else { return nil }
         return String(format: "Selection cursor replaced in %d samples, first at %.2f s, ", overrides, firstOverride) + lastOverride
