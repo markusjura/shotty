@@ -66,3 +66,7 @@ Grant permissions to the installed `/Applications/Shotty.app`. Shotty Dev has it
 - Input Monitoring, Full Disk Access, and camera are not needed.
 
 Keeping the bundle ID and signing identity stable keeps these grants across updates. Grants have survived signed Release replacements with an unchanged designated requirement.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
